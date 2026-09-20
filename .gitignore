@@ -1,0 +1,12 @@
+node_modules/
+.env
+.env.*
+!.env.example
+output/
+*.pdf
+*.html
+*.pem
+*secret*
+.n8n-render-code*
+.playwright-cli/
+.sites-runtime/
