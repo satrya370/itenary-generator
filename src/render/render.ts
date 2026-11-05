@@ -1,6 +1,6 @@
 import type { Activity, Day, Place, Photo, ItineraryV2 } from '../contracts/types.js';
 import type { ContractDiagnostic } from '../contracts/types.js';
-import type { LocaleCatalog } from '../contracts/locale-catalogs.js';
+import { getLocaleCatalog, type LocaleCatalog } from '../contracts/locale-catalogs.js';
 
 export interface RenderPalette {
   primary: string;
@@ -82,11 +82,25 @@ function safeCreditUrl(value: string | null): string | null {
 }
 
 function isCompletePhotoCredit(credit: { photographer: string; url: string | null; source: string } | null | undefined): boolean {
-  if (!credit || !credit.photographer.trim() || !credit.source.trim()) return false;
+  if (!credit || !credit.photographer.trim()) return false;
   const link = safeCreditUrl(credit.url);
   if (credit.url && !link) return false;
   if (/unsplash|pexels/i.test(credit.source) && !link) return false;
   return true;
+}
+
+function catalogCapabilityError(locale: string | null | undefined, catalog: LocaleCatalog | null): ContractDiagnostic | null {
+  const unsupported = (message: string): ContractDiagnostic => ({ code: 'LOCALE_UNSUPPORTED', path: 'trip.language', message });
+  if (!locale || !catalog) return unsupported('No matching self-contained label catalog is available for this locale.');
+  const expected = getLocaleCatalog(locale);
+  if (!expected || expected.locale !== catalog.locale) {
+    return unsupported(`The supplied label catalog (${catalog.locale}) does not match the language and script required by ${locale}.`);
+  }
+  const keys = Object.keys(expected.labels);
+  if (!keys.length || keys.some((key) => typeof catalog.labels?.[key] !== 'string' || !catalog.labels[key].trim())) {
+    return { code: 'LOCALE_LABELS_INCOMPLETE', path: 'trip.language', message: `The label catalog for ${catalog.locale} is incomplete and cannot be rendered.` };
+  }
+  return null;
 }
 
 function hasUnsafeCss(css: string): boolean {
@@ -172,9 +186,10 @@ function renderActivity(activity: Activity, catalog: { labels: Record<string, st
 export function renderItineraryHtml(content: ItineraryV2, options: RenderOptions): RenderResult {
   const errors: ContractDiagnostic[] = [];
   const warnings: ContractDiagnostic[] = [];
-  const locale = content.trip.language;
   const catalog = options.catalog;
-  if (!locale || !catalog) return { html: '', errors: [{ code: 'LOCALE_UNSUPPORTED', path: 'trip.language', message: 'No matching self-contained label catalog is available for this locale.' }], warnings };
+  const capabilityError = catalogCapabilityError(content.trip.language, catalog);
+  if (capabilityError) return { html: '', errors: [capabilityError], warnings };
+  const locale = content.trip.language!;
 
   errors.push(...assetErrors(content, options));
   if (!options.stylesheet.trim() || hasUnsafeCss(options.stylesheet)) errors.push({ code: 'RENDER_STYLES_INVALID', path: 'stylesheet', message: 'Renderer CSS must be non-empty, self-contained, and safe to inline.' });
@@ -196,7 +211,7 @@ export function renderItineraryHtml(content: ItineraryV2, options: RenderOptions
   const scopeLabel = `scope${content.trip.mode.split('_').map((part) => part[0].toUpperCase() + part.slice(1)).join('')}`;
   const scopeText = content.trip.mode === 'multi_day' ? label(catalog, scopeLabel).replace('{count}', String(content.days.length)) : label(catalog, scopeLabel);
 
-  const summary = content.summary ? `<section class="section" id="summary"><h2 class="section-title">${esc(label(catalog, 'tripOverview'))}</h2><p class="max-w-3xl text-base leading-relaxed text-slate-700">${esc(content.summary)}</p></section>` : '';
+  const summary = content.summary ? `<section class="section" id="summary" data-section="summary"><h2 class="section-title">${esc(label(catalog, 'tripOverview'))}</h2><p class="max-w-3xl text-base leading-relaxed text-slate-700">${esc(content.summary)}</p></section>` : '';
 
   // Route summary (full/multi only, ≥2 distinct stops)
   let routeStops: string[] = [];
@@ -208,20 +223,20 @@ export function renderItineraryHtml(content: ItineraryV2, options: RenderOptions
     }
     routeStops = [...new Map(routeStops.map((s) => [s, s])).keys()];
   }
-  const route = routeStops.length >= 2 ? `<section class="section" id="route"><div class="mt-4 flex flex-wrap gap-2"><b>${esc(label(catalog, 'routeSummary'))}:</b>${routeStops.map((stop) => `<span class="rounded-full bg-slate-100 px-3 py-1 text-sm">${esc(stop)}</span>`).join('')}</div></section>` : '';
+  const route = routeStops.length >= 2 ? `<section class="section" id="route" data-section="route"><div class="mt-4 flex flex-wrap gap-2"><b>${esc(label(catalog, 'routeSummary'))}:</b>${routeStops.map((stop) => `<span class="rounded-full bg-slate-100 px-3 py-1 text-sm">${esc(stop)}</span>`).join('')}</div></section>` : '';
 
   // Schedule or guide
   let schedule = '';
   let guide = '';
   if (content.trip.mode !== 'destination_guide') {
-    schedule = renderSchedule(content.days, content.trip.mode, options, catalog, errors, warnings, usedCredits, locale);
+    schedule = renderSchedule(content.days, content.trip.mode, content.trip.startDate, options, catalog, errors, warnings, usedCredits, locale);
   } else {
     guide = renderGuide(content.places, options, catalog, errors, warnings, usedCredits);
   }
 
   const practical = renderPractical(content, catalog);
-  const credits = [...usedCredits];
-  const closingSection = `<footer class="closing p-6 sm:p-8"><h2 class="m-0 text-2xl font-bold">${esc(label(catalog, 'closingHeading'))}</h2>${content.closingNote ? `<p class="mt-3">${esc(content.closingNote)}</p>` : ''}${options.agency.contact ? `<p class="font-semibold">${esc(options.agency.contact)}</p>` : ''}${content.disclaimer ? `<p class="text-sm text-white/80">${esc(content.disclaimer)}</p>` : ''}${content.policies ? `<p class="text-sm text-white/80 whitespace-pre-line">${esc(content.policies)}</p>` : ''}<p class="text-xs text-white/60 mt-3">${esc(label(catalog, 'generatedDate'))}: ${esc(formatDate(options.generatedDate, locale))}</p>${creditMarkup(credits, catalog)}</footer>`;
+  const policies = content.policies?.trim() ? `<section class="section" id="policies" data-section="policies"><h2 class="section-title">${esc(label(catalog, 'policies'))}</h2><p class="max-w-3xl whitespace-pre-line text-sm leading-relaxed text-slate-700">${esc(content.policies)}</p></section>` : '';
+  const closingSection = `<footer class="closing p-6 sm:p-8" data-section="closing"><h2 class="m-0 text-2xl font-bold">${esc(label(catalog, 'closingHeading'))}</h2>${content.closingNote ? `<p class="mt-3">${esc(content.closingNote)}</p>` : ''}${options.agency.contact ? `<p class="font-semibold">${esc(options.agency.contact)}</p>` : ''}${content.disclaimer ? `<p class="text-sm text-white/80">${esc(content.disclaimer)}</p>` : ''}${creditMarkup(usedCredits, catalog)}<p class="text-xs text-white/60 mt-3">${esc(label(catalog, 'generatedDate'))}: ${esc(formatDate(options.generatedDate, locale))}</p></footer>`;
 
   if (errors.length) return { html: '', errors, warnings };
 
@@ -235,7 +250,7 @@ export function renderItineraryHtml(content: ItineraryV2, options: RenderOptions
   if (content.trip.mode !== 'destination_guide') {
     if (content.trip.startDate) {
       const endDate = new Date(new Date(`${content.trip.startDate}T00:00:00Z`).getTime() + (content.days.length - 1) * 86_400_000).toISOString().slice(0, 10);
-      tripInfoItems.push(`<div><dt class="text-xs font-bold uppercase tracking-wide text-slate-500">${esc(label(catalog, content.trip.mode === 'multi_day' ? 'startDate' : 'startDate'))}</dt><dd class="m-0">${esc(formatDate(content.trip.startDate, locale))}</dd></div>`);
+      tripInfoItems.push(`<div><dt class="text-xs font-bold uppercase tracking-wide text-slate-500">${esc(label(catalog, 'startDate'))}</dt><dd class="m-0">${esc(formatDate(content.trip.startDate, locale))}</dd></div>`);
       if (content.trip.mode === 'multi_day') tripInfoItems.push(`<div><dt class="text-xs font-bold uppercase tracking-wide text-slate-500">${esc(label(catalog, 'endDate'))}</dt><dd class="m-0">${esc(formatDate(endDate, locale))}</dd></div>`);
     }
     if (content.trip.startTime || content.trip.endTime) {
@@ -243,7 +258,8 @@ export function renderItineraryHtml(content: ItineraryV2, options: RenderOptions
       tripInfoItems.push(`<div><dt class="text-xs font-bold uppercase tracking-wide text-slate-500">${esc(label(catalog, 'startTime'))}</dt><dd class="m-0">${esc(timeText)}</dd></div>`);
     }
     if (content.meeting.place) tripInfoItems.push(`<div><dt class="text-xs font-bold uppercase tracking-wide text-slate-500">${esc(label(catalog, 'meetingPoint'))}</dt><dd class="m-0">${esc(content.meeting.place)}</dd></div>`);
-    if (content.meeting.mapsUrl && safeCreditUrl(content.meeting.mapsUrl)) tripInfoItems.push(`<div><dt class="text-xs font-bold uppercase tracking-wide text-slate-500">${esc(label(catalog, 'mapsLink'))}</dt><dd class="m-0"><a href="${esc(content.meeting.mapsUrl)}" target="_blank" rel="noopener noreferrer">${esc(label(catalog, 'mapsLink'))}</a></dd></div>`);
+    const mapsHref = safeCreditUrl(content.meeting.mapsUrl);
+    if (mapsHref) tripInfoItems.push(`<div><dt class="text-xs font-bold uppercase tracking-wide text-slate-500">${esc(label(catalog, 'mapsLink'))}</dt><dd class="m-0"><a href="${esc(mapsHref)}" target="_blank" rel="noopener noreferrer">${esc(label(catalog, 'mapsLink'))}</a></dd></div>`);
     if (content.meeting.time) tripInfoItems.push(`<div><dt class="text-xs font-bold uppercase tracking-wide text-slate-500">${esc(label(catalog, 'meetingTime'))}</dt><dd class="m-0">${esc(content.meeting.time)}</dd></div>`);
     if (content.meeting.note) tripInfoItems.push(`<div><dt class="text-xs font-bold uppercase tracking-wide text-slate-500">${esc(label(catalog, 'meetingNote'))}</dt><dd class="m-0">${esc(content.meeting.note)}</dd></div>`);
     if (content.pickup.offered) {
@@ -254,9 +270,9 @@ export function renderItineraryHtml(content: ItineraryV2, options: RenderOptions
   }
   if (content.guide.name) tripInfoItems.push(`<div><dt class="text-xs font-bold uppercase tracking-wide text-slate-500">${esc(label(catalog, 'guideName'))}</dt><dd class="m-0">${esc(content.guide.name)}</dd></div>`);
   if (content.guide.phone) tripInfoItems.push(`<div><dt class="text-xs font-bold uppercase tracking-wide text-slate-500">${esc(label(catalog, 'guidePhone'))}</dt><dd class="m-0">${esc(content.guide.phone)}</dd></div>`);
-  const tripInfoHtml = tripInfoItems.length ? `<section class="trip-info"><dl class="grid grid-cols-1 gap-3 text-sm">${tripInfoItems.join('')}</dl></section>` : '';
+  const tripInfoHtml = tripInfoItems.length ? `<section class="trip-info" data-section="trip-info"><dl class="grid grid-cols-1 gap-3 text-sm">${tripInfoItems.join('')}</dl></section>` : '';
 
-  const html = `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${title}</title><style>${options.fontCss}\n${options.stylesheet}</style></head><body><main class="brochure" style="${cssVars}"><header class="hero" data-section="hero">${heroPhoto}<div class="hero-copy relative z-10"><div class="mb-5 flex items-center justify-between gap-4 text-xs font-bold uppercase tracking-widest"><span class="flex items-center gap-2">${logoMarkup}${esc(options.agency.name)}</span><span class="rounded-full border border-white/50 px-3 py-1">${esc(scopeText)}</span></div><p class="mb-2 text-xs font-bold uppercase tracking-widest text-white/80">${esc(label(catalog, `mode${content.trip.mode.split('_').map((part) => part[0].toUpperCase() + part.slice(1)).join('')}`))}</p><h1 class="m-0 max-w-3xl text-4xl font-extrabold leading-tight tracking-tight sm:text-6xl">${title}</h1><p class="mb-0 mt-3 text-base text-white/90">${esc([content.trip.destination, content.trip.region, content.trip.country].filter(Boolean).join(' · '))}</p></div></header><div class="content">${tripInfoHtml}${summary}${route}${schedule}${guide}${practical}</div>${closingSection}</main></body></html>`;
+  const html = `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${title}</title><style>${options.fontCss}\n${options.stylesheet}</style></head><body><main class="brochure" style="${cssVars}"><header class="hero" data-section="hero">${heroPhoto}<div class="hero-copy relative z-10"><div class="mb-5 flex items-center justify-between gap-4 text-xs font-bold uppercase tracking-widest">${logoMarkup || options.agency.name ? `<span class="flex items-center gap-2">${logoMarkup}${esc(options.agency.name)}</span>` : '<span></span>'}<span class="rounded-full border border-white/50 px-3 py-1">${esc(scopeText)}</span></div><p class="mb-2 text-xs font-bold uppercase tracking-widest text-white/80">${esc(label(catalog, `mode${content.trip.mode.split('_').map((part) => part[0].toUpperCase() + part.slice(1)).join('')}`))}</p><h1 class="m-0 max-w-3xl text-4xl font-extrabold leading-tight tracking-tight sm:text-6xl">${title}</h1><p class="mb-0 mt-3 text-base text-white/90">${esc([content.trip.destination, content.trip.region, content.trip.country].filter(Boolean).join(' · '))}</p></div></header><div class="content">${tripInfoHtml}${summary}${route}${schedule}${guide}${practical}${policies}</div>${closingSection}</main></body></html>`;
 
   if (Buffer.byteLength(html, 'utf8') > 64 * 1024 * 1024) {
     return { html: '', errors: [{ code: 'HTML_BUNDLE_TOO_LARGE', path: 'html', message: 'The self-contained HTML exceeds the 64 MiB render limit.' }], warnings };
@@ -264,19 +280,28 @@ export function renderItineraryHtml(content: ItineraryV2, options: RenderOptions
   return { html, errors, warnings };
 }
 
-function renderSchedule(days: Day[], mode: string, options: RenderOptions, catalog: { labels: Record<string, string> }, errors: ContractDiagnostic[], warnings: ContractDiagnostic[], usedCredits: Array<{ photographer: string; url: string | null; source: string }>, locale: string): string {
+function dayDate(startDate: string | null, offset: number): string | null {
+  if (!startDate) return null;
+  const time = new Date(`${startDate}T00:00:00Z`).getTime();
+  return Number.isNaN(time) ? null : new Date(time + offset * 86_400_000).toISOString().slice(0, 10);
+}
+
+function renderSchedule(days: Day[], mode: string, startDate: string | null, options: RenderOptions, catalog: { labels: Record<string, string> }, errors: ContractDiagnostic[], warnings: ContractDiagnostic[], usedCredits: Array<{ photographer: string; url: string | null; source: string }>, locale: string): string {
   if (!days.length) return '';
-  const titleKey = mode === 'half_day' ? 'modeHalfDay' : mode === 'multi_day' ? 'modeMultiDay' : 'modeFullDay';
   const isMulti = mode === 'multi_day';
-  return `<section class="section" id="schedule" data-section="schedule"><h2 class="section-title">${esc(label(catalog, titleKey))}</h2>${isMulti ? `<nav class="day-index mb-6 flex gap-2 overflow-x-auto" aria-label="${esc(label(catalog, 'itinerary'))}">${days.map((day) => `<span class="shrink-0 whitespace-nowrap rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold">${esc(label(catalog, 'dayLabel'))} ${day.dayNumber}</span>`).join('')}</nav>` : ''}${days.map((day, index) => {
+  const showMeals = mode !== 'half_day';
+  return `<section class="section" id="schedule" data-section="schedule"><h2 class="section-title">${esc(label(catalog, 'itinerary'))}</h2>${isMulti ? `<nav class="day-index mb-6 flex gap-2 overflow-x-auto" aria-label="${esc(label(catalog, 'itinerary'))}">${days.map((day) => `<span class="shrink-0 whitespace-nowrap rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold">${esc(label(catalog, 'dayLabel'))} ${day.dayNumber}</span>`).join('')}</nav>` : ''}${days.map((day, index) => {
     const image = day.photo ? resolvedImage(day.photo.assetId, options, `days[${index}].photo.assetId`, warnings) : null;
     if (image && !isCompletePhotoCredit(day.photo?.credit)) errors.push({ code: 'PHOTO_ATTRIBUTION_REQUIRED', path: `days[${index}].photo.credit`, message: 'The day photo has no complete attribution.' });
     if (image && isCompletePhotoCredit(day.photo?.credit)) usedCredits.push(day.photo!.credit!);
     const photo = image ? `<img class="mb-4 aspect-[16/7] w-full rounded-xl object-cover" src="${esc(image)}" alt="${esc(label(catalog, 'regionPhoto'))}" />` : '';
-    const mealsLine = day.meals && (day.meals.breakfast || day.meals.lunch || day.meals.dinner) ? `<p class="mt-2 text-sm"><b>${esc(label(catalog, 'meals'))}:</b> ${[day.meals.breakfast && label(catalog, 'breakfast'), day.meals.lunch && label(catalog, 'lunch'), day.meals.dinner && label(catalog, 'dinner')].filter(Boolean).join(' · ')}</p>` : '';
-    const hotelMarkup = day.hotel?.name?.trim() ? `<div class="my-3 rounded-xl border border-slate-200 bg-slate-50 p-4"><b>${esc(label(catalog, 'hotel'))}</b>: ${esc(day.hotel.name)}${day.hotel.area || day.hotel.note ? `<p class="mb-0 mt-1 text-sm">${esc([day.hotel.area, day.hotel.note].filter(Boolean).join(' · '))}</p>` : ''}</div>` : '';
-    const transferLine = day.transferNote ? `<p class="text-sm"><b>${esc(label(catalog, 'transferNote'))}:</b> ${esc(day.transferNote)}</p>` : '';
-    return `<section class="${isMulti ? 'mb-8 border-t border-slate-200 pt-5' : ''}" data-day-id="${esc(day.id)}">${isMulti ? `<header class="mb-4"><p class="m-0 text-xs font-bold uppercase tracking-wider text-[var(--brand-primary)]">${esc(label(catalog, 'dayLabel'))} ${day.dayNumber}</p><h3 class="mb-1 mt-1 text-xl font-bold">${esc(day.title)}</h3><p class="m-0 text-sm text-slate-500">${esc(day.location || '')}</p></header>` : `<header class="mb-4">${day.title ? `<h3 class="m-0 text-lg font-bold">${esc(day.title)}</h3>` : ''}${day.location ? `<p class="m-0 text-sm text-slate-500">${esc(day.location)}</p>` : ''}</header>`}${photo}<div class="timeline">${day.activities.map((activity) => renderActivity(activity, catalog, locale)).join('')}</div>${mealsLine}${hotelMarkup}${transferLine}</section>`;
+    const mealsLine = showMeals && day.meals && (day.meals.breakfast || day.meals.lunch || day.meals.dinner) ? `<p class="mt-2 text-sm"><b>${esc(label(catalog, 'meals'))}:</b> ${[day.meals.breakfast && label(catalog, 'breakfast'), day.meals.lunch && label(catalog, 'lunch'), day.meals.dinner && label(catalog, 'dinner')].filter(Boolean).join(' · ')}</p>` : '';
+    const hotelName = day.hotel?.name?.trim() || '';
+    const hotelDetail = [day.hotel?.area?.trim(), day.hotel?.note?.trim()].filter(Boolean).join(' · ');
+    const hotelMarkup = isMulti && (hotelName || hotelDetail) ? `<div class="my-3 rounded-xl border border-slate-200 bg-slate-50 p-4"><b>${esc(label(catalog, 'hotel'))}</b>${hotelName ? `: ${esc(hotelName)}` : ''}${hotelDetail ? `<p class="mb-0 mt-1 text-sm">${esc(hotelDetail)}</p>` : ''}</div>` : '';
+    const date = isMulti ? dayDate(startDate, index) : null;
+    const transferLine = isMulti && day.transferNote ?`<p class="text-sm"><b>${esc(label(catalog, 'transferNote'))}:</b> ${esc(day.transferNote)}</p>` : '';
+    return `<section class="${isMulti ? 'mb-8 border-t border-slate-200 pt-5' : ''}" data-day-id="${esc(day.id)}">${isMulti ? `<header class="mb-4"><p class="m-0 text-xs font-bold uppercase tracking-wider text-[var(--brand-primary)]">${esc(label(catalog, 'dayLabel'))} ${day.dayNumber}${date ? ` · ${esc(formatDate(date, locale))}` : ''}</p>${day.title ? `<h3 class="mb-1 mt-1 text-xl font-bold">${esc(day.title)}</h3>` : ''}${day.location ? `<p class="m-0 text-sm text-slate-500">${esc(day.location)}</p>` : ''}</header>` : `<header class="mb-4">${day.title ? `<h3 class="m-0 text-lg font-bold">${esc(day.title)}</h3>` : ''}${day.location ? `<p class="m-0 text-sm text-slate-500">${esc(day.location)}</p>` : ''}</header>`}${photo}<div class="timeline">${day.activities.map((activity) => renderActivity(activity, catalog, locale)).join('')}</div>${mealsLine}${hotelMarkup}${transferLine}</section>`;
   }).join('')}</section>`;
 }
 
