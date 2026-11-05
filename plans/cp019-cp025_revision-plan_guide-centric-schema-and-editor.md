@@ -696,6 +696,169 @@ R4 executor changes recorded here:
 - Update `docs/engine-runtime-contract.md` and `docs/editor-ai-api-contract.md` for the v2 paths/endpoints.
 - Mark the CP030–CP032 plan as needing revision (its Current-State Findings reference `web-1.0.0`); do not start CP030.
 
+### R5/R6 execution plan (planner, 2026-11-05, for the OpenCode agent) — overrides R5 and R6 above where they differ
+
+Written for an AI coding agent (OpenCode) that has not seen this repository before. R1–R4 are implemented and committed locally (latest: `1ed930a`), and R3+R4 are awaiting a joint review. Run **Step 0**, then **R5**, then **R6**. Stop and hand back after R6. Do not start CP030.
+
+#### Ground rules for Step 0, R5 and R6
+
+- **Shell:** Windows 11 with Git Bash. Use POSIX shell syntax. Node.js 24. A `node:sqlite` "ExperimentalWarning" in test output is normal.
+- **The parent folder's `CLAUDE.md` is about n8n MCP servers.** Nothing in R5/R6 touches n8n; do not call any n8n tool.
+- **Do not edit** (stop and record an open question if you think you must): `config/web/**` (schema, registry, locale catalogs), `config/palettes.json`, `src/contracts/**`, `src/server/**`, `src/render/**`, `src/api/client.ts`, migrations, `tests/web/{contracts,store-migration,api,ai,ai-api,ai-harness,ai-provider,render,preview,publication}.test.ts` (R6 exception: you may fix TypeScript-only errors in `store-migration.test.ts` and `ai.test.ts` without changing what they assert).
+- **No new npm dependencies.** `react-dom/server` is already available through `react-dom`.
+- **Never use the real data root** (`.runtime/`). Every verify script already creates a temporary data directory. Never run live paid AI (`verify:web-ai --live`) or `verify:web-systemd`.
+- **`dist/` is a stale editor bundle from 2026-10-09.** The server serves the editor from `dist/`, so every browser script (`verify:web-editor`, `verify:web-preview`, `verify:web-publication`, `verify:web-e2e`, `verify:web-ai-ui`, `verify:web-readiness`) tests whatever was last built. Run `npm run build:web-app` before each of those runs.
+- Same-step failure three times for the same reason: stop, record what you tried in the stage log, and ask the owner.
+- Never claim a command passed without running it. Paste the command and its pass/fail counts into the stage log.
+- Commit locally after each stage gate. Never push. Commit format: `CPxxx revision: <stage> guide-centric schema web-2.0.0 (pending review)`. If your tool adds a co-author line, it must name the model you actually are.
+- If you cannot view images, say so in the stage log and ask the owner to inspect the screenshots. Do not claim a visual check you did not do.
+
+#### Step 0 — Understand and index the codebase (no source changes)
+
+1. **Index.** If your tool can build a project index (for example OpenCode `/init`, which writes `AGENTS.md`), run it. Then correct `AGENTS.md` where it disagrees with this plan: the canonical schema is `web-2.0.0`, Windows + Git Bash, the gates below, and the stale `dist/`. Keep `AGENTS.md` **untracked** (do not commit it) unless the owner asks.
+2. **Read, in this order:**
+   - `RULES.md` §3, §8, §9, §11a, §11c, §12; the checklist in `TODOS.md`.
+   - This plan: "Canonical `web-2.0.0`", "Mode rules", "Editor behaviour", "R4 amendment", "R5", "R6", and this section.
+   - Stage logs `logs/cp020_stage-log_r3-renderer-v2.md` and `logs/cp024_stage-log_r4-preview-v2.md` (how R3/R4 were verified and what went wrong in the first attempt).
+   - Contracts: `src/contracts/itinerary.generated.d.ts` (the real v2 types), `src/contracts/types.ts`, `src/contracts/validator.ts` (`normalizeCanonicalContent`, `applicabilityErrors`, `structureDiagnostics`), `config/web/field-registry.json`, `config/web/itinerary.schema.json`.
+   - Server surface the editor uses: `src/server/app.ts` (routes), `src/server/draft.ts` (`createBlankDraft`), `src/server/preview.ts` (diagnostic shape: `{ code, path, message, targetId? }`), `src/api/client.ts`.
+   - Editor today (v1, being replaced): `src/editor/main.tsx`, `model.ts`, `labels.ts`, `coverage.ts`, `style.css`, `index.html`, `vite.config.ts`.
+   - Tests and scripts: `tests/web/fixtures-v2.ts` (v2 fixtures), `tests/web/fixtures.ts` (v1, used on purpose by the upgrade tests), `tests/web/editor.test.ts`, `scripts/web/verify-editor.ts`, `verify-preview.ts`, `verify-publication.ts`, `scripts/web/typecheck-scope.mjs`.
+3. **Baseline.** Run and record (expected values in brackets; if any differs, stop and ask):
+   - `npm run test:web-contracts` [42 pass], `test:web-store` [11], `test:web-api` [12], `test:web-ai` [28], `test:web-render` [14], `test:web-preview` [12], `test:web-publication` [12], `test:web-editor` [3 pass, 5 fail].
+   - `npm run typecheck:web-server` [0 errors]; `npx tsc --noEmit -p tsconfig.app.json` [134 errors: `src/editor/main.tsx` 82, `scripts/web/verify-editor.ts` 28, `scripts/web/verify-ai.ts` 14, `src/editor/model.ts` 10].
+   - `npm run check:web-types` [matches].
+4. **Write the orientation section** at the top of a new file `logs/cp022_stage-log_r5-editor-v2.md`: a file map of what R5 and R6 will touch, the API endpoints the editor calls, a table of registry paths per mode with their control type (generate it with a short `node -e` script from the registry, do not type it by hand), the baseline results, and any open questions. If there are no blocking questions, continue to R5.
+
+#### R5 — Editor (CP022)
+
+Set CP022 in `TODOS.md` to `in_progress (R5 — editor v2)` before you start.
+
+**R5.1 `src/editor/schema-meta.ts` (new).** The registry and the schema drive the form; nothing is hard-coded twice.
+- `appliesTo(field, mode)`: `modes` is `"all"`, `"scheduled"` (every mode except `destination_guide`) or an array of modes. Same semantics as `modeApplies` in `validator.ts`.
+- `fieldMeta(path, mode)` returns `{ path, labelKey, label, control, required, applies, maxLength?, maxItems? }` for a registry template path (for example `days[].activities[].title`).
+  - `label` comes from `labels.ts` (see R5.2). `required` = `requiredOnPublish` and (`requiredModes` absent or contains `mode`).
+  - `maxLength`/`maxItems` are read from `config/web/itinerary.schema.json` by walking `properties` / `items`, following `$ref` to `#/$defs/*`, and taking the non-null branch of `anyOf`. **Do not copy limits from this plan's prose**; the schema is authoritative and some prose values are outdated (for example `included` is `maxItems 50`, items `maxLength 500`).
+  - Unknown path → throw. A unit test calls `fieldMeta` for every registry path.
+- `templatePath(path)`: turns `days[0].activities[2].title` into `days[].activities[].title`.
+
+**R5.2 `src/editor/labels.ts` (rewrite).** Indonesian only. Delete every v1 key.
+- `fieldLabels` keyed by registry `labelKey`: tripTitle "Judul perjalanan", destination "Destinasi (kota/area)", country "Negara", region "Wilayah/provinsi", outputLanguage "Bahasa konten", colorTheme "Warna tema", itineraryMode "Tipe itinerary", startDate "Tanggal mulai", startTime "Jam mulai", endTime "Jam selesai", meetingPoint "Titik kumpul", mapsLink "Link Google Maps", meetingTime "Jam kumpul", meetingNote "Catatan titik kumpul", pickup "Ada penjemputan", pickupArea "Area penjemputan", pickupTime "Jam penjemputan", dropoffNote "Catatan pengantaran pulang", guideName "Nama guide", guidePhone "Nomor HP guide", heroPhoto "Foto", photographer "Nama fotografer", photographerLink "Link fotografer", photoSource "Sumber foto", overviewSummary "Ringkasan", dayTitle "Judul hari", location "Lokasi", time "Jam", durationMinutes "Durasi (menit)", activityType "Jenis aktivitas", activityTitle "Judul aktivitas", placeName "Nama tempat", description "Deskripsi", localTip "Tips lokal", breakfast "Sarapan", lunch "Makan siang", dinner "Makan malam", accommodationName "Nama hotel", area "Area", accommodationNote "Catatan hotel", transferNote "Perpindahan antarkota", placeGroup "Grup/area", suggestedDuration "Lama kunjungan", bestTime "Waktu terbaik", gettingThere "Cara ke sana", nearby "Tempat terdekat", included "Termasuk", notIncluded "Tidak termasuk", whatToBring "Yang perlu dibawa", healthSafety "Kesehatan & keselamatan", emergencyContact "Kontak darurat (nama)", contactValue "Nomor/kontak", policies "Ketentuan (pembatalan, cuaca, anak, dll.)", closingNote "Catatan penutup", disclaimer "Penafian".
+- `pathLabels` overrides by template path: `cover.assetId` "Foto sampul", `days[].photo.assetId` "Foto hari", `places[].photo.assetId` "Foto tempat", `days[].activities[].place` "Tempat / area", `days[].hotel.area` "Area hotel", `places[].tips[]` "Tips".
+- `kindLabels`: sightseeing "Wisata", food "Makan", activity "Aktivitas", transport "Perjalanan", free "Waktu bebas".
+- `themeNames` (palette key → colour name; never a destination type): beach "Toska", mountain "Biru batu", city "Biru kota", cultural "Nila & toska", nature "Hijau daun", desert "Abu & emas", mixed "Biru tua (bawaan)". Swatch colours come from `config/palettes.json` (`primary`, `secondary`).
+- `modeCopy`: the four cards from "Editor behaviour" verbatim (title, description, example) plus badge colour: half_day amber, full_day teal, multi_day indigo, destination_guide rose (Tailwind `bg-*-100 text-*-900` style classes).
+- `statusCopy`: the six "New" strings from the plain-language table, verbatim. None of the six "Old" strings may remain anywhere in `src/editor/` (a test checks this).
+
+**R5.3 `src/editor/model.ts` (rewrite, pure functions, no React).**
+- Keep `moveById`, `moveIndex`. Delete `makeScheduleBlock`, `makeSpot`, `resizeScheduleRange`.
+- `makeActivity()`, `makeDay(mode, dayNumber)`, `makePlace()`: same shapes as `src/server/draft.ts` (`blankDay`/`blankActivity`) and the generated types, with `crypto.randomUUID()` (browser-safe; do not import `node:crypto`).
+- `renumberDays(days)`: `dayNumber = index + 1`. Call it after every add/remove/reorder of days.
+- Blank-to-null rule: a **nullable** string field stores `null` when its input is blank (`region`, `guide.*`, `meeting.*`, `pickup.area|time|dropoffNote`, `trip.startDate|startTime|endTime`, `day.location`, `day.transferNote`, `activity.time|place|tip`, `hotel.area|note`, `place.group|gettingThere|suggestedDuration|bestTime|nearby`, `policies`, `closingNote`, `disclaimer`, `credit.url`). Non-nullable strings keep `''`.
+- `durationMinutes`: integer 1–1440 or `null` when blank.
+- Photo: choosing an asset sets `{ assetId, credit: null }`; clearing sets the photo to `null`. Typing in any credit field creates `{ photographer: '', url: null, source: '' }`; when all three are blank again, `credit` returns to `null`.
+- Hotel (multi_day only): `null` when name, area and note are all blank; otherwise `{ name, area, note }` (name may be `''`; preview then warns `HOTEL_NAME_EMPTY`).
+- Meals (full_day, multi_day): `null` when all three are false.
+- Pickup toggle off → `{ offered: false, area: null, time: null, dropoffNote: null }` (the validator rejects leftover values).
+- `changeMode(content, mode)` must return a draft that passes `validateDraft` for the new mode (no `FIELD_NOT_APPLICABLE`). Always keep: trip title/destination/country/region/language/colorTheme, `guide`, `cover`, `summary`, the six practical lists, `policies`, `closingNote`, `disclaimer`.
+
+  | Target mode | Rules |
+  |---|---|
+  | `destination_guide` | `days = []`; `trip.startDate/startTime/endTime = null`; `meeting` all null; pickup off (as above); `places` unchanged if already a guide, else `[]`. |
+  | `half_day` / `full_day` | `places = []`; `days = [first existing day ?? makeDay(mode, 1)]`; that day gets `hotel = null`, `transferNote = null`; `meals = null` for half_day, kept for full_day; `trip.startTime/endTime` kept (they are `null` when coming from multi_day or the guide). |
+  | `multi_day` | `places = []`; `trip.startTime = trip.endTime = null`; from half/full: `[day1, makeDay('multi_day', 2)]`; from the guide: `[makeDay(…, 1), makeDay(…, 2)]`; from multi: unchanged. Renumber. |
+
+- `hasModeLoss(content, mode)`: plain Indonesian strings, only for data that is actually non-empty and would be cleared. Exact strings: `"{n} tempat"` (leaving the guide, places with any text), `"{n} hari beserta aktivitasnya"` (to the guide), `"tanggal mulai"`, `"jam mulai/selesai"`, `"titik kumpul"`, `"penjemputan"`, `"{n} hari selain hari pertama"`, `"info hotel"`, `"catatan perpindahan"`, `"pilihan makan"`.
+
+**R5.4 Components.** Split as listed in R5 above. Concretely:
+- `src/editor/fields.tsx`: shared controls (`TextField`, `TextArea`, `TimeField` (`<input type="time">`), `NumberField`, `Toggle`, `SelectField`, `TextList`, `ObjectList`, `AssetSelect`, `PhotoField`, `ThemePicker`, `LocaleField`). Every control that edits a registry path takes `meta = fieldMeta(path, mode)` and renders `data-field-path="<registry template path, exactly as in the registry>"` on the input/select/textarea (for `TextList` items: on each item input, path `included[]` etc.; for `Toggle`: on the checkbox). Required marker and limits come from `meta`.
+- `src/editor/EditorForm.tsx`: a **pure** component that renders the sections for `content` + `mode` from props (no `fetch`, no effects that call the API). This is what the coverage test renders.
+- `src/editor/sections/*.tsx`: `TripInfo`, `TimeAndMeeting`, `TripGuide`, `Cover`, `Summary`, `DaySchedule` (half/full), `MultiDay`, `Places`, `Practical`, `Closing`, `AiAssist`, `ModePicker`, `DraftList`. You may add `Profile.tsx`, `Publication.tsx`, `Diagnostics.tsx`, `ConflictPanel.tsx` to move existing UI out of `main.tsx`; do not add new features.
+- `src/editor/main.tsx`: the app shell and orchestration only (state, API calls, save, preview, publish, conflict, AI, profile, upload). Keep `import React from 'react'` at the top of every `.tsx` file (tsx runs without a root `tsconfig.json`, so it uses the classic JSX transform).
+- Every section root: `<section data-editor-section="<id>">` with ids `trip-info`, `time-meeting`, `trip-guide`, `cover`, `summary`, `schedule`, `days`, `places`, `practical`, `closing`, `ai-assist`. Day, activity and place containers: `data-target-id="<stable id>"` and `tabIndex={-1}`.
+- Element `id`s stay unique per record (pattern `${recordId}-<field>-<stableId>`), and every control keeps a `<label htmlFor>`.
+
+**R5.5 Section content** (follow "Editor behaviour" above; these points fix the details).
+- `TripInfo`: title, destination, country, region, language (`LocaleField`; keep the existing BCP 47 input + datalist + "unsupported locale" note + detect/confirm flow; the detect button text becomes "Deteksi otomatis"), `ThemePicker` (radio group of 7 swatches with `themeNames`), startDate (scheduled modes only), the mode control (`trip.mode`, label "Tipe itinerary", opens the existing loss-confirmation dialog), and a read-only line "Dari profil agensi: {agencyName || 'belum diisi'} · Ubah profil" whose button focuses the profile panel.
+- `TimeAndMeeting`: half/full: startTime, endTime, meeting place/mapsUrl/time/note, pickup toggle → area/time/drop-off note (only when on). multi: meeting + pickup, no start/end time. Not rendered for the guide.
+- `TripGuide`: name, phone, helper text "kosongkan jika sama dengan kontak agensi".
+- `Cover`: `PhotoField` — credit fields render only after a photo is chosen; empty state uses the `statusCopy` "Belum ada foto sampul — halaman memakai warna tema.".
+- `Summary`: textarea + "Buat dengan AI" (existing overview generation and suggestion panel).
+- `DaySchedule` (half/full): one day: title, location, photo, activities list; full_day adds three meal toggles. `MultiDay`: day cards with add (max 14), remove (disabled at 2 days), move up/down, and per day: title, location, photo, activities, hotel (name/area/note), meals, transfer note. Activities: add (max 30), remove (disabled at 1), move up/down; fields time, duration, kind (`kindLabels`), title, place, description (+ "Buat dengan AI", target `{ kind: 'activity', id }`), tip.
+- `Places`: add (max 60), remove, move up/down; a group heading is shown whenever `group` changes between consecutive places (display only; order stays the array order). Required name, area, description (+ "Buat dengan AI", target `{ kind: 'place', id }`), group; inside a collapsed `<details>` "Detail tambahan": tips list, gettingThere, suggestedDuration, bestTime, nearby, photo.
+- `Practical`: included, notIncluded, whatToBring, localTips, healthSafety (string lists), emergencyContacts (label + value rows).
+- `Closing`: policies, closingNote, disclaimer.
+- `AiAssist`: collapsed `<details>` at the end: brief, itinerary fact notes, provider check, daily usage, credential copy from `statusCopy`, "Model: GPT-6 Luna" (when `modelId` is `openai/gpt-6-luna` or not yet known; otherwise `Model: {modelId}`). The old sidebar "Penulisan AI" box is removed.
+- `ModePicker`: replaces the `#new-mode` select + "Buat" button with four card buttons, each with `data-mode-card="<mode>"`, title, description, example and badge.
+- `DraftList`: rows in server order (already newest first), each: title or "Tanpa judul", the mode badge, and "diubah <relative time>" via `Intl.RelativeTimeFormat('id', { numeric: 'auto' })`.
+- Header of the open draft shows the mode badge next to the title.
+
+**R5.6 Status strings the browser scripts wait for — keep exactly:** "Engine tersambung", "Draft baru tersimpan", "Draft dibuka", "Tersimpan · revisi", "Itinerary berhasil dipublish". Keep the `[role="status"]` element.
+
+**R5.7 Diagnostics and focus.** Each diagnostic is a button with `data-diagnostic-path="<path>"` and text `"<label>: <message>"`, where label = `fieldMeta(templatePath(path))` label if the path is a registry path, else the raw path. `focusDiagnostic(d)`:
+1. `template = templatePath(d.path)`.
+2. Scope = `[data-target-id="<d.targetId>"]` if `targetId` is set, else `document`.
+3. Find, inside the scope, the first element with `data-field-path === template`; else the first whose `data-field-path` starts with `template + '.'` (covers `days[0].photo.credit`); for a list item path like `included[2]`, take the element at that index among `[data-field-path="included[]"]`.
+4. If nothing matches and a `targetId` scope exists, focus the scope element itself (it has `tabIndex=-1`). `profile.agencyLogoAssetId` focuses the profile logo picker (give it `data-field-path="profile.agencyLogoAssetId"`).
+5. Open any closed ancestor `<details>` first, then `focus()` and `scrollIntoView({ block: 'center' })`.
+
+**R5.8 Keep all existing behaviour:** manual save; the 409 conflict panel (copy local / load latest); `beforeunload` warning; preview of the saved revision in a sandboxed `srcdoc` iframe with Phone/Desktop toggle; publish / republish / unpublish / copy link / version history; AI generate → editable suggestion → apply/discard with revision + edit-generation staleness checks and the pending-poll loop; language detect + confirm; profile save with its own revision; asset upload; mode-change confirmation dialog with Escape to cancel; keyboard-operable move buttons. Port each from `main.tsx`; do not change their API usage.
+
+**R5.9 `tests/web/editor.test.ts` (rewrite).** Delete `src/editor/coverage.ts`. Use `node:test`; build elements with `React.createElement` (the test file is `.ts`) and `renderToStaticMarkup` from `react-dom/server`.
+1. **Registry DOM coverage, per mode.** Render `EditorForm` with a "fully expanded" v2 draft for that mode (start from `createContentV2(mode)`; set `cover`, every day photo / place photo with a credit; pickup offered with values; meals and (multi) hotel non-null; at least one item in every list and one emergency contact). Assert: every registry path that applies to the mode with `control` not `hidden`/`derived` appears as `data-field-path="…"`; no path that does not apply appears.
+2. `fieldMeta` resolves every registry path; every non-hidden/derived `labelKey` has an Indonesian label (no fallback to the key); limits match the schema for at least `included[]` (50 / 500) and `trip.title` (200).
+3. Factories: a draft built from `makeDay`/`makeActivity`/`makePlace` passes `validateDraft`.
+4. `changeMode` for all 12 ordered mode pairs, starting from a filled draft of the source mode: the result passes `validateDraft` (zero errors), keeps title/summary/practical lists/guide, has the right day/place counts, and `hasModeLoss` returns exactly the expected strings.
+5. Blank-to-null, photo/credit, hotel, meals and pickup helpers behave as in R5.3.
+6. `moveById` / `moveIndex` keep stable IDs (port the existing two tests).
+7. None of the six "Old" plain-language strings appears in any file under `src/editor/`; all six "New" strings appear in `labels.ts`.
+8. Mutation-check the coverage test once: temporarily remove one `data-field-path`, confirm the test fails, restore. Record it in the stage log.
+
+**R5.10 Browser scripts.**
+- `scripts/web/verify-editor.ts`: rewrite against the v2 UI. Required checks: the four mode cards create four drafts with the right badge; each mode shows only its `data-editor-section`s (half/full: schedule; multi: days; guide: places; guide has no `time-meeting`); filling fields and saving then reloading and reopening gives an identical `draftContent` (compare via the API); mode change shows the loss list and clears the fields only after confirmation (and Cancel changes nothing); a multi_day with 14 days; a guide with 60 places; reorder keeps stable IDs; no console errors; no external requests; no horizontal overflow at 390 and 1280; screenshots `output/web-editor/r5-<mode>-390.png` and `r5-<mode>-1280.png` (full page) for the four modes.
+- `scripts/web/verify-preview.ts`: replace the `#new-mode` select with a click on `[data-mode-card="half_day"]`; select the diagnostic button by `data-diagnostic-path="days[0].activities[0].title"`; keep the "focus lands on the exact activity after a reorder" assertion; keep the sandbox, overflow and screenshot checks.
+- `scripts/web/verify-publication.ts`: only adapt selectors that changed. It already seeds with `createContentV2`.
+
+**Gate R5 (overrides the R5 gate above):**
+- `npm run build:web-app`
+- `node scripts/web/typecheck-scope.mjs tsconfig.app.json src scripts/web/verify-editor.ts` → 0 errors, and `node scripts/web/typecheck-scope.mjs tsconfig.web.json scripts/web/verify-editor.ts scripts/web/verify-preview.ts scripts/web/verify-publication.ts tests/web/editor.test.ts` → 0 errors. (`tsconfig.app.json` does not include the preview/publication scripts or the tests; the full `typecheck:web-app` also covers `verify-ai.ts`, which is R6.)
+- `npm run test:web-editor` → all pass.
+- `npm run verify:web-editor && npm run verify:web-preview && npm run verify:web-publication` → exit 0.
+- Regression, same counts as the Step 0 baseline: contracts, store, api, ai, render, preview, publication; `npm run verify:web-render` exit 0.
+- Open the 8 `r5-*` screenshots and check: mode cards and badges are distinct; only the mode's sections show; labels are Indonesian and plain; no developer jargon ("asset ID", "unresolved", "turunan", "kredensial"); phone width has no overflow and fields stack.
+- Complete `logs/cp022_stage-log_r5-editor-v2.md` (orientation, commands with counts, screenshot paths with one sentence each, deviations, open questions).
+- Update the R5 line in `TODOS.md` with "gate run <date>: pass; awaiting review". Leave CP022 `in_progress`.
+- Commit: `CP022 revision: R5 editor guide-centric schema web-2.0.0 (pending review)`.
+
+#### R6 — Regression, end-to-end and logs
+
+**R6.1 Port the remaining v1 scripts to v2** (use `tests/web/fixtures-v2.ts`, v2 paths, the mode cards and `data-field-path` selectors): `scripts/web/verify-e2e.ts`, `verify-readiness.ts`, `verify-ai-ui.ts`, `verify-ai.ts` (deterministic double only; no live inference), `probe-publish-retry.ts` (run by `verify:web-publish-retry`), `probe-recovery-scope.ts`, `probe-cp027-findings.ts`, and `tests/web/cp027-fixtures.json` (it uses v1 names such as `tripTitle`, `scopeLabel`; the scope label is now derived from the catalog, so drop or recompute it). Keep each script's checks in intent; do not delete assertions to make a script pass.
+
+**R6.2 `tests/web/fixtures.ts` stays v1** (overrides "update `tests/web/fixtures.ts` to v2" above). It is the v1 input for the `upgradeV1ToV2` tests in `contracts.test.ts` and `store-migration.test.ts`. Do not convert it; only stop the scripts from importing it.
+
+**R6.3 Type errors.** Make `npm run typecheck:web-app` and `npm run typecheck:web-contracts` report 0 errors. At the start of R6 the remaining ones should be in `verify-ai.ts`, `tests/web/store-migration.test.ts` (6) and `tests/web/ai.test.ts` (1); fix types without changing assertions. Then set the `typecheck:web-server` script back to a plain full check only if the owner asks; otherwise leave it.
+
+**R6.4 Full suite** (build the app first): `npm run check:web-types`, `typecheck:web-contracts`, `typecheck:web-app`, every `test:web-*`, and every `verify:web-*` except `verify:web-ai --live` and `verify:web-systemd`: `verify:web-editor`, `verify:web-preview`, `verify:web-publication`, `verify:web-e2e`, `verify:web-publish-retry`, `verify:web-ai` (default, non-live), `verify:web-ai-ui`, `verify:web-readiness`, `verify:web-render`. Then `npm run build:web-release && npm run validate:web-release`. If a script needs something unavailable on this machine (network, systemd, a live key), record it as **skipped with the reason**, never as passed.
+
+**R6.5 Final visual pass (RULES §11a):** one published page per mode, opened at 390 and 1280 (screenshots from `verify:web-e2e` or a small script using the real server), inspected and listed in the log.
+
+**R6.6 Logs and docs.**
+- Append a `## Revision: <execution date> - Guide-centric schema web-2.0.0` section (RULES §8 format: Revision Plan / Changes Made / Verification Performed / Acceptance Criteria Results / Remaining Limitations) to each completion log: `cp019_…`, `cp020_…`, `cp021_…`, `cp022_…`, `cp023_…`, `cp024_…`, `cp025_…` in `logs/`. Each records only that CP's changes, cites the stage logs and commits, and preserves everything above it.
+- Update `docs/engine-runtime-contract.md`, `docs/editor-ai-api-contract.md` and `docs/standalone-development.md` for v2: content shape, `PATCH` body (`expectedRevision`, `draftContent`, `languageContext { requestedLanguage, outputLanguage, source }`, `writingContext`), the profile endpoint `/api/v1/itinerary-engine/profile`, preview diagnostics `{ code, path, message, targetId? }`, AI target kind `place`.
+- Append a dated note to `plans/cp030-cp032_implementation-plan_document-and-text-import.md` that its Current-State Findings reference `web-1.0.0` and it must be revised before CP030 starts. Do not start CP030.
+- Write `logs/cp019-cp025_stage-log_r6-regression.md` with every command and count, skipped items with reasons, screenshot paths, deviations and open questions.
+- Update the R6 line in `TODOS.md` ("gate run <date>: pass; awaiting final review"). Do **not** tick R1–R6 or mark CPs `completed`; the owner's reviewer does that after the final review.
+- Commit: `CP019-CP025 revision: R6 regression and logs guide-centric schema web-2.0.0 (pending review)`.
+
+#### Planner decisions in this section (the owner may override before execution)
+
+- **PR-6:** The R5 gate uses a scoped type check; the full `typecheck:web-app` moves to R6 because `verify-ai.ts` is R6 scope.
+- **PR-7:** `data-field-path` carries the registry template path; item identity comes from the nearest `data-target-id`. Diagnostics keep index paths plus `targetId` (PR-4).
+- **PR-8:** Field limits come from the JSON Schema, not from this plan's prose.
+- **PR-9:** `tests/web/fixtures.ts` stays v1 for the upgrade tests.
+- **PR-10:** Colour theme names are colour names (`themeNames` above), not destination types.
+- **PR-11:** `changeMode` to multi_day from a single-day mode adds one blank day so the draft has the minimum two days.
+
 ## Impact and Regression Risk
 
 - About 1,500 of 2,300 source lines are touched (audit). The store, publication state machine, share tokens, revocation and the AI ledger are preserved and must keep passing their existing tests.
