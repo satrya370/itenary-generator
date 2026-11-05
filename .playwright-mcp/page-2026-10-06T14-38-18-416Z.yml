@@ -1,0 +1,31 @@
+- main [ref=f1e3]:
+  - generic [ref=f1e4]:
+    - generic [ref=f1e5]:
+      - paragraph [ref=f1e6]: Itinerary Engine · lokal
+      - heading "Ruang kerja perjalanan" [level=1] [ref=f1e7]
+    - status [ref=f1e8]: Engine tersambung
+  - generic [ref=f1e9]:
+    - complementary [ref=f1e10]:
+      - generic [ref=f1e11]:
+        - heading "Draft itinerary" [level=2] [ref=f1e12]
+        - generic [ref=f1e13]: Buat draft
+        - generic [ref=f1e14]:
+          - combobox "Buat draft" [ref=f1e15]:
+            - option "Half day" [selected]
+            - option "Full day"
+            - option "Multi day"
+            - option "Destination guide"
+          - button "Buat" [ref=f1e16] [cursor=pointer]
+        - list
+      - generic [ref=f1e17]:
+        - heading "Profil operator" [level=2] [ref=f1e18]
+        - generic [ref=f1e19]: Nama agensi
+        - textbox "Nama agensi" [ref=f1e20]
+        - generic [ref=f1e21]: Kontak agensi
+        - textbox "Kontak agensi" [ref=f1e22]
+        - button "Simpan profil" [ref=f1e23] [cursor=pointer]
+      - generic [ref=f1e24]:
+        - heading "Aset" [level=2] [ref=f1e25]
+        - generic [ref=f1e26]: Unggah JPEG, PNG atau WebP (maks. 5 MiB)
+        - button "Unggah JPEG, PNG atau WebP (maks. 5 MiB)" [ref=f1e27]
+    - generic [ref=f1e28]: Pilih atau buat draft untuk mulai.

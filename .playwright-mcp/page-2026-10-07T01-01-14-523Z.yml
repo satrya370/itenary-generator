@@ -1,0 +1,282 @@
+- main [ref=f11e3]:
+  - generic [ref=f11e4]:
+    - generic [ref=f11e5]:
+      - paragraph [ref=f11e6]: Itinerary Engine · lokal
+      - heading "Ruang kerja perjalanan" [level=1] [ref=f11e7]
+    - status [ref=f11e8]: Draft baru tersimpan
+  - generic [ref=f11e9]:
+    - complementary [ref=f11e10]:
+      - generic [ref=f11e11]:
+        - heading "Draft itinerary" [level=2] [ref=f11e12]
+        - generic [ref=f11e13]: Buat draft
+        - generic [ref=f11e14]:
+          - combobox "Buat draft" [ref=f11e15]:
+            - option "Half day"
+            - option "Full day" [selected]
+            - option "Multi day"
+            - option "Destination guide"
+          - button "Buat" [ref=f11e16] [cursor=pointer]
+        - list [ref=f11e17]:
+          - listitem [ref=f11e18]:
+            - button "CP022 half-day fixture multi day · revisi 5" [ref=f11e491] [cursor=pointer]:
+              - generic [ref=f11e20]: CP022 half-day fixture
+              - generic [ref=f11e21]: multi day · revisi 5
+          - listitem [ref=f11e22]:
+            - button "Draft tanpa judul destination guide · revisi 2" [ref=f11e23] [cursor=pointer]:
+              - generic [ref=f11e24]: Draft tanpa judul
+              - generic [ref=f11e25]: destination guide · revisi 2
+          - listitem [ref=f11e492]:
+            - button "Draft tanpa judul full day · revisi 1" [ref=f11e493] [cursor=pointer]:
+              - generic [ref=f11e494]: Draft tanpa judul
+              - generic [ref=f11e495]: full day · revisi 1
+          - listitem [ref=f11e565]:
+            - button "Draft tanpa judul full day · revisi 1" [ref=f11e566] [cursor=pointer]:
+              - generic [ref=f11e567]: Draft tanpa judul
+              - generic [ref=f11e568]: full day · revisi 1
+      - generic [ref=f11e26]:
+        - heading "Profil operator" [level=2] [ref=f11e27]
+        - generic [ref=f11e28]:
+          - generic [ref=f11e29]: Nama agensi
+          - textbox "Nama agensi" [ref=f11e30]
+        - generic [ref=f11e31]:
+          - generic [ref=f11e32]: Kontak agensi
+          - textbox "Kontak agensi" [ref=f11e33]
+        - generic [ref=f11e34]:
+          - generic [ref=f11e35]: Logo agensi
+          - combobox "Logo agensi" [ref=f11e36]:
+            - option "Tanpa aset" [selected]
+        - button "Simpan profil" [disabled] [ref=f11e37] [cursor=pointer]
+      - generic [ref=f11e38]:
+        - heading "Pustaka aset" [level=2] [ref=f11e39]
+        - generic [ref=f11e40]: JPEG, PNG, WebP · maks. 5 MiB, 16 MP
+        - button "JPEG, PNG, WebP · maks. 5 MiB, 16 MP" [ref=f11e41]
+        - paragraph [ref=f11e42]: 0 aset tersedia; asset ID disimpan di draft.
+    - generic [ref=f11e43]:
+      - generic [ref=f11e44]:
+        - generic [ref=f11e45]:
+          - heading "Draft full day" [level=2] [ref=f11e496]
+          - paragraph [ref=f11e47]: Tersimpan · revisi 1
+        - button "Simpan draft" [disabled] [ref=f11e48] [cursor=pointer]
+      - generic [ref=f11e49]:
+        - generic [ref=f11e50]:
+          - heading "Informasi perjalanan" [level=3] [ref=f11e51]
+          - generic [ref=f11e52]:
+            - generic [ref=f11e53]:
+              - generic [ref=f11e54]: Judul perjalanan*
+              - textbox "Judul perjalanan" [ref=f11e55]
+            - generic [ref=f11e56]:
+              - generic [ref=f11e57]: Destinasi*
+              - textbox "Destinasi" [ref=f11e58]
+            - generic [ref=f11e59]:
+              - generic [ref=f11e60]: Wilayah
+              - textbox "Wilayah" [ref=f11e61]
+            - generic [ref=f11e62]:
+              - generic [ref=f11e63]: Negara*
+              - textbox "Negara" [ref=f11e64]
+            - generic [ref=f11e65]:
+              - generic [ref=f11e66]: Mode perjalanan
+              - combobox "Mode perjalanan" [ref=f11e67]:
+                - option "Half day"
+                - option "Full day" [selected]
+                - option "Multi day"
+                - option "Destination guide"
+            - generic [ref=f11e68]:
+              - generic [ref=f11e69]: Tanggal mulai
+              - textbox "Tanggal mulai" [ref=f11e70]
+            - generic [ref=f11e71]:
+              - generic [ref=f11e72]: Jumlah wisatawan
+              - spinbutton "Jumlah wisatawan" [ref=f11e73]
+            - generic [ref=f11e74]:
+              - generic [ref=f11e75]: Jenis wisatawan
+              - textbox "Jenis wisatawan" [ref=f11e76]
+            - generic [ref=f11e77]:
+              - generic [ref=f11e78]: Tempo perjalanan*
+              - combobox "Tempo perjalanan" [ref=f11e79]:
+                - option "— Pilih —"
+                - option "Santai"
+                - option "Seimbang" [selected]
+                - option "Padat"
+            - generic [ref=f11e80]:
+              - generic [ref=f11e81]: Jenis destinasi*
+              - combobox "Jenis destinasi" [ref=f11e82]:
+                - option "— Pilih —"
+                - option "Pantai"
+                - option "Pegunungan"
+                - option "Kota"
+                - option "Budaya"
+                - option "Alam"
+                - option "Gurun"
+                - option "Campuran" [selected]
+            - generic [ref=f11e83]:
+              - generic [ref=f11e84]: Nama agensi*
+              - textbox "Nama agensi" [ref=f11e85]
+            - generic [ref=f11e86]:
+              - generic [ref=f11e87]: Kontak agensi*
+              - textbox "Kontak agensi" [ref=f11e88]
+            - generic [ref=f11e89]:
+              - generic [ref=f11e90]: Logo agensi
+              - combobox "Logo agensi" [ref=f11e91]:
+                - option "Tanpa aset" [selected]
+            - generic [ref=f11e92]:
+              - generic [ref=f11e93]: Cakupan (turunan)
+              - textbox "Cakupan (turunan)" [disabled] [ref=f11e94]
+            - generic [ref=f11e95]:
+              - generic [ref=f11e96]: Tanggal dibuat
+              - textbox "Tanggal dibuat" [disabled] [ref=f11e97]: 2026-10-07
+            - generic [ref=f11e98]:
+              - generic [ref=f11e99]: Bahasa konten *
+              - combobox "Bahasa konten *" [ref=f11e100]: auto
+              - paragraph [ref=f11e101]: Auto belum dideteksi sampai CP023; manual copy tidak diterjemahkan.
+            - group "Tema" [ref=f11e102]:
+              - button "Tambah tema" [ref=f11e104] [cursor=pointer]
+        - generic [ref=f11e105]:
+          - heading "Foto hero dan atribusi" [level=3] [ref=f11e106]
+          - generic [ref=f11e107]:
+            - generic [ref=f11e108]:
+              - generic [ref=f11e109]: Foto hero
+              - combobox "Foto hero" [ref=f11e110]:
+                - option "Tanpa aset" [selected]
+            - paragraph [ref=f11e111]: Hero memakai gradien; foto tidak akan ditampilkan.
+            - generic [ref=f11e112]:
+              - generic [ref=f11e113]: Fotografer
+              - textbox "Fotografer" [ref=f11e114]
+            - generic [ref=f11e115]:
+              - generic [ref=f11e116]: Tautan fotografer
+              - textbox "Tautan fotografer" [ref=f11e117]
+            - generic [ref=f11e118]:
+              - generic [ref=f11e119]: Sumber foto
+              - textbox "Sumber foto" [ref=f11e120]
+        - generic [ref=f11e121]:
+          - heading "Overview" [level=3] [ref=f11e122]
+          - generic [ref=f11e123]:
+            - generic [ref=f11e124]: Ringkasan itinerary*
+            - textbox "Ringkasan itinerary" [ref=f11e125]
+          - generic [ref=f11e126]:
+            - generic [ref=f11e127]:
+              - generic [ref=f11e128]: Musim terbaik
+              - textbox "Musim terbaik" [ref=f11e129]
+            - generic [ref=f11e130]:
+              - generic [ref=f11e131]: Cakupan (turunan)
+              - textbox "Cakupan (turunan)" [disabled] [ref=f11e132]
+            - generic [ref=f11e133]:
+              - generic [ref=f11e134]: Tempo (turunan)
+              - textbox "Tempo (turunan)" [disabled] [ref=f11e135]: Balanced
+            - generic [ref=f11e136]:
+              - generic [ref=f11e137]: Tema (turunan)
+              - generic [ref=f11e138]: Belum ada tema.
+          - group "Ringkasan rute" [ref=f11e140]:
+            - button "Tambah ringkasan rute" [ref=f11e142] [cursor=pointer]
+          - group "Sorotan" [ref=f11e143]:
+            - button "Tambah sorotan" [ref=f11e145] [cursor=pointer]
+        - generic [ref=f11e277]:
+          - heading "Jadwal dan aktivitas" [level=3] [ref=f11e279]
+          - group "Hari 1 · ID stabil" [ref=f11e569]:
+            - generic [ref=f11e571]:
+              - generic [ref=f11e572]:
+                - generic [ref=f11e573]: Judul blok
+                - textbox "Judul blok" [ref=f11e574]
+              - generic [ref=f11e575]:
+                - generic [ref=f11e576]: Lokasi
+                - textbox "Lokasi" [ref=f11e577]
+              - generic [ref=f11e578]:
+                - generic [ref=f11e579]: Tanggal blok
+                - textbox "Tanggal blok" [ref=f11e580]
+              - generic [ref=f11e581]:
+                - generic [ref=f11e582]: Foto wilayah
+                - combobox "Foto wilayah" [ref=f11e583]:
+                  - option "Tanpa aset" [selected]
+              - generic [ref=f11e584]:
+                - generic [ref=f11e585]: Fotografer
+                - textbox "Fotografer" [ref=f11e586]
+              - generic [ref=f11e587]:
+                - generic [ref=f11e588]: Tautan fotografer
+                - textbox "Tautan fotografer" [ref=f11e589]
+              - generic [ref=f11e590]:
+                - generic [ref=f11e591]: Sumber foto
+                - textbox "Sumber foto" [ref=f11e592]
+              - generic [ref=f11e593]:
+                - generic [ref=f11e594]: Catatan transportasi
+                - textbox "Catatan transportasi" [ref=f11e595]
+              - generic [ref=f11e596]:
+                - generic [ref=f11e597]: Tips lokal
+                - textbox "Tips lokal" [ref=f11e598]
+            - group "Makanan termasuk" [ref=f11e599]:
+              - button "Tambah makanan termasuk" [ref=f11e601] [cursor=pointer]
+            - generic [ref=f11e602]:
+              - generic [ref=f11e603]:
+                - heading "Aktivitas (1)" [level=4] [ref=f11e604]
+                - button "Tambah aktivitas" [ref=f11e605] [cursor=pointer]
+              - group "Aktivitas 1 · ID tetap saat urut ulang" [ref=f11e606]:
+                - generic [ref=f11e608]:
+                  - button "Naikkan" [disabled] [ref=f11e609] [cursor=pointer]
+                  - button "Turunkan" [disabled] [ref=f11e610] [cursor=pointer]
+                  - button "Hapus" [ref=f11e611] [cursor=pointer]
+                - generic [ref=f11e612]:
+                  - generic [ref=f11e613]:
+                    - generic [ref=f11e614]: Waktu*
+                    - textbox "Waktu" [ref=f11e615]
+                  - generic [ref=f11e616]:
+                    - generic [ref=f11e617]: Jenis aktivitas*
+                    - combobox "Jenis aktivitas" [ref=f11e618]:
+                      - option "— Pilih —"
+                      - option "Transportasi"
+                      - option "Wisata" [selected]
+                      - option "Makanan"
+                      - option "Aktivitas"
+                      - option "Istirahat"
+                      - option "Akomodasi"
+                      - option "Waktu bebas"
+                  - generic [ref=f11e619]:
+                    - generic [ref=f11e620]: Judul aktivitas*
+                    - textbox "Judul aktivitas" [ref=f11e621]
+                  - generic [ref=f11e622]:
+                    - generic [ref=f11e623]: Durasi aktivitas
+                    - textbox "Durasi aktivitas" [ref=f11e624]
+                  - generic [ref=f11e625]:
+                    - generic [ref=f11e626]: Area
+                    - textbox "Area" [ref=f11e627]
+                  - generic [ref=f11e628]:
+                    - generic [ref=f11e629]: Kategori
+                    - textbox "Kategori" [ref=f11e630]
+                  - generic [ref=f11e631]:
+                    - generic [ref=f11e632]: Deskripsi*
+                    - textbox "Deskripsi" [ref=f11e633]
+                  - generic [ref=f11e634]:
+                    - generic [ref=f11e635]: Tips lokal
+                    - textbox "Tips lokal" [ref=f11e636]
+        - generic [ref=f11e207]:
+          - heading "Brief dan konteks fakta untuk AI" [level=3] [ref=f11e208]
+          - generic [ref=f11e209]:
+            - generic [ref=f11e210]: Brief perjalanan
+            - textbox "Brief perjalanan" [ref=f11e211]
+          - group "Catatan fakta itinerary" [ref=f11e212]:
+            - button "Tambah catatan fakta itinerary" [ref=f11e214] [cursor=pointer]
+          - paragraph [ref=f11e215]: Catatan adalah data sumber, bukan instruksi kepada AI; tidak mengubah teks brochure.
+        - generic [ref=f11e216]:
+          - heading "Informasi praktis" [level=3] [ref=f11e217]
+          - generic [ref=f11e218]:
+            - group "Termasuk" [ref=f11e219]:
+              - button "Tambah termasuk" [ref=f11e228] [cursor=pointer]
+            - group "Tidak termasuk" [ref=f11e229]:
+              - button "Tambah tidak termasuk" [ref=f11e231] [cursor=pointer]
+            - group "Barang yang dibawa" [ref=f11e232]:
+              - button "Tambah barang yang dibawa" [ref=f11e234] [cursor=pointer]
+            - group "Kesehatan dan keselamatan" [ref=f11e235]:
+              - button "Tambah kesehatan dan keselamatan" [ref=f11e237] [cursor=pointer]
+          - group "Tips lokal" [ref=f11e238]:
+            - button "Tambah tips lokal" [ref=f11e240] [cursor=pointer]
+          - group "Kontak darurat" [ref=f11e241]:
+            - button "Tambah kontak darurat" [ref=f11e255] [cursor=pointer]
+        - generic [ref=f11e256]:
+          - heading "Penutup dan kredit" [level=3] [ref=f11e257]
+          - generic [ref=f11e258]:
+            - generic [ref=f11e259]: Catatan penutup
+            - textbox "Catatan penutup" [ref=f11e260]
+          - generic [ref=f11e261]:
+            - generic [ref=f11e262]: Kontak agensi (turunan)
+            - textbox "Kontak agensi (turunan)" [disabled] [ref=f11e263]
+          - generic [ref=f11e264]:
+            - generic [ref=f11e265]: Penafian
+            - textbox "Penafian" [ref=f11e266]
+          - group "Kredit foto" [ref=f11e267]:
+            - button "Tambah kredit foto" [ref=f11e269] [cursor=pointer]

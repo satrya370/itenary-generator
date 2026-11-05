@@ -1,0 +1,39 @@
+- main [ref=f6e3]:
+  - generic [ref=f6e4]:
+    - generic [ref=f6e5]:
+      - paragraph [ref=f6e6]: Itinerary Engine · lokal
+      - heading "Ruang kerja perjalanan" [level=1] [ref=f6e7]
+    - status [ref=f6e8]: Engine tersambung
+  - generic [ref=f6e9]:
+    - complementary [ref=f6e10]:
+      - generic [ref=f6e11]:
+        - heading "Draft itinerary" [level=2] [ref=f6e12]
+        - generic [ref=f6e13]: Buat draft
+        - generic [ref=f6e14]:
+          - combobox "Buat draft" [ref=f6e15]:
+            - option "Half day" [selected]
+            - option "Full day"
+            - option "Multi day"
+            - option "Destination guide"
+          - button "Buat" [ref=f6e16] [cursor=pointer]
+        - list [ref=f6e23]:
+          - listitem [ref=f6e24]:
+            - button "Draft tanpa judul half_day · revisi 1" [ref=f6e25] [cursor=pointer]:
+              - generic [ref=f6e26]: Draft tanpa judul
+              - generic [ref=f6e27]: half_day · revisi 1
+          - listitem [ref=f6e28]:
+            - button "CP021 race2 half_day · revisi 5" [ref=f6e29] [cursor=pointer]:
+              - generic [ref=f6e30]: CP021 race2
+              - generic [ref=f6e31]: half_day · revisi 5
+      - generic [ref=f6e32]:
+        - heading "Profil operator" [level=2] [ref=f6e33]
+        - generic [ref=f6e34]: Nama agensi
+        - textbox "Nama agensi" [ref=f6e35]: CP021 Smoke Operator
+        - generic [ref=f6e36]: Kontak agensi
+        - textbox "Kontak agensi" [ref=f6e37]: smoke@example.test
+        - button "Simpan profil" [ref=f6e38] [cursor=pointer]
+      - generic [ref=f6e17]:
+        - heading "Aset" [level=2] [ref=f6e18]
+        - generic [ref=f6e19]: Unggah JPEG, PNG atau WebP (maks. 5 MiB)
+        - button "Unggah JPEG, PNG atau WebP (maks. 5 MiB)" [ref=f6e20]
+    - generic [ref=f6e21]: Pilih atau buat draft untuk mulai.
