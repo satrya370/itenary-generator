@@ -4,6 +4,7 @@ import path from 'node:path';
 import sharp from 'sharp';
 import palettes from '../../config/palettes.json' with { type: 'json' };
 import { renderSavedDraftPreview, type PreviewStore } from './preview.js';
+import { SCHEMA_VERSION } from '../contracts/types.js';
 import type { ItineraryRecord } from './store.js';
 
 type Store = PreviewStore & { db: any; workspaceId: string; getItinerary(id: string): ItineraryRecord | null };
@@ -29,22 +30,22 @@ function activeLink(store: Store, itineraryId: string, origin: string) {
 }
 
 async function ogImage(content: any, store: Store, dataDir: string) {
-  if (!content.hero.gradientOnly && content.hero.assetId) {
-    const asset = store.getAsset(content.hero.assetId);
+  if (content.cover?.assetId) {
+    const asset = store.getAsset(content.cover.assetId);
     if (!asset || path.basename(asset.storage_key) !== asset.storage_key) throw new Error('OG_ASSET_INVALID');
     const bytes = await readFile(path.join(dataDir, 'assets', asset.storage_key));
     return sharp(bytes, { limitInputPixels: 16_000_000, failOn: 'error' }).resize(1200, 630, { fit: 'cover', position: 'attention' }).jpeg({ quality: 84, mozjpeg: true }).toBuffer();
   }
   const paletteRows = (palettes as any).palettes;
-  const palette = paletteRows[content.brochure.destinationType] || paletteRows.mixed;
+  const palette = paletteRows[content.trip.colorTheme] || paletteRows.mixed;
   const stops: string[] = palette.gradientStops;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630"><defs><linearGradient id="g" x1="0" y1="1" x2="1" y2="0">${stops.map((color, index) => `<stop offset="${Math.round(index * 100 / Math.max(1, stops.length - 1))}%" stop-color="${/^#[0-9a-f]{6}$/i.test(color) ? color : '#172B4D'}"/>`).join('')}</linearGradient></defs><rect width="1200" height="630" fill="url(#g)"/></svg>`;
   return sharp(Buffer.from(svg)).jpeg({ quality: 84, mozjpeg: true }).toBuffer();
 }
 
 function withOpenGraph(html: string, content: any, pageUrl: string, imageUrl: string) {
-  const title = content.brochure.tripTitle || content.brochure.destination;
-  const description = (content.overview.summary || [content.brochure.destination, content.brochure.region, content.brochure.country].filter(Boolean).join(' · ')).trim();
+  const title = content.trip.title || content.trip.destination;
+  const description = (content.summary || [content.trip.destination, content.trip.region, content.trip.country].filter(Boolean).join(' · ')).trim();
   const safeDescription = Array.from(description).slice(0, 240).join('');
   const tags = `<meta property="og:title" content="${escape(title)}"><meta property="og:description" content="${escape(safeDescription)}"><meta property="og:type" content="website"><meta property="og:url" content="${escape(pageUrl)}"><meta property="og:image" content="${escape(imageUrl)}"><meta property="og:image:type" content="image/jpeg"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image">`;
   return html.replace('</head>', `${tags}</head>`);
@@ -100,8 +101,11 @@ export function revokePublication(store: Store, itineraryId: string, expectedEpo
 
 export async function publishSavedRevision(input: {
   store: Store; itineraryId: string; expectedRevision: number; operationId: string; dataDir: string; stylesheetPath?: string; shareOrigin: string; afterPromote?: () => Promise<void>;
+  /** Test-only renderer seam; defaults to the saved-draft preview renderer. */
+  render?: typeof renderSavedDraftPreview;
 }) {
   const { store, itineraryId, expectedRevision, operationId, dataDir, stylesheetPath, shareOrigin } = input;
+  const renderPreview = input.render ?? renderSavedDraftPreview;
   const record = store.getItinerary(itineraryId);
   if (!record) return { kind: 'missing' as const };
   if (record.revision !== expectedRevision) return { kind: 'stale' as const, revision: record.revision };
@@ -109,31 +113,43 @@ export async function publishSavedRevision(input: {
   const epoch = Number(state?.epoch || 0);
   const activeTokenId = state?.active_token_id ? String(state.active_token_id) : null;
   const fingerprint = hash(`${store.workspaceId}:${itineraryId}:${expectedRevision}:${epoch}`);
-  const prior = store.db.prepare('SELECT fingerprint,status,version_id,token_id,error_code FROM publish_operations WHERE workspace_id=? AND id=?').get(store.workspaceId, operationId) as any;
-  if (prior) {
+  const resolvePrior = (prior: any) => {
     if (prior.fingerprint !== fingerprint) return { kind: 'operation_conflict' as const };
     if (prior.status === 'pending') return { kind: 'pending' as const };
     if (prior.status !== 'completed') return { kind: 'failed' as const, code: prior.error_code || 'PUBLISH_FAILED' };
     const version = store.db.prepare('SELECT id,source_revision,created_at FROM published_versions WHERE workspace_id=? AND itinerary_id=? AND id=?').get(store.workspaceId, itineraryId, prior.version_id) as any;
     return { kind: 'published' as const, versionId: version?.id, sourceRevision: Number(version?.source_revision), createdAt: version?.created_at, shareUrl: prior.token_id === readState(store, itineraryId)?.active_token_id ? activeLink(store, itineraryId, shareOrigin) : null, replayed: true };
-  }
+  };
+  // The operation ID is the table's only key, so another workspace (or a concurrent writer) holding it surfaces as a constraint error.
+  const resolveInsertConflict = () => {
+    const holder = store.db.prepare('SELECT workspace_id,fingerprint,status,version_id,token_id,error_code FROM publish_operations WHERE id=?').get(operationId) as any;
+    return holder && holder.workspace_id === store.workspaceId ? resolvePrior(holder) : { kind: 'operation_conflict' as const };
+  };
+  const prior = store.db.prepare('SELECT fingerprint,status,version_id,token_id,error_code FROM publish_operations WHERE workspace_id=? AND id=?').get(store.workspaceId, operationId) as any;
+  if (prior) return resolvePrior(prior);
   if (activeTokenId && state?.current_version_id) {
     const current = store.db.prepare('SELECT id,source_revision,created_at FROM published_versions WHERE workspace_id=? AND itinerary_id=? AND id=?').get(store.workspaceId, itineraryId, state.current_version_id) as any;
     if (current && Number(current.source_revision) === record.revision) {
       const timestamp = now();
       let reused = false;
+      try {
       transact(store.db, () => {
         const latest = readState(store, itineraryId);
         reused = Number(latest?.epoch || 0) === epoch && latest?.active_token_id === activeTokenId && latest?.current_version_id === state.current_version_id;
         store.db.prepare(`INSERT INTO publish_operations(id,workspace_id,itinerary_id,fingerprint,status,version_id,token_id,error_code,created_at,updated_at)
           VALUES(?,?,?,?,?,?,?,?,?,?)`).run(operationId, store.workspaceId, itineraryId, fingerprint, reused ? 'completed' : 'failed', current.id, activeTokenId, reused ? null : 'PUBLICATION_CONFLICT', timestamp, timestamp);
       });
+      } catch { return resolveInsertConflict(); }
       if (!reused) return { kind: 'failed' as const, code: 'PUBLICATION_CONFLICT' };
       return { kind: 'published' as const, versionId: current.id, sourceRevision: Number(current.source_revision), createdAt: current.created_at, shareUrl: activeLink(store, itineraryId, shareOrigin), replayed: false };
     }
   }
   const operationTime = now();
-  store.db.prepare("INSERT INTO publish_operations(id,workspace_id,itinerary_id,fingerprint,status,created_at,updated_at) VALUES(?,?,?,?,'pending',?,?)").run(operationId, store.workspaceId, itineraryId, fingerprint, operationTime, operationTime);
+  try {
+    store.db.prepare("INSERT INTO publish_operations(id,workspace_id,itinerary_id,fingerprint,status,created_at,updated_at) VALUES(?,?,?,?,'pending',?,?)").run(operationId, store.workspaceId, itineraryId, fingerprint, operationTime, operationTime);
+  } catch { return resolveInsertConflict(); }
+  // From here the operation row is 'pending'; any unexpected failure must terminalize it instead of leaving it stuck.
+  const execute = async () => {
   const tokenId = activeTokenId || randomUUID();
   const tokenValue = activeTokenId
     ? String((store.db.prepare('SELECT token_value FROM share_tokens WHERE workspace_id=? AND itinerary_id=? AND id=? AND revoked_at IS NULL').get(store.workspaceId, itineraryId, activeTokenId) as any)?.token_value || '')
@@ -146,7 +162,7 @@ export async function publishSavedRevision(input: {
   let html: string;
   let image: Buffer;
   try {
-    rendered = await renderSavedDraftPreview(record, store, dataDir, stylesheetPath);
+    rendered = await renderPreview(record, store, dataDir, stylesheetPath);
     if (!rendered.ok || !rendered.publishReady) {
       store.db.prepare("UPDATE publish_operations SET status='failed',error_code='PUBLISH_VALIDATION_FAILED',updated_at=? WHERE workspace_id=? AND id=?").run(now(), store.workspaceId, operationId);
       return { kind: 'invalid' as const, errors: rendered.errors, warnings: rendered.warnings, status: rendered.ok ? 422 : rendered.status };
@@ -162,8 +178,8 @@ export async function publishSavedRevision(input: {
   const finalDir = path.join(dataDir, 'published'); const tempDir = path.join(dataDir, 'tmp');
   const stagedHtml = path.join(tempDir, `${operationId}.html.stage`); const stagedImage = path.join(tempDir, `${operationId}.jpg.stage`);
   const finalHtml = path.join(finalDir, htmlKey); const finalImage = path.join(finalDir, imageKey);
-  await mkdir(finalDir, { recursive: true }); await mkdir(tempDir, { recursive: true });
   try {
+    await mkdir(finalDir, { recursive: true }); await mkdir(tempDir, { recursive: true });
     await writeFile(stagedHtml, html, { flag: 'wx' }); await writeFile(stagedImage, image, { flag: 'wx' });
     await rename(stagedHtml, finalHtml); await rename(stagedImage, finalImage);
     await input.afterPromote?.();
@@ -174,7 +190,7 @@ export async function publishSavedRevision(input: {
       if (Number(currentState?.epoch || 0) !== epoch || (currentState?.active_token_id || null) !== activeTokenId || (currentState?.current_version_id || null) !== (state?.current_version_id || null)) throw Object.assign(new Error('publication state changed'), { code: 'PUBLICATION_CONFLICT' });
       if (store.getItinerary(itineraryId)?.revision !== expectedRevision) throw Object.assign(new Error('stale revision'), { code: 'REVISION_CONFLICT' });
       if (!activeTokenId) store.db.prepare('INSERT INTO share_tokens(id,workspace_id,itinerary_id,token_value,token_sha256,created_at,revoked_at) VALUES(?,?,?,?,?,?,NULL)').run(tokenId, store.workspaceId, itineraryId, tokenValue, hash(tokenValue), completedAt);
-      store.db.prepare('INSERT INTO published_versions(id,workspace_id,itinerary_id,source_revision,snapshot_json,schema_version,html_key,html_sha256,og_image_key,og_image_sha256,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(versionId, store.workspaceId, itineraryId, expectedRevision, JSON.stringify(record.draftContent), 'web-1.0.0', htmlKey, hash(html), imageKey, hash(image), completedAt);
+      store.db.prepare('INSERT INTO published_versions(id,workspace_id,itinerary_id,source_revision,snapshot_json,schema_version,html_key,html_sha256,og_image_key,og_image_sha256,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(versionId, store.workspaceId, itineraryId, expectedRevision, JSON.stringify(record.draftContent), SCHEMA_VERSION, htmlKey, hash(html), imageKey, hash(image), completedAt);
       store.db.prepare(`INSERT INTO publication_state(workspace_id,itinerary_id,current_version_id,active_token_id,epoch,updated_at) VALUES(?,?,?,?,?,?)
         ON CONFLICT(workspace_id,itinerary_id) DO UPDATE SET current_version_id=excluded.current_version_id,active_token_id=excluded.active_token_id,updated_at=excluded.updated_at`)
         .run(store.workspaceId, itineraryId, versionId, tokenId, epoch, completedAt);
@@ -186,6 +202,13 @@ export async function publishSavedRevision(input: {
     const code = (cause as any)?.code === 'REVISION_CONFLICT' || (cause as any)?.code === 'PUBLICATION_CONFLICT' ? (cause as any).code : 'PUBLISH_STORAGE_FAILED';
     store.db.prepare("UPDATE publish_operations SET status='failed',error_code=?,updated_at=? WHERE workspace_id=? AND id=? AND status='pending'").run(code, now(), store.workspaceId, operationId);
     return { kind: 'failed' as const, code };
+  }
+  };
+  try {
+    return await execute();
+  } catch {
+    store.db.prepare("UPDATE publish_operations SET status='failed',error_code='PUBLISH_FAILED',updated_at=? WHERE workspace_id=? AND id=? AND status='pending'").run(now(), store.workspaceId, operationId);
+    return { kind: 'failed' as const, code: 'PUBLISH_FAILED' };
   }
 }
 

@@ -40,7 +40,7 @@
 
 - [x] Ask Question + revision plan (2026-11-05).
 - [ ] R1 — CP019 (gate run 2026-11-05: pass; awaiting Opus re-review, see review log): schema `web-2.0.0`, generated types, registry v2, validator per mode, `upgradeV1ToV2`, locale keys 6 bahasa, `createBlankDraft` v2. Gate: `check:web-types`, `typecheck:web-contracts`, `test:web-contracts`.
-- [ ] R2 — CP021/CP023: migration runner nyata + migration 3 (backup, transaksional, revision tidak naik), `schema_version` saat save, list urut `updated_at`, publish pending/duplicate fix, asset file hilang → 404, AI paths v2 (`place`). Gate: `typecheck:web-app`, `test:web-api`, `test:web-publication`, `test:web-ai` + run pada salinan `.runtime/`.
+- [ ] R2 — CP021/CP023 (gate run 2026-11-05 on the amended gate: pass; real-data copy: 6/6 drafts migrated; awaiting Opus joint R1+R2 review, see review log): migration runner nyata + migration 3 (backup `VACUUM INTO`, transaksional, revision tidak naik), `schema_version` saat save, list urut `updated_at` + cursor opaque, publish pending/duplicate fix, asset file hilang → 404, AI paths v2 (`place`). Gate (amandemen): `check:web-types`, `typecheck:web-contracts-v2`, `typecheck:web-server`, `test:web-contracts|store|api|publication|ai`.
 - [ ] R3 — CP020: renderer v2 (info strip waktu/titik kumpul/penjemputan/guide, layout per mode, ketentuan, kredit foto & ringkasan rute turunan, agensi dari profil). Gate: `test:web-render`, `verify:web-render` + screenshot phone/desktop per mode diperiksa.
 - [ ] R4 — CP024/CP025: batas 360/720/960 menit, policy scanner path v2, warning titik kumpul, raster decode & focus diagnostik v2, OG dari v2. Gate: `test:web-preview`, `test:web-publication`, `verify:web-preview`, `verify:web-publication`.
 - [ ] R5 — CP022: editor dipecah per section, 4 kartu mode + badge warna, section per mode, registry-driven `fieldMeta` + `data-field-path`, teks bahasa awam, mode change membersihkan field. Gate: `typecheck:web-app`, `test:web-editor`, `verify:web-editor` + screenshot per mode.
@@ -53,9 +53,9 @@
 | CP018 | standalone-api-and-runtime-contract | — | completed |
 | CP019 | canonical-schema-and-field-registry | CP018 | in_progress (R1 — schema v2) |
 | CP020 | portable-html-renderer | CP019 | completed |
-| CP021 | engine-api-and-draft-persistence | CP019 | completed |
+| CP021 | engine-api-and-draft-persistence | CP019 | in_progress (R2 — migration runner, API v2; awaiting joint R1+R2 review) |
 | CP022 | dynamic-itinerary-editor | CP020, CP021 | completed |
-| CP023 | field-scoped-ai-writing | CP022 | completed |
+| CP023 | field-scoped-ai-writing | CP022 | in_progress (R2 — AI paths v2; awaiting joint R1+R2 review) |
 | CP024 | draft-preview-and-publish-validation | CP023 | completed (revisions passed) |
 | CP025 | published-web-link-and-versioning | CP024 | completed |
 | CP026 | removed-pdf-export | — | removed from product scope |

@@ -315,6 +315,26 @@ v1 → v2 mapping (used by `upgradeV1ToV2`):
 
 Also run the app once against a **copy** of the real local data root: `ENGINE_DATA_DIR=<copy-path> PORT=3100 npm run start:web-app` (first copy the default data root `.runtime/` to a temp folder; `.runtime/` itself must not be touched until R2 passes). Confirm that existing drafts list and open, and that existing `/i/:token` links still serve.
 
+### R2 amendment 2026-11-05 (recorded by the executor while running R2; the reviewer confirms or rejects) — overrides R2 above where they differ
+
+The R2 gate as written cannot pass: `typecheck:web-app` compiles `preview.ts`, `render.ts` and the editor, and `test:web-publication` renders through them; all stay v1 until R3–R5. The amended R2 gate is:
+
+1. `npm run check:web-types && npm run typecheck:web-contracts-v2 && npm run typecheck:web-server` — `typecheck:web-server` runs `scripts/web/typecheck-scope.mjs tsconfig.app.json src/server src/contracts src/api !src/server/preview.ts`, failing only on diagnostics inside those paths. R3–R5 reuse the script with their own scope; the full `typecheck:web-app` returns as the R6 gate.
+2. `npm run test:web-contracts && npm run test:web-store && npm run test:web-api && npm run test:web-publication && npm run test:web-ai`.
+3. Publication and API tests run against a renderer double (`tests/web/test-renderer.ts`) injected through the new `renderPreview` option of `createApp` / `render` input of `publishSavedRevision`. The double applies the real v2 `validateDraft`/`validateForPublish`, so publish gating is genuine; only the layout is stubbed. R4 must re-run the publication flow with the real renderer.
+4. Run against a **copy** of `.runtime/` (done: 6 v1 drafts, 0 published versions) and compare with the original.
+
+R2 deviations from the plan text:
+
+| ID | Deviation | Reason |
+|---|---|---|
+| E1 | The "same `operationId` concurrent request returns 500" finding is not reproducible within one process: the prior-operation check and the pending insert run in one synchronous segment. The real 500 was an `operationId` already held by **another workspace** (the table's only key is `id`). Fixed: any insert conflict resolves to the stored operation or `409 PUBLISH_OPERATION_CONFLICT`. | Verified by test; the fix covers both causes. |
+| E2 | Backup uses SQLite `VACUUM INTO` (a consistent snapshot in any journal mode) instead of file copy + WAL checkpoint. It is taken only when v1 drafts exist and never overwrites an existing backup. | Safer and simpler; behaviour matches the plan's intent. |
+| E3 | `ensureAiSchema` is split into `AI_SCHEMA_DDL` (migration 2) and `recoverInterruptedAiOperations` (runs at every start). | The recovery is not DDL. The resulting tables and ledger rows are identical. |
+| E4 | Legacy `ai_operations.target_kind = 'spot'` rows are not rewritten. New requests use `place`; an old operation ID can no longer replay (its fingerprint differs), which is the existing conflict behaviour. | Acceptance #9: the ledger must not change. |
+| E5 | New error code `INVALID_CURSOR` (422) for forged list cursors; `listItineraries` returns `{ items, nextCursor }` and fetches `limit + 1` rows so the last page has no cursor. | Opaque cursor needs a rejection path. |
+| E6 | The AI provider context payload changes shape (`themes` and `category` removed; activity target carries `activityKind`; place target uses `bestTime`/`nearby`). | Source fields no longer exist. No live provider call was made, so output quality on v2 context is unverified. |
+
 ### R3 — Renderer (CP020)
 
 - `src/render/render.ts`: render from v2. `RenderOptions` gains `agency: { name, contact, logo }` (resolved by the caller from the profile). Sections:

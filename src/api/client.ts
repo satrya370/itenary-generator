@@ -6,8 +6,9 @@ export interface RecordDto {
   writingContext: { brief: string; notes: Array<{ targetId: string; text: string }> };
   createdAt: string; updatedAt: string; warnings?: Array<{ code: string; path: string; message: string }>;
 }
+export interface ItineraryListDto { items: Array<{ id: string; revision: number; mode: string; title: string; updatedAt: string }>; nextCursor: string | null; }
 export interface AssetDto { id: string; mime: string; bytes: number; width: number; height: number; filename: string; createdAt: string; }
-export interface AiSuggestionDto { operationId: string; itineraryId: string; revision: number; target: { kind: 'overview' } | { kind: 'activity' | 'spot'; id: string }; locale: string; text: string; usage?: { promptTokens: number | null; completionTokens: number | null; costUsd: number }; replayed?: boolean; }
+export interface AiSuggestionDto { operationId: string; itineraryId: string; revision: number; target: { kind: 'overview' } | { kind: 'activity' | 'place'; id: string }; locale: string; text: string; usage?: { promptTokens: number | null; completionTokens: number | null; costUsd: number }; replayed?: boolean; }
 export interface AiPendingDto { operationId: string; status: 'running'; retryAfterMs: number; }
 export type AiGenerationResponseDto = AiSuggestionDto | AiPendingDto;
 export interface LanguageResolutionDto { itineraryId: string; revision: number; status: 'resolved' | 'unresolved'; locale: string | null; source: 'detected' | 'explicit' | 'unresolved'; reason: string; code?: string; requestId?: string; }
@@ -30,7 +31,7 @@ export const api = {
   context: () => request<any>('/api/v1/itinerary-engine/context'),
   profile: () => request<any>('/api/v1/itinerary-engine/profile'),
   saveProfile: (expectedRevision: number, profile: unknown) => request<any>('/api/v1/itinerary-engine/profile', { method: 'PATCH', body: JSON.stringify({ expectedRevision, profile }) }),
-  list: () => request<{ items: Array<{ id: string; revision: number; mode: string; title: string; updatedAt: string }> }>('/api/v1/itineraries'),
+  list: (cursor?: string) => request<ItineraryListDto>(`/api/v1/itineraries${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`),
   create: (mode: string) => request<RecordDto>('/api/v1/itineraries', { method: 'POST', body: JSON.stringify({ mode }) }),
   get: (id: string) => request<RecordDto>(`/api/v1/itineraries/${encodeURIComponent(id)}`),
   assets: () => request<{ items: AssetDto[]; nextCursor: string | null }>('/api/v1/assets'),
@@ -44,5 +45,5 @@ export const api = {
   resolveLanguage: (id: string, expectedRevision: number) => request<LanguageResolutionDto>(`/api/v1/itineraries/${encodeURIComponent(id)}/language/resolve`, { method: 'POST', body: JSON.stringify({ expectedRevision }) }),
   aiPreflight: () => request<AiPreflightDto>('/api/v1/itinerary-engine/ai/preflight'),
   generateOverview: (id: string, operationId: string, expectedRevision: number) => request<AiGenerationResponseDto>(`/api/v1/itineraries/${encodeURIComponent(id)}/ai/overview`, { method: 'POST', body: JSON.stringify({ operationId, expectedRevision }) }),
-  generateDescription: (id: string, operationId: string, expectedRevision: number, target: { kind: 'activity' | 'spot'; id: string }) => request<AiGenerationResponseDto>(`/api/v1/itineraries/${encodeURIComponent(id)}/ai/description`, { method: 'POST', body: JSON.stringify({ operationId, expectedRevision, target }) })
+  generateDescription: (id: string, operationId: string, expectedRevision: number, target: { kind: 'activity' | 'place'; id: string }) => request<AiGenerationResponseDto>(`/api/v1/itineraries/${encodeURIComponent(id)}/ai/description`, { method: 'POST', body: JSON.stringify({ operationId, expectedRevision, target }) })
 };

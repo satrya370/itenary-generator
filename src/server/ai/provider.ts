@@ -4,7 +4,7 @@ export const MODEL_ID = 'openai/gpt-6-luna';
 export interface ModelPricing { prompt: number; completion: number; webSearch: number; }
 export interface PreflightResult { credentialState: string; authenticated: boolean; modelState: string; modelId: string; pricing: ModelPricing | null; contextLength: number | null; maxCompletionTokens: number | null; supportedParameters: string[]; }
 export interface ProviderUsage { promptTokens: number | null; completionTokens: number | null; costUsd: number | null; }
-export interface SuggestionContext { task: 'overview' | 'description'; locale: string; targetKind?: 'activity' | 'spot'; context: Record<string, unknown>; maxTokens: number; }
+export interface SuggestionContext { task: 'overview' | 'description'; locale: string; targetKind?: 'activity' | 'place'; context: Record<string, unknown>; maxTokens: number; }
 export class ProviderFailure extends Error {
   constructor(readonly kind: 'auth' | 'rejected' | 'retryable' | 'uncertain', readonly status: number | null, readonly retryAfterMs = 0) { super(kind); }
 }

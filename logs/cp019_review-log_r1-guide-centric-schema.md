@@ -103,3 +103,53 @@ Not touched: renderer, preview, publication, store, AI service, editor, v1 legac
 1. Accept or reject D1–D9. D2 (no place cap) and D3 (hotel name) change what the plan fixed.
 2. Confirm the Indonesian prefix `Hari {a}–{b}: ` for collapsed day ranges and the `Waktu:`/`Durasi:`/`Kategori:` tip prefixes (hard-coded Indonesian per the plan mapping; they appear in published text unless the guide edits them).
 3. If accepted: append the CP019 revision section to `logs/cp019_completion-log_canonical-schema-and-field-registry.md`, set CP019 back to `completed`, and release R2.
+
+---
+
+## Executor submission 2026-11-05 — R2 (CP021/CP023 paths), executed without waiting for R1 review, awaiting joint R1+R2 review
+
+Authorization: the owner asked for R2 to start immediately and for the reviewer to review R1 and R2 together. This is the only reason CP019, CP021 and CP023 are all marked in progress (RULES §9).
+
+### Gate output (amended gate; see "R2 amendment" in the plan)
+
+| Command | Result |
+|---|---|
+| `npm run check:web-types` | matches |
+| `npm run typecheck:web-contracts-v2` | exit 0 |
+| `npm run typecheck:web-server` | 0 errors in `src/server` (except `preview.ts`), `src/contracts`, `src/api`; 273 outside scope ignored |
+| `npm run test:web-contracts` | 37 / 37 |
+| `npm run test:web-store` (new) | 6 / 6 |
+| `npm run test:web-api` | 12 / 12 |
+| `npm run test:web-publication` | 10 / 10 |
+| `npm run test:web-ai` | 28 / 28 |
+
+Negative control: the old publication behaviour was re-injected temporarily (mkdir outside the try, no terminalization, unhandled insert conflict). The two new publication tests failed (8 pass, 2 fail), and passed again after restoring the code (10 / 10).
+
+### Real-data run (copy of `.runtime/`, original not touched)
+
+`ENGINE_DATA_DIR=<copy> PORT=3100 npm run`-equivalent start against 6 real v1 drafts. 33 checks passed: every draft opens as `web-2.0.0` and passes `validateDraft`; revision and `updatedAt` unchanged; all stable IDs preserved in order; language and writing contexts byte-identical; titles carried over; a warning entry exists per draft; `backups/pre-migration-3.sqlite` exists and still holds all drafts as v1; migrations 1, 2, 3 recorded; the AI ledger and operations equal the original. The original `.runtime/engine.sqlite` is still at migrations 1, 2 with 6 v1 drafts and no backups directory. **It will migrate the next time the app starts against it** (a backup is taken first).
+
+Warning codes seen on real data: `b25d1f08` (the CP022 multi-day fixture) `AGENCY_VALUE_DROPPED, DAY_DATE_DROPPED, DAY_RANGE_COLLAPSED, FIELD_DROPPED`; `afb91652` `PLACE_CATEGORY_DROPPED`; the other four none.
+
+### Files
+
+Added: `scripts/web/typecheck-scope.mjs`, `tests/web/store-migration.test.ts`, `tests/web/test-renderer.ts`.
+Rewritten: `src/server/store.ts` (migration runner, migration 3, ordered list), `tests/web/api.test.ts`, `tests/web/publication.test.ts`, `tests/web/ai-api.test.ts` (v2 paths plus new cases).
+Edited: `src/server/app.ts`, `src/server/publication.ts`, `src/server/ai/{service,schema,validation,provider}.ts`, `src/api/client.ts`, `package.json` (+`typecheck:web-server`, `test:web-store`).
+Not touched: `preview.ts` (R4), `render.ts` (R3), the editor (R5), docs (R6).
+
+### Deviations and decisions needing the reviewer (E1-E6 in the plan's R2 amendment)
+
+E1 operation-ID finding re-diagnosed; E2 `VACUUM INTO` backup; E3 AI schema split; E4 legacy `spot` ledger rows left as they are; E5 `INVALID_CURSOR` and `limit + 1` paging; E6 AI context shape change with **no live provider call made**.
+
+### Things I could not verify
+
+- The real layout renderer, preview checks and editor against v2: none exist yet (R3-R5). Until then the running app cannot preview, and the editor cannot load a v2 draft correctly. Do not start the dev servers for acceptance.
+- AI suggestion quality with the new context shape (E6). A bounded live check belongs in R6.
+- Migration of a v1 draft with more than 14 day blocks fails closed by design (the app refuses to start and names the draft); no such draft exists in the real data.
+
+### Requested from the reviewer
+
+1. Accept or reject R1 D1-D9 and R2 E1-E6.
+2. Confirm that the amended R2 gate (renderer double, scoped typecheck) is an acceptable substitute, and that R4 must re-run publication with the real renderer.
+3. Decide whether the user-facing Indonesian migration prefixes (R1 question 2) stay.

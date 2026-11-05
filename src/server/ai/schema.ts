@@ -1,7 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 
-export function ensureAiSchema(db: DatabaseSync) {
-  db.exec(`BEGIN IMMEDIATE;
+export const AI_SCHEMA_DDL = `
     CREATE TABLE IF NOT EXISTS ai_operations (
       operation_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id),
       itinerary_id TEXT NOT NULL REFERENCES itineraries(id) ON DELETE CASCADE,
@@ -29,8 +28,11 @@ export function ensureAiSchema(db: DatabaseSync) {
       status TEXT NOT NULL CHECK(status IN ('reserved','settled','released','uncertain')),
       updated_at TEXT NOT NULL
     );
-    INSERT OR IGNORE INTO migrations(version) VALUES(2);`);
+`;
+
+export function recoverInterruptedAiOperations(db: DatabaseSync) {
   const now = new Date().toISOString();
+  db.exec('BEGIN IMMEDIATE');
   const interrupted = Number((db.prepare("SELECT count(*) AS count FROM ai_operations WHERE status='running'").get() as { count: number }).count);
   if (interrupted) {
     db.prepare(`UPDATE ai_daily_usage SET

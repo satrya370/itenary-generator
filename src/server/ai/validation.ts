@@ -6,12 +6,12 @@ const openingHours = /(?:\bopens?\b|\bopening hours?\b|\bcloses?\b|\bclosing tim
 
 export type ValidatedSuggestion = { ok: true; text: string } | { ok: false; code: string; message: string };
 
-export function validateSuggestion(raw: string, locale: string, target: 'overview' | 'activity' | 'spot'): ValidatedSuggestion {
+export function validateSuggestion(raw: string, locale: string, target: 'overview' | 'activity' | 'place'): ValidatedSuggestion {
   let parsed: unknown;
   try { parsed = JSON.parse(raw.trim()); } catch { return { ok: false, code: 'AI_OUTPUT_INVALID', message: 'The provider did not return valid JSON.' }; }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || Object.keys(parsed).length !== 1 || typeof (parsed as any).text !== 'string') return { ok: false, code: 'AI_OUTPUT_INVALID', message: 'The response must contain only a text string.' };
   const text = (parsed as { text: string }).text.trim();
-  const maxLength = target === 'spot' ? 6000 : 4000;
+  const maxLength = target === 'place' ? 6000 : 4000;
   if (!text || [...text].length > maxLength) return { ok: false, code: 'AI_OUTPUT_INVALID', message: `Text must contain 1–${maxLength} Unicode characters.` };
   if (money.test(text)) return { ok: false, code: 'AI_POLICY_REJECTED', message: 'The suggestion contains a price claim.' };
   if (openingHours.test(text)) return { ok: false, code: 'AI_POLICY_REJECTED', message: 'The suggestion contains an opening-hours claim.' };

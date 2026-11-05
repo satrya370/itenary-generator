@@ -22,6 +22,8 @@ export interface AppOptions {
   /** Test-only crash seam after artifacts are promoted but before the publication transaction. */
   afterPublicationPromote?: () => Promise<void>;
   aiProvider?: AiProvider; liveAiTest?: boolean; aiLimits?: AiServiceLimits;
+  /** Test-only renderer seam; production always uses the saved-draft preview renderer. */
+  renderPreview?: typeof renderSavedDraftPreview;
 }
 const profileKeys = new Set(['agencyName', 'agencyContact', 'agencyLogoAssetId']);
 const modes = new Set<ItineraryMode>(['half_day', 'full_day', 'multi_day', 'destination_guide']);
@@ -47,7 +49,7 @@ function validWriting(value: unknown): boolean {
   return object(value) && Object.keys(value).every((key) => ['brief', 'notes'].includes(key)) && typeof value.brief === 'string' && value.brief.length <= 20000 && Array.isArray(value.notes) && value.notes.length <= 100 && value.notes.every((note) => object(note) && Object.keys(note).every((key) => ['targetId', 'text'].includes(key)) && typeof note.targetId === 'string' && typeof note.text === 'string' && note.text.length <= 4000);
 }
 function assetIds(content: any): string[] {
-  return [content.brochure?.agencyLogoAssetId, content.hero?.assetId, ...(content.schedule || []).map((item: any) => item?.assetId), ...(content.spots || []).map((item: any) => item?.assetId)].filter((id): id is string => typeof id === 'string' && id.length > 0);
+  return [content.cover?.assetId, ...(content.days || []).map((item: any) => item?.photo?.assetId), ...(content.places || []).map((item: any) => item?.photo?.assetId)].filter((id): id is string => typeof id === 'string' && id.length > 0);
 }
 async function cleanUploadOrphans(dataDir: string, referenced: string[]) {
   const known = new Set(referenced);
@@ -126,22 +128,22 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     return store.workspace();
   });
 
-  app.get<{ Querystring: { cursor?: string; limit?: string } }>('/api/v1/itineraries', async (request) => {
+  app.get<{ Querystring: { cursor?: string; limit?: string } }>('/api/v1/itineraries', async (request, reply) => {
     const limit = Math.max(1, Math.min(100, Number(request.query.limit) || 50));
-    const items = store.listItineraries(request.query.cursor || null, limit);
-    return { items, nextCursor: items.length === limit ? items.at(-1)?.id || null : null };
+    const page = store.listItineraries(request.query.cursor || null, limit);
+    return page || reply.code(422).send(error('INVALID_CURSOR', 'The list cursor is not valid.'));
   });
   app.post<{ Body: unknown }>('/api/v1/itineraries', async (request, reply) => {
     const body = request.body;
     if (!object(body) || Object.keys(body).some((key) => !['mode', 'draftContent', 'languageContext', 'writingContext'].includes(key))) return reply.code(422).send(error('INVALID_REQUEST', 'Create request fields are invalid.'));
     if (body.mode !== undefined && !modes.has(body.mode as ItineraryMode)) return reply.code(422).send(error('INVALID_MODE', 'Choose a supported itinerary mode.'));
-    const content = body.draftContent === undefined ? createBlankDraft((body.mode || 'half_day') as ItineraryMode, store.workspace().profile as Record<string, unknown>) : body.draftContent;
+    const content = body.draftContent === undefined ? createBlankDraft((body.mode || 'half_day') as ItineraryMode) : body.draftContent;
     const checked = validateDraft(content);
     if (!checked.ok) return reply.code(422).send(error('INVALID_DOCUMENT', 'The draft does not match the canonical content schema.', checked.errors));
-    if (body.mode !== undefined && checked.value.brochure.itineraryMode !== body.mode) return reply.code(422).send(error('MODE_MISMATCH', 'The requested mode must match the canonical draft mode.'));
-    const language = body.languageContext === undefined ? { ...defaultLanguage, outputLanguage: checked.value.brochure.outputLanguage } : body.languageContext;
+    if (body.mode !== undefined && checked.value.trip.mode !== body.mode) return reply.code(422).send(error('MODE_MISMATCH', 'The requested mode must match the canonical draft mode.'));
+    const language = body.languageContext === undefined ? { ...defaultLanguage, outputLanguage: checked.value.trip.language } : body.languageContext;
     const writing = body.writingContext === undefined ? defaultWriting : body.writingContext;
-    if (!validLanguage(language, checked.value.brochure.outputLanguage)) return reply.code(422).send(error('INVALID_LANGUAGE_CONTEXT', 'Language metadata must match the canonical output locale.'));
+    if (!validLanguage(language, checked.value.trip.language)) return reply.code(422).send(error('INVALID_LANGUAGE_CONTEXT', 'Language metadata must match the canonical output locale.'));
     if (!validWriting(writing)) return reply.code(422).send(error('INVALID_WRITING_CONTEXT', 'Writing context is invalid.'));
     if (assetIds(checked.value).some((id) => !store.getAsset(id))) return reply.code(422).send(error('ASSET_INVALID', 'Every draft asset reference must belong to this workspace.'));
     const record = store.createItinerary(checked.value, language, writing);
@@ -158,7 +160,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     if (!previous) return reply.code(404).send(error('NOT_FOUND', 'Itinerary not found.'));
     const checked = validateDraft(body.draftContent);
     if (!checked.ok) return reply.code(422).send(error('INVALID_DOCUMENT', 'The draft does not match the canonical content schema.', checked.errors));
-    if (!validLanguage(body.languageContext, checked.value.brochure.outputLanguage)) return reply.code(422).send(error('INVALID_LANGUAGE_CONTEXT', 'Language metadata must match the canonical output locale.'));
+    if (!validLanguage(body.languageContext, checked.value.trip.language)) return reply.code(422).send(error('INVALID_LANGUAGE_CONTEXT', 'Language metadata must match the canonical output locale.'));
     if (!validWriting(body.writingContext)) return reply.code(422).send(error('INVALID_WRITING_CONTEXT', 'Writing context is invalid.'));
     if (assetIds(checked.value).some((id) => !store.getAsset(id))) return reply.code(422).send(error('ASSET_INVALID', 'Every draft asset reference must belong to this workspace.'));
     const record = store.updateItinerary(request.params.id, Number(body.expectedRevision), checked.value, body.languageContext, body.writingContext);
@@ -172,7 +174,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     const record = store.getItinerary(request.params.id);
     if (!record) return reply.code(404).send(error('NOT_FOUND', 'Itinerary not found.'));
     if (record.revision !== body.expectedRevision) return reply.code(409).send(error('REVISION_CONFLICT', 'Save the current draft before previewing.', { currentRevision: record.revision }));
-    const result = await renderSavedDraftPreview(record, store, dataDir, options.renderStylesheetPath);
+    const result = await (options.renderPreview ?? renderSavedDraftPreview)(record, store, dataDir, options.renderStylesheetPath);
     if (!result.ok) return reply.code(result.status).send(error('PREVIEW_BLOCKED', 'Preview cannot be rendered safely.', { errors: result.errors, warnings: result.warnings }));
     if (store.getItinerary(record.id)?.revision !== record.revision) return reply.code(409).send(error('REVISION_CONFLICT', 'The draft changed while preview was rendering; save and preview again.'));
     return { itineraryId: record.id, revision: record.revision, html: result.html, publishReady: result.publishReady, errors: result.errors, warnings: result.warnings, scheduleVerification: result.scheduleVerification };
@@ -181,7 +183,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
   app.post<{ Params: { id: string }; Body: unknown }>('/api/v1/itineraries/:id/publish', async (request, reply) => {
     const body = request.body;
     if (!object(body) || Object.keys(body).some((key) => !['operationId', 'expectedRevision'].includes(key)) || typeof body.operationId !== 'string' || !/^[0-9a-f-]{36}$/i.test(body.operationId) || !Number.isInteger(body.expectedRevision)) return reply.code(422).send(error('INVALID_REQUEST', 'Publish operation ID and expected revision are required.'));
-    const result = await publishSavedRevision({ store, itineraryId: request.params.id, expectedRevision: Number(body.expectedRevision), operationId: body.operationId, dataDir, stylesheetPath: options.renderStylesheetPath, shareOrigin: trustedShareOrigin, afterPromote: options.afterPublicationPromote });
+    const result = await publishSavedRevision({ store, itineraryId: request.params.id, expectedRevision: Number(body.expectedRevision), operationId: body.operationId, dataDir, stylesheetPath: options.renderStylesheetPath, shareOrigin: trustedShareOrigin, afterPromote: options.afterPublicationPromote, render: options.renderPreview });
     if (result.kind === 'missing') return reply.code(404).send(error('NOT_FOUND', 'Itinerary not found.'));
     if (result.kind === 'stale') return reply.code(409).send(error('REVISION_CONFLICT', 'Save the current draft before publishing.', { currentRevision: result.revision }));
     if (result.kind === 'operation_conflict') return reply.code(409).send(error('PUBLISH_OPERATION_CONFLICT', 'This operation ID was already used with different publication state.'));
@@ -249,7 +251,12 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
   app.get<{ Params: { id: string } }>('/api/v1/assets/:id', async (request, reply) => {
     const asset = store.getAsset(request.params.id);
     if (!asset) return reply.code(404).send(error('NOT_FOUND', 'Asset not found.'));
-    const bytes = await readFile(path.join(dataDir, 'assets', asset.storage_key));
+    let bytes: Buffer;
+    try { bytes = await readFile(path.join(dataDir, 'assets', asset.storage_key)); }
+    catch (cause) {
+      if ((cause as NodeJS.ErrnoException)?.code === 'ENOENT') return reply.code(404).send(error('ASSET_FILE_MISSING', 'The asset record exists but its file is missing from storage.'));
+      throw cause;
+    }
     return reply.header('content-type', asset.mime).header('content-length', String(bytes.length)).header('x-content-type-options', 'nosniff').send(bytes);
   });
 

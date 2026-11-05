@@ -39,9 +39,9 @@ async function fixture(t: any, options: { dailyOperations?: number; operationsPe
 
 async function createDraft(app: Awaited<ReturnType<typeof createApp>>, mode: 'full_day' | 'destination_guide' = 'full_day') {
   const content = createBlankDraft(mode, {}) as WebItineraryContent;
-  content.brochure.outputLanguage = 'en';
-  content.brochure.tripTitle = 'AI test'; content.brochure.destination = 'Kyoto'; content.brochure.country = 'Japan';
-  if (mode === 'destination_guide') content.spots.push({ id: crypto.randomUUID(), groupLabel: 'Kyoto', name: 'Garden', area: 'East', category: 'garden', description: '', suggestedDuration: '', bestTimeToVisit: '', gettingThere: '', tips: [''], nearbyPairing: null, assetId: null, photoAttribution: null } as any);
+  content.trip.language = 'en';
+  content.trip.title = 'AI test'; content.trip.destination = 'Kyoto'; content.trip.country = 'Japan';
+  if (mode === 'destination_guide') content.places.push({ id: crypto.randomUUID(), group: 'Kyoto', name: 'Garden', area: 'East', description: '', tips: [], gettingThere: null, suggestedDuration: null, bestTime: null, nearby: null, photo: null });
   const response = await app.inject({ method: 'POST', url: '/api/v1/itineraries', headers, payload: { mode, draftContent: content, languageContext: { requestedLanguage: 'en', outputLanguage: 'en', source: 'explicit' }, writingContext: { brief: 'A quiet garden trip with local cultural context and practical transit notes for a couple visiting the region.', notes: [{ targetId: 'itinerary', text: 'The north entrance is quiet in the morning.' }] } } });
   assert.equal(response.statusCode, 201, response.body);
   return response.json();
@@ -64,11 +64,11 @@ test('overview/description return proposals and never mutate canonical draft; op
   assert.equal(provider.calls.length, 1);
   assert.deepEqual((await app.inject({ url: `/api/v1/itineraries/${record.id}` })).json().draftContent, before.json().draftContent);
 
-  const description = await app.inject({ method: 'POST', url: `/api/v1/itineraries/${record.id}/ai/description`, headers, payload: { ...request, operationId: crypto.randomUUID(), target: { kind: 'activity', id: record.draftContent.schedule[0].activities[0].id } } });
+  const description = await app.inject({ method: 'POST', url: `/api/v1/itineraries/${record.id}/ai/description`, headers, payload: { ...request, operationId: crypto.randomUUID(), target: { kind: 'activity', id: record.draftContent.days[0].activities[0].id } } });
   assert.equal(description.statusCode, 200, description.body);
-  assert.deepEqual(description.json().target, { kind: 'activity', id: record.draftContent.schedule[0].activities[0].id });
-  assert.deepEqual(provider.calls[1].context.target, { kind: 'activity', title: '', type: 'sightseeing', area: null, category: null, location: '' });
-  assert.equal((await app.inject({ url: `/api/v1/itineraries/${record.id}` })).json().draftContent.overview.summary, '');
+  assert.deepEqual(description.json().target, { kind: 'activity', id: record.draftContent.days[0].activities[0].id });
+  assert.deepEqual(provider.calls[1].context.target, { kind: 'activity', title: '', activityKind: 'sightseeing', area: null, location: null });
+  assert.equal((await app.inject({ url: `/api/v1/itineraries/${record.id}` })).json().draftContent.summary, '');
 });
 
 test('unresolved locale, stale revision and nonexistent targets are rejected before provider dispatch', async (t) => {
@@ -86,7 +86,7 @@ test('unresolved locale, stale revision and nonexistent targets are rejected bef
 test('language resolution uses only saved brief and factual notes and returns unresolved on short input', async (t) => {
   const { app } = await fixture(t);
   const record = await createDraft(app);
-  const unresolved = await app.inject({ method: 'PATCH', url: `/api/v1/itineraries/${record.id}`, headers, payload: { expectedRevision: 1, draftContent: { ...record.draftContent, brochure: { ...record.draftContent.brochure, outputLanguage: null } }, languageContext: { requestedLanguage: 'auto', outputLanguage: null, source: 'unresolved' }, writingContext: { brief: 'Kyoto', notes: [] } } });
+  const unresolved = await app.inject({ method: 'PATCH', url: `/api/v1/itineraries/${record.id}`, headers, payload: { expectedRevision: 1, draftContent: { ...record.draftContent, trip: { ...record.draftContent.trip, language: null } }, languageContext: { requestedLanguage: 'auto', outputLanguage: null, source: 'unresolved' }, writingContext: { brief: 'Kyoto', notes: [] } } });
   assert.equal(unresolved.statusCode, 200);
   const resolve = await app.inject({ method: 'POST', url: `/api/v1/itineraries/${record.id}/language/resolve`, headers, payload: { expectedRevision: 2 } });
   assert.equal(resolve.statusCode, 200); assert.equal(resolve.json().status, 'unresolved'); assert.equal(resolve.json().code, 'LANGUAGE_UNRESOLVED');
@@ -138,9 +138,9 @@ test('live-test budget ledger and idempotent suggestion survive server restart',
   assert.equal(replay.statusCode, 200); assert.equal(replay.json().replayed, true); assert.deepEqual(replay.json().target, { kind: 'overview' }); assert.equal(provider.calls.length, 1);
 });
 
-test('spot description replay preserves the stable target ID', async (t) => {
+test('place description replay preserves the stable target ID', async (t) => {
   const { app, provider } = await fixture(t); const record = await createDraft(app, 'destination_guide');
-  const operationId = crypto.randomUUID(); const target = { kind: 'spot' as const, id: record.draftContent.spots[0].id };
+  const operationId = crypto.randomUUID(); const target = { kind: 'place' as const, id: record.draftContent.places[0].id };
   const payload = { operationId, expectedRevision: 1, target }; const route = `/api/v1/itineraries/${record.id}/ai/description`;
   const first = await app.inject({ method: 'POST', url: route, headers, payload }); assert.equal(first.statusCode, 200); assert.deepEqual(first.json().target, target);
   const replay = await app.inject({ method: 'POST', url: route, headers, payload });
@@ -177,7 +177,7 @@ test('duplicate inflight request returns pending, then replay returns the comple
   const gate = new Promise<void>(resolve => { finish = resolve; }); const started = new Promise<void>(resolve => { entered = resolve; });
   provider.beforeReturn = async () => { entered(); await gate; };
   const { app } = await fixture(t, { provider }); const record = await createDraft(app);
-  const operationId = crypto.randomUUID(); const request = { operationId, expectedRevision: 1, target: { kind: 'activity' as const, id: record.draftContent.schedule[0].activities[0].id } };
+  const operationId = crypto.randomUUID(); const request = { operationId, expectedRevision: 1, target: { kind: 'activity' as const, id: record.draftContent.days[0].activities[0].id } };
   const route = `/api/v1/itineraries/${record.id}/ai/description`;
   const first = app.inject({ method: 'POST', url: route, headers, payload: request }); await started;
   const pending = await app.inject({ method: 'POST', url: route, headers, payload: request });
@@ -256,13 +256,13 @@ test('ambiguous provider timeout is not retried or double-dispatched', async (t)
 test('same operation ID with different target conflicts without another provider call', async (t) => {
   const { app, provider } = await fixture(t);
   const record = await createDraft(app);
-  const changed = structuredClone(record.draftContent); changed.schedule[0].activities.push({ ...changed.schedule[0].activities[0], id: crypto.randomUUID(), title: 'Second activity' });
+  const changed = structuredClone(record.draftContent); changed.days[0].activities.push({ ...changed.days[0].activities[0], id: crypto.randomUUID(), title: 'Second activity' });
   const saved = await app.inject({ method: 'PATCH', url: `/api/v1/itineraries/${record.id}`, headers, payload: { expectedRevision: 1, draftContent: changed, languageContext: record.languageContext, writingContext: record.writingContext } });
   assert.equal(saved.statusCode, 200);
   const operationId = crypto.randomUUID(); const route = `/api/v1/itineraries/${record.id}/ai/description`;
-  const first = await app.inject({ method: 'POST', url: route, headers, payload: { operationId, expectedRevision: 2, target: { kind: 'activity', id: changed.schedule[0].activities[0].id } } });
+  const first = await app.inject({ method: 'POST', url: route, headers, payload: { operationId, expectedRevision: 2, target: { kind: 'activity', id: changed.days[0].activities[0].id } } });
   assert.equal(first.statusCode, 200);
-  const mismatch = await app.inject({ method: 'POST', url: route, headers, payload: { operationId, expectedRevision: 2, target: { kind: 'activity', id: changed.schedule[0].activities[1].id } } });
+  const mismatch = await app.inject({ method: 'POST', url: route, headers, payload: { operationId, expectedRevision: 2, target: { kind: 'activity', id: changed.days[0].activities[1].id } } });
   assert.equal(mismatch.statusCode, 409); assert.equal(mismatch.json().error.code, 'AI_OPERATION_CONFLICT'); assert.equal(provider.calls.length, 1);
 });
 
@@ -270,10 +270,10 @@ test('server rechecks target after generation and rejects a deleted target', asy
   const provider = new FakeProvider();
   const { app } = await fixture(t, { provider }); const record = await createDraft(app, 'destination_guide'); const store = (app as any).store;
   provider.beforeReturn = async () => {
-    const latest = store.getItinerary(record.id); const changed = structuredClone(latest.draftContent); changed.spots = [];
+    const latest = store.getItinerary(record.id); const changed = structuredClone(latest.draftContent); changed.places = [];
     store.updateItinerary(record.id, latest.revision, changed, latest.languageContext, latest.writingContext);
   };
-  const response = await app.inject({ method: 'POST', url: `/api/v1/itineraries/${record.id}/ai/description`, headers, payload: { operationId: crypto.randomUUID(), expectedRevision: 1, target: { kind: 'spot', id: record.draftContent.spots[0].id } } });
+  const response = await app.inject({ method: 'POST', url: `/api/v1/itineraries/${record.id}/ai/description`, headers, payload: { operationId: crypto.randomUUID(), expectedRevision: 1, target: { kind: 'place', id: record.draftContent.places[0].id } } });
   assert.equal(response.statusCode, 409); assert.equal(response.json().error.code, 'AI_RESULT_STALE');
 });
 
@@ -298,11 +298,11 @@ test('stale target result is rejected after provider work and canonical data rem
   provider.beforeReturn = async () => {
     const latest = stored.getItinerary(record.id);
     const changed = structuredClone(latest.draftContent);
-    changed.spots = [];
+    changed.places = [];
     stored.updateItinerary(record.id, latest.revision, changed, latest.languageContext, latest.writingContext);
   };
-  const response = await app.inject({ method: 'POST', url: `/api/v1/itineraries/${record.id}/ai/description`, headers, payload: { operationId: crypto.randomUUID(), expectedRevision: 1, target: { kind: 'spot', id: record.draftContent.spots[0].id } } });
+  const response = await app.inject({ method: 'POST', url: `/api/v1/itineraries/${record.id}/ai/description`, headers, payload: { operationId: crypto.randomUUID(), expectedRevision: 1, target: { kind: 'place', id: record.draftContent.places[0].id } } });
   assert.equal(response.statusCode, 409); assert.equal(response.json().error.code, 'AI_RESULT_STALE');
   assert.equal(provider.calls.length, 1);
-  assert.deepEqual((await app.inject({ url: `/api/v1/itineraries/${record.id}` })).json().draftContent.spots, []);
+  assert.deepEqual((await app.inject({ url: `/api/v1/itineraries/${record.id}` })).json().draftContent.places, []);
 });

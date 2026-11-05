@@ -21,9 +21,10 @@ test('blank draft/profile persist across server restart and CAS preserves one wi
   const created = await f.app.inject({ method: 'POST', url: '/api/v1/itineraries', headers, payload: { mode: 'full_day' } });
   assert.equal(created.statusCode, 201);
   const record = created.json();
-  assert.equal(record.draftContent.brochure.agencyName, '');
+  assert.equal(record.draftContent.schemaVersion, 'web-2.0.0');
+  assert.equal(record.schemaVersion, 'web-2.0.0');
   const patchedContent = structuredClone(record.draftContent);
-  patchedContent.brochure.tripTitle = 'Kyoto walk';
+  patchedContent.trip.title = 'Kyoto walk';
   const payload = { expectedRevision: 1, draftContent: patchedContent, languageContext: record.languageContext, writingContext: record.writingContext };
   const results = await Promise.all([
     f.app.inject({ method: 'PATCH', url: `/api/v1/itineraries/${record.id}`, headers, payload }),
@@ -34,7 +35,7 @@ test('blank draft/profile persist across server restart and CAS preserves one wi
   assert.equal(profile.statusCode, 200);
   await f.restart();
   const reopened = await f.app.inject({ method: 'GET', url: `/api/v1/itineraries/${record.id}` });
-  assert.equal(reopened.json().draftContent.brochure.tripTitle, 'Kyoto walk');
+  assert.equal(reopened.json().draftContent.trip.title, 'Kyoto walk');
   assert.equal(reopened.json().revision, 2);
   assert.equal((await f.app.inject({ url: '/api/v1/itinerary-engine/profile' })).json().profile.agencyName, 'North Star');
 });
@@ -44,7 +45,7 @@ test('creates structurally valid incomplete drafts for all four modes', async (t
   for (const mode of ['half_day', 'full_day', 'multi_day', 'destination_guide']) {
     const response = await f.app.inject({ method: 'POST', url: '/api/v1/itineraries', headers, payload: { mode } });
     assert.equal(response.statusCode, 201, `${mode}: ${response.body}`);
-    assert.equal(response.json().draftContent.brochure.itineraryMode, mode);
+    assert.equal(response.json().draftContent.trip.mode, mode);
   }
   const first = await f.app.inject({ url: '/api/v1/itineraries?limit=2' });
   assert.equal(first.json().items.length, 2);
@@ -69,13 +70,13 @@ test('rejects invalid documents, metadata injection, conflicts and missing write
   const foreignWorkspace = randomUUID();
   const timestamp = new Date().toISOString();
   store.db.prepare('INSERT INTO workspaces VALUES(?,?,1,?,?)').run(foreignWorkspace, JSON.stringify({ agencyName: 'Foreign', agencyContact: '', agencyLogoAssetId: null }), timestamp, timestamp);
-  store.db.prepare('INSERT INTO itineraries VALUES(?,?,?,1,?,?,?,?,?)').run('foreign-itinerary', foreignWorkspace, 'web-1.0.0', JSON.stringify(record.draftContent), JSON.stringify(record.languageContext), JSON.stringify(record.writingContext), timestamp, timestamp);
+  store.db.prepare('INSERT INTO itineraries VALUES(?,?,?,1,?,?,?,?,?)').run('foreign-itinerary', foreignWorkspace, 'web-2.0.0', JSON.stringify(record.draftContent), JSON.stringify(record.languageContext), JSON.stringify(record.writingContext), timestamp, timestamp);
   const foreignAsset = randomUUID();
   store.db.prepare('INSERT INTO assets VALUES(?,?,?,?,?,?,?,?,?)').run(foreignAsset, foreignWorkspace, `${foreignAsset}.png`, 'image/png', 1, 1, 1, 'private.png', timestamp);
   assert.equal((await f.app.inject({ url: '/api/v1/itineraries/foreign-itinerary' })).statusCode, 404);
   assert.equal((await f.app.inject({ url: `/api/v1/assets/${foreignAsset}` })).statusCode, 404);
   const invalidAssetDraft = structuredClone(record.draftContent);
-  invalidAssetDraft.brochure.agencyLogoAssetId = 'missing-asset';
+  invalidAssetDraft.cover = { assetId: 'missing-asset', credit: null };
   const brokenReference = await f.app.inject({ method: 'POST', url: '/api/v1/itineraries', headers, payload: { mode: 'half_day', draftContent: invalidAssetDraft } });
   assert.equal(brokenReference.statusCode, 422);
   const bad = await f.app.inject({ method: 'PATCH', url: `/api/v1/itineraries/${record.id}`, headers, payload: { expectedRevision: 1, draftContent: { ...record.draftContent, unexpected: true }, languageContext: record.languageContext, writingContext: record.writingContext } });
@@ -176,15 +177,15 @@ test('a stopped complete data-root copy restores draft, profile and asset refere
   assert.equal(profile.statusCode, 200);
   const created = await app.inject({ method: 'POST', url: '/api/v1/itineraries', headers, payload: { mode: 'destination_guide' } });
   const record = created.json();
-  const changed = structuredClone(record.draftContent); changed.brochure.tripTitle = 'Restored guide'; changed.brochure.agencyLogoAssetId = assetId;
+  const changed = structuredClone(record.draftContent); changed.trip.title = 'Restored guide'; changed.cover = { assetId, credit: null };
   const saved = await app.inject({ method: 'PATCH', url: `/api/v1/itineraries/${record.id}`, headers, payload: { expectedRevision: 1, draftContent: changed, languageContext: record.languageContext, writingContext: record.writingContext } });
   assert.equal(saved.statusCode, 200);
   await app.close();
   await cp(source, backup, { recursive: true });
   app = await createApp({ dataDir: backup });
   const reopened = await app.inject({ url: `/api/v1/itineraries/${record.id}` });
-  assert.equal(reopened.json().draftContent.brochure.tripTitle, 'Restored guide');
-  assert.equal(reopened.json().draftContent.brochure.agencyLogoAssetId, assetId);
+  assert.equal(reopened.json().draftContent.trip.title, 'Restored guide');
+  assert.equal(reopened.json().draftContent.cover.assetId, assetId);
   assert.equal((await app.inject({ url: '/api/v1/assets' })).json().items[0].id, assetId);
   assert.equal((await app.inject({ url: '/api/v1/itinerary-engine/profile' })).json().profile.agencyLogoAssetId, assetId);
   assert.equal((await app.inject({ url: `/api/v1/assets/${assetId}` })).statusCode, 200);
@@ -203,4 +204,78 @@ test('startup removes only unreferenced engine-owned UUID upload files', async (
   assert.equal(await access(path.join(dataDir, 'assets', `${uuid}.png`)).then(() => true, () => false), false);
   assert.equal(await access(path.join(dataDir, 'tmp', `${uuid}.upload`)).then(() => true, () => false), false);
   assert.equal(await access(path.join(dataDir, 'assets', 'manual-not-owned.txt')).then(() => true, () => false), true);
+});
+
+test('draft list is newest-updated first with opaque cursors; ties page without gaps; forged cursors are rejected', async (t) => {
+  const f = await fixture(t);
+  const ids: string[] = [];
+  for (const mode of ['half_day', 'full_day', 'multi_day']) {
+    const created = await f.app.inject({ method: 'POST', url: '/api/v1/itineraries', headers, payload: { mode } });
+    assert.equal(created.statusCode, 201);
+    ids.push(created.json().id);
+  }
+  const db = (f.app as any).store.db;
+  ['01', '02', '03'].forEach((second, index) => db.prepare('UPDATE itineraries SET updated_at=? WHERE id=?').run(`2026-01-01T00:00:${second}.000Z`, ids[index]));
+  const list = async (query: string) => (await f.app.inject({ url: `/api/v1/itineraries${query}` })).json();
+  assert.deepEqual((await list('')).items.map((item: any) => item.id), [ids[2], ids[1], ids[0]]);
+
+  const touched = (await f.app.inject({ url: `/api/v1/itineraries/${ids[0]}` })).json();
+  const content = structuredClone(touched.draftContent); content.trip.title = 'Touched';
+  assert.equal((await f.app.inject({ method: 'PATCH', url: `/api/v1/itineraries/${ids[0]}`, headers, payload: { expectedRevision: touched.revision, draftContent: content, languageContext: touched.languageContext, writingContext: touched.writingContext } })).statusCode, 200);
+  const pageOne = await list('?limit=2');
+  assert.deepEqual(pageOne.items.map((item: any) => [item.id, item.mode, item.title]), [[ids[0], 'half_day', 'Touched'], [ids[2], 'multi_day', '']]);
+  assert.ok(pageOne.nextCursor);
+  assert.equal(pageOne.nextCursor.includes(ids[2]), false);
+  const pageTwo = await list(`?limit=2&cursor=${pageOne.nextCursor}`);
+  assert.deepEqual(pageTwo.items.map((item: any) => item.id), [ids[1]]);
+  assert.equal(pageTwo.nextCursor, null);
+
+  db.prepare('UPDATE itineraries SET updated_at=? WHERE id IN (?,?)').run('2026-01-01T00:00:09.000Z', ids[1], ids[2]);
+  const seen: string[] = [];
+  let cursor = '';
+  for (let guard = 0; guard < 5; guard++) {
+    const page = await list(`?limit=1${cursor ? `&cursor=${cursor}` : ''}`);
+    seen.push(...page.items.map((item: any) => item.id));
+    if (!page.nextCursor) break;
+    cursor = page.nextCursor;
+  }
+  assert.equal(seen.length, 3);
+  assert.equal(new Set(seen).size, 3);
+
+  for (const forged of ['not-a-cursor', ids[0], Buffer.from('no-separator').toString('base64url')]) {
+    const response = await f.app.inject({ url: `/api/v1/itineraries?cursor=${encodeURIComponent(forged)}` });
+    assert.equal(response.statusCode, 422, forged);
+    assert.equal(response.json().error.code, 'INVALID_CURSOR');
+  }
+});
+
+test('an asset record whose file is missing from storage returns 404 ASSET_FILE_MISSING instead of a server error', async (t) => {
+  const f = await fixture(t);
+  const png = await sharp({ create: { width: 8, height: 8, channels: 3, background: '#18a999' } }).png().toBuffer();
+  const boundary = 'r2-missing-file-boundary';
+  const payload = Buffer.concat([Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="image"; filename="a.png"\r\nContent-Type: image/png\r\n\r\n`), png, Buffer.from(`\r\n--${boundary}--\r\n`)]);
+  const uploaded = await f.app.inject({ method: 'POST', url: '/api/v1/assets', headers: { origin: headers.origin, 'x-engine-request': '1', 'content-type': `multipart/form-data; boundary=${boundary}` }, payload });
+  assert.equal(uploaded.statusCode, 201, uploaded.body);
+  assert.equal((await f.app.inject({ url: `/api/v1/assets/${uploaded.json().id}` })).statusCode, 200);
+  for (const name of await readdir(path.join(f.dataDir, 'assets'))) await rm(path.join(f.dataDir, 'assets', name));
+  const missing = await f.app.inject({ url: `/api/v1/assets/${uploaded.json().id}` });
+  assert.equal(missing.statusCode, 404);
+  assert.equal(missing.json().error.code, 'ASSET_FILE_MISSING');
+});
+
+test('create and update store the canonical schema version, and photo references must belong to the workspace', async (t) => {
+  const f = await fixture(t);
+  const created = (await f.app.inject({ method: 'POST', url: '/api/v1/itineraries', headers, payload: { mode: 'destination_guide' } })).json();
+  const db = (f.app as any).store.db;
+  assert.equal(db.prepare('SELECT schema_version FROM itineraries WHERE id=?').get(created.id).schema_version, 'web-2.0.0');
+  db.prepare("UPDATE itineraries SET schema_version='web-1.0.0' WHERE id=?").run(created.id);
+  const response = await f.app.inject({ method: 'PATCH', url: `/api/v1/itineraries/${created.id}`, headers, payload: { expectedRevision: 1, draftContent: created.draftContent, languageContext: created.languageContext, writingContext: created.writingContext } });
+  assert.equal(response.statusCode, 200, response.body);
+  assert.equal(response.json().schemaVersion, 'web-2.0.0');
+  assert.equal(db.prepare('SELECT schema_version FROM itineraries WHERE id=?').get(created.id).schema_version, 'web-2.0.0');
+  const withForeignPhoto = structuredClone(created.draftContent);
+  withForeignPhoto.places = [{ id: randomUUID(), group: null, name: 'Garden', area: 'East', description: '', tips: [], gettingThere: null, suggestedDuration: null, bestTime: null, nearby: null, photo: { assetId: 'missing-asset', credit: null } }];
+  const rejected = await f.app.inject({ method: 'PATCH', url: `/api/v1/itineraries/${created.id}`, headers, payload: { expectedRevision: 2, draftContent: withForeignPhoto, languageContext: created.languageContext, writingContext: created.writingContext } });
+  assert.equal(rejected.statusCode, 422);
+  assert.equal(rejected.json().error.code, 'ASSET_INVALID');
 });

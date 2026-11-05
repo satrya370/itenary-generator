@@ -6,7 +6,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import test from 'node:test';
 import sharp from 'sharp';
 import { createApp } from '../../src/server/app.js';
-import { createContent } from './fixtures.js';
+import { createContentV2 } from './fixtures-v2.js';
+import { stubRenderPreview } from './test-renderer.js';
 
 const headers = { origin: 'http://127.0.0.1:3000', 'x-engine-request': '1', 'content-type': 'application/json' };
 
@@ -14,15 +15,15 @@ async function setup(t: any, afterPublicArtifactRead?: () => Promise<void>) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), 'itinerary-cp025-'));
   const stylesheetPath = path.join(dataDir, 'brochure.css');
   await writeFile(stylesheetPath, 'body{font-family:sans-serif}.brochure{max-width:900px}');
-  let app = await createApp({ dataDir, renderStylesheetPath: stylesheetPath, shareOrigin: 'https://share.example.test', afterPublicArtifactRead }); let open = true;
+  let app = await createApp({ renderPreview: stubRenderPreview as any, dataDir, renderStylesheetPath: stylesheetPath, shareOrigin: 'https://share.example.test', afterPublicArtifactRead }); let open = true;
   const close = async () => { if (open) { await app.close(); open = false; } };
   t.after(async () => { await close(); await rm(dataDir, { recursive: true, force: true }); });
   const created = await app.inject({ method: 'POST', url: '/api/v1/itineraries', headers, payload: { mode: 'full_day' } });
   const blank = created.json();
-  const content = createContent('full_day', 'en');
+  const content = createContentV2('full_day', 'en');
   const record = await app.inject({ method: 'PATCH', url: `/api/v1/itineraries/${blank.id}`, headers, payload: { expectedRevision: blank.revision, draftContent: content, languageContext: { requestedLanguage: 'en', outputLanguage: 'en', source: 'explicit' }, writingContext: { brief: 'INTERNAL BRIEF MUST NOT PUBLISH', notes: [{ targetId: 'itinerary', text: 'Private source note.' }] } } });
   assert.equal(record.statusCode, 200, record.body);
-  return { get app() { return app; }, close, async restart() { await close(); app = await createApp({ dataDir, renderStylesheetPath: stylesheetPath, shareOrigin: 'https://share.example.test', afterPublicArtifactRead }); open = true; }, id: blank.id, revision: record.json().revision, content, dataDir, stylesheetPath };
+  return { get app() { return app; }, close, async restart() { await close(); app = await createApp({ renderPreview: stubRenderPreview as any, dataDir, renderStylesheetPath: stylesheetPath, shareOrigin: 'https://share.example.test', afterPublicArtifactRead }); open = true; }, id: blank.id, revision: record.json().revision, content, dataDir, stylesheetPath };
 }
 
 async function publish(app: any, id: string, expectedRevision: number, operationId = randomUUID()) {
@@ -85,7 +86,7 @@ test('republish updates current snapshot on same link; revoke permanently retire
   assert.notEqual(second.json().shareUrl, oldUrl);
   assert.equal((await f.app.inject({ url: `/i/${oldToken}` })).statusCode, 404);
   assert.equal((await f.app.inject({ url: `/i/${second.json().shareUrl.split('/').at(-1)}` })).statusCode, 200);
-  const changed = structuredClone(f.content); changed.brochure.tripTitle = 'New Ubud Journey';
+  const changed = structuredClone(f.content); changed.trip.title = 'New Ubud Journey';
   const save = await f.app.inject({ method: 'PATCH', url: `/api/v1/itineraries/${f.id}`, headers, payload: { expectedRevision: f.revision, draftContent: changed, languageContext: { requestedLanguage: 'en', outputLanguage: 'en', source: 'explicit' }, writingContext: { brief: '', notes: [] } } });
   assert.equal(save.statusCode, 200);
   const third = await publish(f.app, f.id, save.json().revision);
@@ -99,14 +100,14 @@ test('failed publish leaves the prior page/link intact; public lookup rejects un
   const f = await setup(t);
   const first = await publish(f.app, f.id, f.revision);
   const url = first.json().shareUrl as string; const token = url.split('/').at(-1)!;
-  const invalid = structuredClone(f.content); invalid.brochure.tripTitle = '';
+  const invalid = structuredClone(f.content); invalid.trip.title = '';
   const saved = await f.app.inject({ method: 'PATCH', url: `/api/v1/itineraries/${f.id}`, headers, payload: { expectedRevision: f.revision, draftContent: invalid, languageContext: { requestedLanguage: 'en', outputLanguage: 'en', source: 'explicit' }, writingContext: { brief: '', notes: [] } } });
   const response = await publish(f.app, f.id, saved.json().revision);
   assert.equal(response.statusCode, 422);
   assert.equal((await f.app.inject({ url: `/i/${token}` })).statusCode, 200);
   assert.equal((await f.app.inject({ url: '/i/unknown-token' })).statusCode, 404);
 
-  const recoverable = structuredClone(f.content); recoverable.brochure.tripTitle = 'Storage failure recovery';
+  const recoverable = structuredClone(f.content); recoverable.trip.title = 'Storage failure recovery';
   const restoredDraft = await f.app.inject({ method: 'PATCH', url: `/api/v1/itineraries/${f.id}`, headers, payload: { expectedRevision: saved.json().revision, draftContent: recoverable, languageContext: { requestedLanguage: 'en', outputLanguage: 'en', source: 'explicit' }, writingContext: { brief: '', notes: [] } } });
   const db = (f.app as any).store.db;
   db.exec("CREATE TRIGGER injected_publish_failure BEFORE INSERT ON published_versions BEGIN SELECT RAISE(ABORT,'injected publish failure'); END");
@@ -141,7 +142,7 @@ test('stopped full-root backup restores active HTML/image links', async (t) => {
   await f.close();
   const backupDir = await mkdtemp(path.join(os.tmpdir(), 'itinerary-cp025-backup-'));
   await rm(backupDir, { recursive: true, force: true }); await cp(f.dataDir, backupDir, { recursive: true });
-  const restored = await createApp({ dataDir: backupDir, shareOrigin: 'https://share.example.test', renderStylesheetPath: path.join(backupDir, 'brochure.css') });
+  const restored = await createApp({ renderPreview: stubRenderPreview as any, dataDir: backupDir, shareOrigin: 'https://share.example.test', renderStylesheetPath: path.join(backupDir, 'brochure.css') });
   t.after(async () => { await restored.close(); await rm(backupDir, { recursive: true, force: true }); });
   assert.equal((await restored.inject({ url: `/i/${retiredToken}` })).statusCode, 404);
   assert.equal((await restored.inject({ url: `/i/${retiredToken}/og-image` })).statusCode, 404);
@@ -164,10 +165,10 @@ test('startup recovery preserves committed artifacts and terminalizes pending op
   const image = await sharp({ create: { width: 16, height: 12, channels: 3, background: '#227c9d' } }).jpeg().toBuffer();
   const publishedDir = path.join(f.dataDir, 'published'); await mkdir(publishedDir, { recursive: true });
   await writeFile(path.join(publishedDir, htmlKey), html); await writeFile(path.join(publishedDir, imageKey), image);
-  const content = createContent('full_day', 'en');
+  const content = createContentV2('full_day', 'en');
   store.db.prepare('INSERT INTO workspaces(id,profile_json,revision,created_at,updated_at) VALUES(?,?,1,?,?)').run(foreignWorkspace, JSON.stringify({ agencyName: 'Other workspace' }), createdAt, createdAt);
-  store.db.prepare('INSERT INTO itineraries(id,workspace_id,schema_version,revision,draft_json,language_json,writing_json,created_at,updated_at) VALUES(?,?,?,1,?,?,?,?,?)').run(itineraryId, foreignWorkspace, 'web-1.0.0', JSON.stringify(content), JSON.stringify({ requestedLanguage: 'en', outputLanguage: 'en', source: 'explicit' }), JSON.stringify({ brief: '', notes: [] }), createdAt, createdAt);
-  store.db.prepare('INSERT INTO published_versions(id,workspace_id,itinerary_id,source_revision,snapshot_json,schema_version,html_key,html_sha256,og_image_key,og_image_sha256,created_at) VALUES(?,?,?,1,?,?,?,?,?,?,?)').run(versionId, foreignWorkspace, itineraryId, JSON.stringify(content), 'web-1.0.0', htmlKey, createHash('sha256').update(html).digest('hex'), imageKey, createHash('sha256').update(image).digest('hex'), createdAt);
+  store.db.prepare('INSERT INTO itineraries(id,workspace_id,schema_version,revision,draft_json,language_json,writing_json,created_at,updated_at) VALUES(?,?,?,1,?,?,?,?,?)').run(itineraryId, foreignWorkspace, 'web-2.0.0', JSON.stringify(content), JSON.stringify({ requestedLanguage: 'en', outputLanguage: 'en', source: 'explicit' }), JSON.stringify({ brief: '', notes: [] }), createdAt, createdAt);
+  store.db.prepare('INSERT INTO published_versions(id,workspace_id,itinerary_id,source_revision,snapshot_json,schema_version,html_key,html_sha256,og_image_key,og_image_sha256,created_at) VALUES(?,?,?,1,?,?,?,?,?,?,?)').run(versionId, foreignWorkspace, itineraryId, JSON.stringify(content), 'web-2.0.0', htmlKey, createHash('sha256').update(html).digest('hex'), imageKey, createHash('sha256').update(image).digest('hex'), createdAt);
   store.db.prepare('INSERT INTO share_tokens(id,workspace_id,itinerary_id,token_value,token_sha256,created_at,revoked_at) VALUES(?,?,?,?,?,?,NULL)').run(tokenId, foreignWorkspace, itineraryId, token, createHash('sha256').update(token).digest('hex'), createdAt);
   store.db.prepare('INSERT INTO publication_state(workspace_id,itinerary_id,current_version_id,active_token_id,epoch,updated_at) VALUES(?,?,?,?,0,?)').run(foreignWorkspace, itineraryId, versionId, tokenId, createdAt);
   store.db.prepare("INSERT INTO publish_operations(id,workspace_id,itinerary_id,fingerprint,status,created_at,updated_at) VALUES(?,?,?,'foreign-pending','pending',?,?)").run(operationId, foreignWorkspace, itineraryId, createdAt, createdAt);
@@ -220,7 +221,7 @@ test('HTML and OG reads recheck active token/version after asynchronous file rea
 
   const third = await publish(f.app, f.id, f.revision);
   const thirdToken = third.json().shareUrl.split('/').at(-1)!;
-  const changed = structuredClone(f.content); changed.brochure.tripTitle = 'New version during read';
+  const changed = structuredClone(f.content); changed.trip.title = 'New version during read';
   const saved = await f.app.inject({
     method: 'PATCH', url: `/api/v1/itineraries/${f.id}`, headers,
     payload: { expectedRevision: f.revision, draftContent: changed, languageContext: { requestedLanguage: 'en', outputLanguage: 'en', source: 'explicit' }, writingContext: { brief: '', notes: [] } }
@@ -234,4 +235,47 @@ test('HTML and OG reads recheck active token/version after asynchronous file rea
   versionGate.release();
   assert.equal((await pendingOldVersion).statusCode, 404);
   assert.match((await f.app.inject({ url: `/i/${thirdToken}` })).body, /New version during read/);
+});
+
+test('a storage directory failure terminalizes the operation as failed instead of leaving it pending', async (t) => {
+  const f = await setup(t);
+  const publishedDir = path.join(f.dataDir, 'published');
+  await rm(publishedDir, { recursive: true, force: true });
+  await writeFile(publishedDir, 'not a directory');
+  const operationId = randomUUID();
+  const failed = await publish(f.app, f.id, f.revision, operationId);
+  assert.equal(failed.statusCode, 503, failed.body);
+  assert.equal(failed.json().error.code, 'PUBLISH_STORAGE_FAILED');
+  const row = (f.app as any).store.db.prepare('SELECT status,error_code FROM publish_operations WHERE id=?').get(operationId);
+  assert.deepEqual({ ...row }, { status: 'failed', error_code: 'PUBLISH_STORAGE_FAILED' });
+  await rm(publishedDir, { force: true });
+  await mkdir(publishedDir);
+  const retried = await publish(f.app, f.id, f.revision);
+  assert.equal(retried.statusCode, 200, retried.body);
+});
+
+test('an operation ID already held by another workspace is a conflict, not a server error', async (t) => {
+  const f = await setup(t);
+  const db = (f.app as any).store.db;
+  const foreignWorkspace = randomUUID(); const foreignItinerary = randomUUID(); const operationId = randomUUID(); const createdAt = new Date().toISOString();
+  db.prepare('INSERT INTO workspaces(id,profile_json,revision,created_at,updated_at) VALUES(?,?,1,?,?)').run(foreignWorkspace, '{}', createdAt, createdAt);
+  db.prepare('INSERT INTO itineraries(id,workspace_id,schema_version,revision,draft_json,language_json,writing_json,created_at,updated_at) VALUES(?,?,?,1,?,?,?,?,?)').run(foreignItinerary, foreignWorkspace, 'web-2.0.0', JSON.stringify(f.content), '{}', '{}', createdAt, createdAt);
+  db.prepare("INSERT INTO publish_operations(id,workspace_id,itinerary_id,fingerprint,status,created_at,updated_at) VALUES(?,?,?,'foreign','completed',?,?)").run(operationId, foreignWorkspace, foreignItinerary, createdAt, createdAt);
+  const response = await publish(f.app, f.id, f.revision, operationId);
+  assert.equal(response.statusCode, 409, response.body);
+  assert.equal(response.json().error.code, 'PUBLISH_OPERATION_CONFLICT');
+  assert.equal(Number(db.prepare('SELECT count(*) AS count FROM publish_operations WHERE workspace_id=?').get((f.app as any).store.workspaceId).count), 0);
+  assert.equal((await publish(f.app, f.id, f.revision)).statusCode, 200);
+});
+
+test('Open Graph tags and the stored snapshot come from the v2 trip title, summary and schema version', async (t) => {
+  const f = await setup(t);
+  const response = await publish(f.app, f.id, f.revision);
+  assert.equal(response.statusCode, 200, response.body);
+  const page = await f.app.inject({ url: `/i/${response.json().shareUrl.split('/').at(-1)}` });
+  assert.match(page.body, /property="og:title" content="Ubud in a day"/);
+  assert.match(page.body, /property="og:description" content="Explore the landscape and culture at an unhurried pace\."/);
+  const version = (f.app as any).store.db.prepare('SELECT schema_version,snapshot_json FROM published_versions').get();
+  assert.equal(version.schema_version, 'web-2.0.0');
+  assert.equal(JSON.parse(version.snapshot_json).schemaVersion, 'web-2.0.0');
 });

@@ -3,7 +3,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import { getLocaleCatalog } from '../../contracts/locale-catalogs.js';
 import type { LanguageContext } from '../../contracts/types.js';
 import { detectLanguage, explicitLanguage } from './language.js';
-import { ensureAiSchema } from './schema.js';
+import { recoverInterruptedAiOperations } from './schema.js';
 import { validateSuggestion } from './validation.js';
 import { MODEL_ID, ProviderFailure, type AiProvider, type ModelPricing, type ProviderUsage, type SuggestionContext } from './provider.js';
 import type { openStore } from '../store.js';
@@ -16,8 +16,8 @@ const MAX_PROMPT_TOKENS = 65_536;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type Store = ReturnType<typeof openStore>;
-interface AiRequest { operationId: string; expectedRevision: number; target?: { kind: 'activity' | 'spot'; id: string }; }
-interface OperationRow { operation_id: string; operation_kind: 'overview' | 'description'; target_kind: 'activity' | 'spot' | null; target_id: string | null; fingerprint: string; status: string; attempts: number; suggestion_text: string | null; error_code: string | null; actual_usd: number; prompt_tokens: number; completion_tokens: number; }
+interface AiRequest { operationId: string; expectedRevision: number; target?: { kind: 'activity' | 'place'; id: string }; }
+interface OperationRow { operation_id: string; operation_kind: 'overview' | 'description'; target_kind: 'activity' | 'place' | 'spot' | null; target_id: string | null; fingerprint: string; status: string; attempts: number; suggestion_text: string | null; error_code: string | null; actual_usd: number; prompt_tokens: number; completion_tokens: number; }
 interface ServiceError { status: number; code: string; message: string; fields?: unknown; }
 export interface AiServiceLimits { dailyOperations?: number; operationsPerMinute?: number; maxInFlight?: number; contextBytes?: number; maxPromptTokens?: number; timeoutMs?: number; }
 function isObject(value: unknown): value is Record<string, any> { return Boolean(value) && typeof value === 'object' && !Array.isArray(value); }
@@ -42,14 +42,14 @@ function costFromUsage(usage: ProviderUsage, pricing: ModelPricing): number | nu
 function findTarget(content: any, target?: AiRequest['target']) {
   if (!target) return null;
   if (target.kind === 'activity') {
-    for (const block of content.schedule || []) {
-      const activity = block.activities?.find((item: any) => item.id === target.id);
-      if (activity) return { kind: 'activity' as const, item: activity, block };
+    for (const day of content.days || []) {
+      const activity = day.activities?.find((item: any) => item.id === target.id);
+      if (activity) return { kind: 'activity' as const, item: activity, day };
     }
   }
-  if (target.kind === 'spot') {
-    const spot = (content.spots || []).find((item: any) => item.id === target.id);
-    if (spot) return { kind: 'spot' as const, item: spot };
+  if (target.kind === 'place') {
+    const place = (content.places || []).find((item: any) => item.id === target.id);
+    if (place) return { kind: 'place' as const, item: place };
   }
   return null;
 }
@@ -58,11 +58,10 @@ function buildSuggestionContext(record: any, task: 'overview' | 'description', t
   const content = record.draftContent;
   const relevantNotes = record.writingContext.notes.filter((note: any) => note.targetId === 'itinerary' || note.targetId === target?.id).map((note: any) => note.text);
   const common = {
-    destination: content.brochure.destination,
-    region: content.brochure.region,
-    country: content.brochure.country,
-    itineraryMode: content.brochure.itineraryMode,
-    themes: content.brochure.themes,
+    destination: content.trip.destination,
+    region: content.trip.region,
+    country: content.trip.country,
+    itineraryMode: content.trip.mode,
     brief: record.writingContext.brief,
     factualNotes: relevantNotes
   };
@@ -70,16 +69,16 @@ function buildSuggestionContext(record: any, task: 'overview' | 'description', t
   if (task === 'overview') {
     context = {
       ...common,
-      route: content.brochure.itineraryMode === 'destination_guide'
-        ? content.spots.map((spot: any) => ({ name: spot.name, area: spot.area, category: spot.category }))
-        : content.schedule.flatMap((block: any) => block.activities.map((activity: any) => ({ day: block.dayStart, title: activity.title, area: activity.area, category: activity.category })))
+      route: content.trip.mode === 'destination_guide'
+        ? content.places.map((place: any) => ({ name: place.name, area: place.area }))
+        : content.days.flatMap((day: any) => day.activities.map((activity: any) => ({ day: day.dayNumber, title: activity.title, area: activity.place, kind: activity.kind })))
     };
   } else {
     if (!target || !uuidPattern.test(target.id)) return err(422, 'AI_TARGET_INVALID', 'Select one existing activity or destination-guide place.');
     const found = findTarget(content, target);
     if (!found) return err(404, 'AI_TARGET_NOT_FOUND', 'The requested target no longer exists in this itinerary.');
-    if (found.kind === 'activity') context = { ...common, target: { kind: 'activity', title: found.item.title, type: found.item.type, area: found.item.area, category: found.item.category, location: found.block.location } };
-    else context = { ...common, target: { kind: 'spot', name: found.item.name, area: found.item.area, category: found.item.category, suggestedDuration: found.item.suggestedDuration, bestTimeToVisit: found.item.bestTimeToVisit, gettingThere: found.item.gettingThere, tips: found.item.tips, nearbyPairing: found.item.nearbyPairing } };
+    if (found.kind === 'activity') context = { ...common, target: { kind: 'activity', title: found.item.title, activityKind: found.item.kind, area: found.item.place, location: found.day.location } };
+    else context = { ...common, target: { kind: 'place', name: found.item.name, area: found.item.area, suggestedDuration: found.item.suggestedDuration, bestTime: found.item.bestTime, gettingThere: found.item.gettingThere, tips: found.item.tips, nearby: found.item.nearby } };
   }
   if (Buffer.byteLength(JSON.stringify(context), 'utf8') > contextMaxBytes) return err(422, 'AI_CONTEXT_TOO_LARGE', 'Shorten the brief or factual notes before requesting AI copy.');
   return context;
@@ -89,7 +88,7 @@ export class AiService {
   private readonly limits: Required<AiServiceLimits>;
   constructor(private readonly store: Store, private readonly provider: AiProvider, private readonly liveTest: boolean, limits: AiServiceLimits = {}) {
     this.limits = { dailyOperations: limits.dailyOperations ?? DAILY_LIMIT, operationsPerMinute: limits.operationsPerMinute ?? RATE_PER_MINUTE, maxInFlight: limits.maxInFlight ?? MAX_IN_FLIGHT, contextBytes: limits.contextBytes ?? CONTEXT_MAX_BYTES, maxPromptTokens: limits.maxPromptTokens ?? MAX_PROMPT_TOKENS, timeoutMs: limits.timeoutMs ?? 45_000 };
-    ensureAiSchema(store.db);
+    recoverInterruptedAiOperations(store.db);
   }
 
   contextSummary() {
@@ -129,11 +128,11 @@ export class AiService {
     if (record.languageContext.source === 'unresolved' || !safeLocale(locale)) return { error: err(422, 'LANGUAGE_UNRESOLVED', 'Choose or resolve the brochure language before requesting AI copy.') };
     if (!getLocaleCatalog(locale)) return { error: err(422, 'LOCALE_UNSUPPORTED', `No installed brochure catalog supports ${locale}.`) };
     if (task === 'overview' && body.target) return { error: err(422, 'AI_TARGET_INVALID', 'Overview generation does not accept a field target.') };
-    if (task === 'description' && (!body.target || !['activity', 'spot'].includes(body.target.kind))) return { error: err(422, 'AI_TARGET_INVALID', 'Description generation requires an activity or spot ID.') };
+    if (task === 'description' && (!body.target || !['activity', 'place'].includes(body.target.kind))) return { error: err(422, 'AI_TARGET_INVALID', 'Description generation requires an activity or place ID.') };
     const target = task === 'description' ? findTarget(record.draftContent, body.target) : null;
     if (task === 'description' && !target) return { error: err(404, 'AI_TARGET_NOT_FOUND', 'The requested target no longer exists in this itinerary.') };
-    if (target?.kind === 'activity' && !['half_day', 'full_day', 'multi_day'].includes(record.draftContent.brochure.itineraryMode)) return { error: err(422, 'AI_TARGET_INVALID', 'Activities are not available in destination-guide mode.') };
-    if (target?.kind === 'spot' && record.draftContent.brochure.itineraryMode !== 'destination_guide') return { error: err(422, 'AI_TARGET_INVALID', 'Guide places are not available in scheduled modes.') };
+    if (target?.kind === 'activity' && !['half_day', 'full_day', 'multi_day'].includes(record.draftContent.trip.mode)) return { error: err(422, 'AI_TARGET_INVALID', 'Activities are not available in destination-guide mode.') };
+    if (target?.kind === 'place' && record.draftContent.trip.mode !== 'destination_guide') return { error: err(422, 'AI_TARGET_INVALID', 'Guide places are not available in scheduled modes.') };
     const context = buildSuggestionContext(record, task, body.target, this.limits.contextBytes);
     if ('status' in context) return { error: context as ServiceError };
     const outputLimit = task === 'overview' ? 1536 : 1024;
@@ -285,7 +284,7 @@ export function registerAiRoutes(app: FastifyInstance, service: AiService) {
   });
   app.post<{ Params: { id: string }; Body: unknown }>('/api/v1/itineraries/:id/ai/description', async (request, reply) => {
     const body = request.body;
-    if (!isObject(body) || !hasOnlyKeys(body, ['operationId', 'expectedRevision', 'target']) || typeof body.operationId !== 'string' || !uuidPattern.test(body.operationId) || !Number.isInteger(body.expectedRevision) || !isObject(body.target) || !hasOnlyKeys(body.target, ['kind', 'id']) || !['activity', 'spot'].includes(String(body.target.kind)) || typeof body.target.id !== 'string') return reply.code(422).send({ error: { code: 'INVALID_REQUEST', message: 'Operation ID, expected revision and a stable target ID are required.' } });
+    if (!isObject(body) || !hasOnlyKeys(body, ['operationId', 'expectedRevision', 'target']) || typeof body.operationId !== 'string' || !uuidPattern.test(body.operationId) || !Number.isInteger(body.expectedRevision) || !isObject(body.target) || !hasOnlyKeys(body.target, ['kind', 'id']) || !['activity', 'place'].includes(String(body.target.kind)) || typeof body.target.id !== 'string') return reply.code(422).send({ error: { code: 'INVALID_REQUEST', message: 'Operation ID, expected revision and a stable target ID are required.' } });
     const result = await service.suggest(request.params.id, 'description', body as AiRequest);
     if ('error' in result && result.error) return sendError(reply, result.error);
     if ('pending' in result) return reply.code(202).send(result.pending);
