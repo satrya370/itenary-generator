@@ -141,7 +141,7 @@ export async function publishSavedRevision(input: {
       });
       } catch (cause) {
         const err = cause as any;
-        if (err.code === 'SQLITE_CONSTRAINT' && err.message?.includes('UNIQUE')) return resolveInsertConflict();
+        if ((err.code === 'SQLITE_CONSTRAINT' || err.code === 'ERR_SQLITE_ERROR') && err.message?.includes('UNIQUE')) return resolveInsertConflict();
         throw cause;
       }
       if (!reused) return { kind: 'failed' as const, code: 'PUBLICATION_CONFLICT' };
@@ -153,7 +153,7 @@ export async function publishSavedRevision(input: {
     store.db.prepare("INSERT INTO publish_operations(id,workspace_id,itinerary_id,fingerprint,status,created_at,updated_at) VALUES(?,?,?,?,'pending',?,?)").run(operationId, store.workspaceId, itineraryId, fingerprint, operationTime, operationTime);
   } catch (cause) {
     const err = cause as any;
-    if (err.code === 'SQLITE_CONSTRAINT' && err.message?.includes('UNIQUE')) return resolveInsertConflict();
+    if ((err.code === 'SQLITE_CONSTRAINT' || err.code === 'ERR_SQLITE_ERROR') && err.message?.includes('UNIQUE')) return resolveInsertConflict();
     throw cause;
   }
   // From here the operation row is 'pending'; any unexpected failure must terminalize it instead of leaving it stuck.

@@ -398,7 +398,7 @@ test('every v1 fixture mode upgrades to a valid v2 draft, preserving stable IDs 
   assert.equal(full.days[0].activities[0].id, idsV1.activity1);
   assert.deepEqual(full.days[0].activities[0], {
     id: idsV1.activity1, time: '08:00', durationMinutes: 90, kind: 'sightseeing', title: 'Rice terraces', place: 'Ubud',
-    description: 'Walk through cultivated terraces and learn how local irrigation traditions shape the landscape.', tip: 'Kategori: Nature'
+    description: 'Walk through cultivated terraces and learn how local irrigation traditions shape the landscape.', tip: null
   });
   assert.equal(full.days[0].dayNumber, 1);
   assert.equal(full.days[0].hotel, null);
@@ -431,7 +431,11 @@ test('time and duration text is parsed, and unreadable text is kept in the tip w
     assert.equal(result.value.days[0].activities[index].durationMinutes, minutes, `duration ${index}`);
   });
   const unreadable = result.value.days[0].activities[3];
-  assert.equal(unreadable.tip, 'Waktu: Sunrise\nDurasi: half a day');
+  assert.equal(unreadable.tip, null, 'unparsed text moved to notes');
+  const activityNote = result.notes.find((n: any) => n.targetId === unreadable.id);
+  assert.ok(activityNote, 'unparsed labels collected to notes');
+  assert.match(activityNote?.text || '', /timeLabel.*Sunrise/);
+  assert.match(activityNote?.text || '', /durationLabel.*half a day/);
   assert.ok(result.warnings.some((warning) => warning.code === 'TIME_UNPARSED' && warning.path === 'days[0].activities[3].time'));
   assert.ok(result.warnings.some((warning) => warning.code === 'DURATION_UNPARSED' && warning.path === 'days[0].activities[3].durationMinutes'));
 });
@@ -444,7 +448,7 @@ test('collapsed day ranges become one day with a warning that states the old and
   v1.schedule[0].isCondensed = true;
   const result = upgradeV1ToV2(v1, matchingProfile);
   assert.equal(result.value.days.length, 1);
-  assert.equal(result.value.days[0].title, 'Hari 1–14: Day 1');
+  assert.equal(result.value.days[0].title, '1–14: Day 1');
   const warning = result.warnings.find((item) => item.code === 'DAY_RANGE_COLLAPSED')!;
   assert.match(warning.message, /1 days instead of 14/);
   assert.equal(validateDraft(result.value).ok, true);
@@ -504,7 +508,7 @@ test('meals, transport notes and empty days map without data loss', () => {
   single.schedule[0].transportNote = 'Hotel pickup';
   single.schedule[0].blockTip = 'Bring cash';
   const singleResult = upgradeV1ToV2(single, matchingProfile);
-  assert.equal(singleResult.value.days[0].activities[0].tip, 'Kategori: Nature\nHotel pickup\nBring cash');
+  assert.equal(singleResult.value.days[0].activities[0].tip, 'Hotel pickup\nBring cash');
   assert.equal(singleResult.value.days[0].transferNote, null);
 });
 
