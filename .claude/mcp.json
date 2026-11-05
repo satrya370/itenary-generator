@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "context-mode": {
+      "command": "node",
+      "args": ["C:/Users/Satz/.local/bin/context-mode-mcp.mjs"]
+    }
+  }
+}
