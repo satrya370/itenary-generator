@@ -161,16 +161,15 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
   });
   app.patch<{ Params: { id: string }; Body: unknown }>('/api/v1/itineraries/:id', async (request, reply) => {
     const body = request.body;
-    if (!object(body) || Object.keys(body).some((key) => !['expectedRevision', 'draftContent', 'languageContext', 'profile'].includes(key)) || !Number.isInteger(body.expectedRevision) || !('draftContent' in body) || !('languageContext' in body)) return reply.code(422).send(error('INVALID_REQUEST', 'Expected revision, draft content, and language context are required.'));
+    if (!object(body) || Object.keys(body).some((key) => !['expectedRevision', 'draftContent', 'languageContext', 'writingContext'].includes(key)) || !Number.isInteger(body.expectedRevision) || !('draftContent' in body) || !('languageContext' in body) || !('writingContext' in body)) return reply.code(422).send(error('INVALID_REQUEST', 'Expected revision and the complete draft metadata are required.'));
     const previous = store.getItinerary(request.params.id);
     if (!previous) return reply.code(404).send(error('NOT_FOUND', 'Itinerary not found.'));
     const checked = validateDraft(body.draftContent);
     if (!checked.ok) return reply.code(422).send(error('INVALID_DOCUMENT', 'The draft does not match the canonical content schema.', checked.errors));
-    if (!object(body.languageContext) || typeof body.languageContext.language !== 'string' || typeof body.languageContext.source !== 'string' || !['explicit', 'detected', 'unresolved'].includes(body.languageContext.source)) return reply.code(422).send(error('INVALID_LANGUAGE_CONTEXT', 'Language context must include language and source.'));
-    if (body.languageContext.language && checked.value.trip.language !== body.languageContext.language) return reply.code(422).send(error('INVALID_LANGUAGE_CONTEXT', 'Language metadata must match the canonical output locale.'));
-    const profile = body.profile || { agencyName: null, agencyContact: null, agencyLogoAssetId: null };
+    if (!validLanguage(body.languageContext, checked.value.trip.language)) return reply.code(422).send(error('INVALID_LANGUAGE_CONTEXT', 'Language metadata must match the canonical output locale.'));
+    if (!validWriting(body.writingContext)) return reply.code(422).send(error('INVALID_WRITING_CONTEXT', 'Writing context is invalid.'));
     if (assetIds(checked.value).some((id) => !store.getAsset(id))) return reply.code(422).send(error('ASSET_INVALID', 'Every draft asset reference must belong to this workspace.'));
-    const record = store.updateItinerary(request.params.id, Number(body.expectedRevision), checked.value, body.languageContext, profile);
+    const record = store.updateItinerary(request.params.id, Number(body.expectedRevision), checked.value, body.languageContext, body.writingContext);
     if (!record) return reply.code(409).send(error('REVISION_CONFLICT', 'The itinerary changed since it was loaded.', { currentRevision: store.getItinerary(request.params.id)?.revision ?? previous.revision }));
     return { ...record, warnings: checked.warnings };
   });
