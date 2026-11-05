@@ -268,6 +268,18 @@ test('an operation ID already held by another workspace is a conflict, not a ser
   assert.equal((await publish(f.app, f.id, f.revision)).statusCode, 200);
 });
 
+test('a database failure that is not a key conflict is not reported as 409 and leaves no pending row', async (t) => {
+  const f = await setup(t);
+  const db = (f.app as any).store.db;
+  db.exec("CREATE TRIGGER block_publish BEFORE INSERT ON publish_operations BEGIN SELECT RAISE(ABORT, 'blocked'); END");
+  const response = await publish(f.app, f.id, f.revision);
+  assert.notEqual(response.statusCode, 409, response.body);
+  assert.equal(response.statusCode, 500, response.body);
+  assert.equal(Number(db.prepare("SELECT count(*) AS count FROM publish_operations WHERE status='pending'").get().count), 0);
+  db.exec('DROP TRIGGER block_publish');
+  assert.equal((await publish(f.app, f.id, f.revision)).statusCode, 200);
+});
+
 test('Open Graph tags and the stored snapshot come from the v2 trip title, summary and schema version', async (t) => {
   const f = await setup(t);
   const response = await publish(f.app, f.id, f.revision);

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { getLocaleCatalog } from './locale-catalogs.js';
 import type { Activity, ContractDiagnostic, Day, ItineraryV2, Mode, Photo, Place } from './types.js';
 
 type Rec = Record<string, any>;
@@ -30,16 +31,11 @@ function strings(value: unknown): string[] { return list(value).map(clean).filte
 
 function parseTime(label: string): { start: string; end?: string } | null {
   const text = label.trim();
-  const timeRe = /^([01]?\d|2[0-3])[:.]([0-5]\d)$/;
-  const sepRe = /^([01]?\d|2[0-3])[:.]([0-5]\d)\s*[-–—]\s*([01]?\d|2[0-3])[:.]([0-5]\d)$/;
-  const sep = sepRe.exec(text);
-  if (sep) {
-    const start = `${sep[1].padStart(2, '0')}:${sep[2]}`;
-    const end = `${sep[3].padStart(2, '0')}:${sep[4]}`;
-    return { start, end };
-  }
-  const single = timeRe.exec(text);
-  return single ? { start: `${single[1].padStart(2, '0')}:${single[2]}` } : null;
+  const pad = (hour: string, minute: string) => `${hour.padStart(2, '0')}:${minute}`;
+  const range = /^([01]?\d|2[0-3])[:.]([0-5]\d)\s*(?:[-–—]|to|s\.d\.|sampai)\s*([01]?\d|2[0-3])[:.]([0-5]\d)$/i.exec(text);
+  if (range) return { start: pad(range[1], range[2]), end: pad(range[3], range[4]) };
+  const single = /^([01]?\d|2[0-3])[:.]([0-5]\d)$/.exec(text);
+  return single ? { start: pad(single[1], single[2]) } : null;
 }
 
 function parseDuration(label: string): number | null {
@@ -145,7 +141,9 @@ export function upgradeV1ToV2(input: unknown, profile: AgencyProfile = {}): Upgr
       const dayId = clean(block.id) || randomUUID();
       let title = clean(block.title);
       if (dayEnd > dayStart) {
-        title = `${dayStart}–${dayEnd}: ${title}`.trim();
+        const template = getLocaleCatalog(orNull(brochure.outputLanguage))?.labels.dayRange;
+        const range = template ? template.replace('{start}', String(dayStart)).replace('{end}', String(dayEnd)) : `${dayStart}–${dayEnd}`;
+        title = title ? `${range}: ${title}` : range;
         warn('DAY_RANGE_COLLAPSED', path, `Days ${dayStart}–${dayEnd} were collapsed into one day; the itinerary now has ${schedule.length} days instead of ${maxDayEnd}.`);
       }
       const date = orNull(block.date);
@@ -163,10 +161,20 @@ export function upgradeV1ToV2(input: unknown, profile: AgencyProfile = {}): Upgr
         if (timeLabel && !timeObj) { warn('TIME_UNPARSED', `${activityPath}.time`, 'The time could not be parsed as HH:MM or HH:MM-HH:MM.'); addNote(activityId, 'timeLabel', timeLabel); }
         const durationLabel = clean(activity.durationLabel);
         let durationMinutes = durationLabel ? parseDuration(durationLabel) : null;
-        if (timeObj?.end && !durationMinutes && time) {
+        if (timeObj?.end && time) {
           const [endH, endM] = timeObj.end.split(':').map(Number);
           const [startH, startM] = time.split(':').map(Number);
-          durationMinutes = (endH - startH) * 60 + (endM - startM);
+          const span = (endH - startH) * 60 + (endM - startM);
+          if (span >= 1 && span <= 1440) {
+            if (durationMinutes === null && !durationLabel) durationMinutes = span;
+            else if (durationMinutes !== null && durationMinutes !== span) {
+              warn('TIME_RANGE_CONFLICT', `${activityPath}.durationMinutes`, 'The time range and the duration text disagree; the duration text was kept.');
+              addNote(activityId, 'timeLabel', timeLabel);
+            }
+          } else {
+            warn('TIME_RANGE_INVALID', `${activityPath}.time`, 'The end time is not after the start time; only the start time was kept.');
+            addNote(activityId, 'timeLabel', timeLabel);
+          }
         }
         if (durationLabel && durationMinutes === null) { warn('DURATION_UNPARSED', `${activityPath}.durationMinutes`, 'The duration text could not be parsed.'); addNote(activityId, 'durationLabel', durationLabel); }
         if (orNull(activity.category)) { warn('CATEGORY_DROPPED', `${activityPath}.category`, 'Activity categories are no longer stored and were removed.'); addNote(activityId, 'category', clean(activity.category)); }

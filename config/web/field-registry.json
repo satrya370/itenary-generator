@@ -3,6 +3,7 @@
   "schema": "./itinerary.schema.json",
   "constraintsSource": "itinerary.schema.json",
   "displayLabelKeys": [
+    "dayRange",
     "activities",
     "activityTypeActivity",
     "activityTypeAccommodation",

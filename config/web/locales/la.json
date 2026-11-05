@@ -119,6 +119,7 @@
     "dayTitle": "Titulus diei",
     "placeGroup": "Grex locorum",
     "bestTime": "Tempus optimum",
-    "nearby": "Prope"
+    "nearby": "Prope",
+    "dayRange": "Dies {start}–{end}"
   }
 }

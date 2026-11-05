@@ -119,6 +119,7 @@
     "dayTitle": "Judul hari",
     "placeGroup": "Kelompok tempat",
     "bestTime": "Waktu terbaik",
-    "nearby": "Tempat terdekat"
+    "nearby": "Tempat terdekat",
+    "dayRange": "Hari {start}–{end}"
   }
 }

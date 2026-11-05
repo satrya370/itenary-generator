@@ -6,6 +6,8 @@ import path from 'node:path';
 import test from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 import { validateDraft } from '../../src/contracts/validator.js';
+import { createApp } from '../../src/server/app.js';
+import { upgradeV1ToV2 } from '../../src/contracts/upgrade-v1.js';
 import { MIGRATIONS, openStore, runMigrations, type Migration } from '../../src/server/store.js';
 import { createContent as createContentV1, ids as idsV1 } from './fixtures.js';
 
@@ -108,7 +110,8 @@ test('migration 3 upgrades v1 drafts in place, keeps revisions/timestamps/IDs, s
     const beforeWriting = JSON.parse(before.writing_json);
     assert.equal(writing.brief, beforeWriting.brief, `${row.id}: brief mismatch`);
     assert.ok(Array.isArray(writing.notes), `${row.id}: notes must be array`);
-    assert.ok(writing.notes.length >= beforeWriting.notes.length, `${row.id}: notes must not lose existing entries`);
+    assert.deepEqual(writing.notes.slice(0, beforeWriting.notes.length), beforeWriting.notes, `${row.id}: existing notes keep their order and content`);
+    for (const note of writing.notes.slice(beforeWriting.notes.length)) assert.match(note.text, /^(timeLabel|durationLabel|mealsIncluded|category): /m, `${row.id}: migration notes carry the v1 field name`);
   }
   const byId = Object.fromEntries(upgraded.map((row) => [row.id, JSON.parse(row.draft_json)]));
   assert.equal(byId['it-full'].trip.title, 'Ubud in a day');
@@ -194,4 +197,77 @@ test('saving writes the schema version carried by the content', async (t) => {
   assert.equal(updated!.schemaVersion, 'web-2.0.0');
   assert.equal(updated!.revision, 2);
   store.close();
+});
+
+const validWritingShape = (writing: any) => Object.keys(writing).every((key) => ['brief', 'notes'].includes(key)) && typeof writing.brief === 'string' && writing.brief.length <= 20000 && Array.isArray(writing.notes) && writing.notes.length <= 100 && writing.notes.every((note: any) => typeof note.targetId === 'string' && typeof note.text === 'string' && note.text.length <= 4000);
+
+test('writing_json is untouched when the upgrade produces no notes', async (t) => {
+  const dataDir = await tempDir(t);
+  const db = openLegacy(dataDir);
+  const clean: any = createContentV1('full_day', 'en');
+  clean.schedule[0].activities[0].category = null;
+  clean.schedule = [clean.schedule[0]];
+  assert.equal(upgradeV1ToV2(clean, PROFILE).notes.length, 0);
+  insertV1(db, 'it-clean', clean);
+  db.close();
+  const store = openStore({ dataDir });
+  const row = store.db.prepare('SELECT writing_json FROM itineraries').get() as any;
+  assert.equal(row.writing_json, JSON.stringify(WRITING));
+  store.close();
+});
+
+test('migration notes are appended after existing notes and the result still satisfies the writing contract', async (t) => {
+  const dataDir = await tempDir(t);
+  const db = openLegacy(dataDir);
+  insertV1(db, 'it-notes', createContentV1('full_day', 'en'));
+  db.close();
+  const store = openStore({ dataDir });
+  const writing = JSON.parse((store.db.prepare('SELECT writing_json FROM itineraries').get() as any).writing_json);
+  assert.equal(validWritingShape(writing), true);
+  assert.deepEqual(writing.notes[0], WRITING.notes[0]);
+  assert.deepEqual(writing.notes.slice(1), [{ targetId: idsV1.activity1, text: 'category: Nature' }]);
+  store.close();
+});
+
+test('too many notes collapse into one itinerary note that keeps existing and migration text', async (t) => {
+  const dataDir = await tempDir(t);
+  const db = openLegacy(dataDir);
+  const v1: any = createContentV1('multi_day', 'en');
+  const template = v1.schedule[0].activities[0];
+  v1.schedule.forEach((block: any, day: number) => {
+    block.activities = Array.from({ length: 25 }, (_, index) => ({ ...structuredClone(template), id: `20000000-0000-5000-8000-${String(day * 100 + index + 1).padStart(12, '0')}`, category: `Category ${day}-${index}` }));
+  });
+  insertV1(db, 'it-many', v1);
+  const existing = { brief: 'Private brief', notes: Array.from({ length: 60 }, (_, index) => ({ targetId: 'itinerary', text: `existing ${index}` })) };
+  db.prepare('UPDATE itineraries SET writing_json=? WHERE id=?').run(JSON.stringify(existing), 'it-many');
+  db.close();
+  const store = openStore({ dataDir });
+  const writing = JSON.parse((store.db.prepare('SELECT writing_json FROM itineraries').get() as any).writing_json);
+  assert.equal(validWritingShape(writing), true);
+  assert.equal(writing.notes.length, 1);
+  assert.equal(writing.notes[0].targetId, 'itinerary');
+  assert.ok(writing.notes[0].text.includes('existing 0') && writing.notes[0].text.includes('category: Category 0-0'));
+  store.close();
+});
+
+test('a root recorded at migration 2 without AI tables starts and recovers the AI schema and ledger', async (t) => {
+  const dataDir = await tempDir(t);
+  mkdirSync(dataDir, { recursive: true });
+  const db = new DatabaseSync(path.join(dataDir, 'engine.sqlite'));
+  runMigrations(db, { dataDir }, [MIGRATIONS[0], { version: 2, name: 'ai-schema-missing', up: () => undefined }]);
+  db.close();
+  const app = await createApp({ dataDir, aiProvider: {} as any });
+  const check = (app as any).store.db;
+  assert.equal(Number(check.prepare("SELECT count(*) AS count FROM sqlite_master WHERE name='ai_operations'").get().count), 1);
+  assert.deepEqual({ ...check.prepare('SELECT id,limit_usd,committed_usd FROM ai_live_budget').get() }, { id: 1, limit_usd: 2, committed_usd: 0 });
+  await app.close();
+});
+
+test('a failing startup closes the store so the data root can be deleted', async (t) => {
+  const dataDir = await tempDir(t);
+  const options: any = { dataDir };
+  Object.defineProperty(options, 'aiProvider', { get() { throw new Error('provider boom'); } });
+  await assert.rejects(createApp(options), /provider boom/);
+  await rm(path.join(dataDir, 'engine.sqlite'));
+  assert.equal(existsSync(path.join(dataDir, 'engine.sqlite')), false);
 });

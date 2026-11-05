@@ -119,6 +119,7 @@
     "dayTitle": "每日标题",
     "placeGroup": "地点分组",
     "bestTime": "最佳时间",
-    "nearby": "附近"
+    "nearby": "附近",
+    "dayRange": "第{start}–{end}天"
   }
 }

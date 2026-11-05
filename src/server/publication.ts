@@ -13,6 +13,11 @@ const now = () => new Date().toISOString();
 const escape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]!));
 const tokenUrl = (origin: string, token: string) => `${origin}/i/${encodeURIComponent(token)}`;
 
+// node:sqlite reports SQLITE_CONSTRAINT_PRIMARYKEY (1555) / SQLITE_CONSTRAINT_UNIQUE (2067); trigger aborts (1811) and other failures are not conflicts.
+function isUniqueViolation(err: any) {
+  return err?.code === 'ERR_SQLITE_ERROR' && (err.errcode === 1555 || err.errcode === 2067);
+}
+
 function transact(db: any, work: () => void) {
   db.exec('BEGIN IMMEDIATE');
   try { work(); db.exec('COMMIT'); } catch (error) { db.exec('ROLLBACK'); throw error; }
@@ -141,7 +146,7 @@ export async function publishSavedRevision(input: {
       });
       } catch (cause) {
         const err = cause as any;
-        if ((err.code === 'SQLITE_CONSTRAINT' || err.code === 'ERR_SQLITE_ERROR') && err.message?.includes('UNIQUE')) return resolveInsertConflict();
+        if (isUniqueViolation(err)) return resolveInsertConflict();
         throw cause;
       }
       if (!reused) return { kind: 'failed' as const, code: 'PUBLICATION_CONFLICT' };
@@ -153,7 +158,7 @@ export async function publishSavedRevision(input: {
     store.db.prepare("INSERT INTO publish_operations(id,workspace_id,itinerary_id,fingerprint,status,created_at,updated_at) VALUES(?,?,?,?,'pending',?,?)").run(operationId, store.workspaceId, itineraryId, fingerprint, operationTime, operationTime);
   } catch (cause) {
     const err = cause as any;
-    if ((err.code === 'SQLITE_CONSTRAINT' || err.code === 'ERR_SQLITE_ERROR') && err.message?.includes('UNIQUE')) return resolveInsertConflict();
+    if (isUniqueViolation(err)) return resolveInsertConflict();
     throw cause;
   }
   // From here the operation row is 'pending'; any unexpected failure must terminalize it instead of leaving it stuck.

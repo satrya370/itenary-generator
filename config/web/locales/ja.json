@@ -119,6 +119,7 @@
     "dayTitle": "日ごとのタイトル",
     "placeGroup": "場所のグループ",
     "bestTime": "おすすめの時間",
-    "nearby": "近くの場所"
+    "nearby": "近くの場所",
+    "dayRange": "{start}–{end}日目"
   }
 }

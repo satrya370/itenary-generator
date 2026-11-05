@@ -419,7 +419,7 @@ test('v1 agency values that differ from the workspace profile are reported, not 
   assert.deepEqual(result.warnings.filter((warning) => warning.code === 'AGENCY_VALUE_DROPPED').map((warning) => warning.path), ['brochure.agencyName']);
 });
 
-test('time and duration text is parsed, and unreadable text is kept in the tip with a warning', () => {
+test('time and duration text is parsed, and unreadable text goes to private notes with a warning', () => {
   const v1: any = createContentV1('full_day', 'en');
   const labels: Array<[string, string, string | null, number | null]> = [
     ['8.30', '1.5 hours', '08:30', 90], ['09:15', '1 jam 30 menit', '09:15', 90], ['10:00 - 12:00', '45 menit', '10:00', 45], ['Sunrise', 'half a day', null, null]
@@ -448,10 +448,94 @@ test('collapsed day ranges become one day with a warning that states the old and
   v1.schedule[0].isCondensed = true;
   const result = upgradeV1ToV2(v1, matchingProfile);
   assert.equal(result.value.days.length, 1);
-  assert.equal(result.value.days[0].title, '1–14: Day 1');
+  assert.equal(result.value.days[0].title, 'Days 1–14: Day 1');
   const warning = result.warnings.find((item) => item.code === 'DAY_RANGE_COLLAPSED')!;
   assert.match(warning.message, /1 days instead of 14/);
   assert.equal(validateDraft(result.value).ok, true);
+});
+
+test('day-range titles use the output language catalog, or plain numbers without one', () => {
+  const build = (language: string | null, title = 'Ubud') => {
+    const v1: any = createContentV1('multi_day', 'en');
+    v1.brochure.outputLanguage = language;
+    v1.schedule[0].dayStart = 2; v1.schedule[0].dayEnd = 3; v1.schedule[0].title = title;
+    return upgradeV1ToV2(v1, matchingProfile).value.days[0].title;
+  };
+  assert.equal(build('en'), 'Days 2–3: Ubud');
+  assert.equal(build('ja'), '2–3日目: Ubud');
+  assert.equal(build('id'), 'Hari 2–3: Ubud');
+  assert.equal(build(null), '2–3: Ubud');
+  assert.equal(build('en', ''), 'Days 2–3');
+});
+
+function oneActivity(timeLabel: string, durationLabel: string) {
+  const v1: any = createContentV1('full_day', 'en');
+  v1.schedule[0].activities = [{ ...structuredClone(createContentV1('full_day').schedule[0].activities[0]), timeLabel, durationLabel, category: null }];
+  const result = upgradeV1ToV2(v1, matchingProfile);
+  const activity = result.value.days[0].activities[0];
+  return { result, activity, note: result.notes.find((entry) => entry.targetId === activity.id)?.text ?? null };
+}
+
+test('label parsing is exact-match: a label is mapped whole or kept as a private note, never partly', () => {
+  const cases: Array<[string, string, string | null, number | null, boolean]> = [
+    ['', '1h30m', null, 90, false],
+    ['', '2-3 hours', null, null, true],
+    ['', '1–2 jam', null, null, true],
+    ['', 'about 30 min + 15 min transfer', null, null, true],
+    ['', '1,5 jam', null, 90, false],
+    ['', '2 hours 15 minutes', null, 135, false],
+    ['', '90m', null, 90, false],
+    ['10:00 - 12:00', '', '10:00', 120, false],
+    ['9.00 to 10.30', '', '09:00', 90, false],
+    ['09:00 s.d. 11:00', '', '09:00', 120, false],
+    ['09:00 sampai 10:00', '', '09:00', 60, false],
+    ['Pagi 8.30 - 11.00', '', null, null, true],
+    ['08:00', '1.5 hours', '08:00', 90, false],
+    ['12:00 - 11:00', '', '12:00', null, true]
+  ];
+  for (const [timeLabel, durationLabel, time, minutes, noted] of cases) {
+    const { activity, note } = oneActivity(timeLabel, durationLabel);
+    const name = `${timeLabel} | ${durationLabel}`;
+    assert.equal(activity.time, time, `time for ${name}`);
+    assert.equal(activity.durationMinutes, minutes, `duration for ${name}`);
+    assert.equal(note !== null, noted, `note for ${name}`);
+    if (noted) assert.match(note!, /^(timeLabel|durationLabel): /, name);
+  }
+  const unreadable = oneActivity('Pagi 8.30 - 11.00', '2-3 hours').note!;
+  assert.ok(unreadable.includes('timeLabel: Pagi 8.30 - 11.00') && unreadable.includes('durationLabel: 2-3 hours'));
+});
+
+test('a time range that disagrees with a readable duration keeps the duration and reports the conflict', () => {
+  const { result, activity, note } = oneActivity('10:00 - 12:00', '45 menit');
+  assert.deepEqual([activity.time, activity.durationMinutes], ['10:00', 45]);
+  assert.ok(codes(result.warnings).includes('TIME_RANGE_CONFLICT'));
+  assert.match(note!, /timeLabel: 10:00 - 12:00/);
+});
+
+test('a parsed value never coexists with discarded text, and notes never leak into public fields', () => {
+  const v1: any = createContentV1('full_day', 'en');
+  v1.schedule[0].activities[0].timeLabel = 'Sunrise';
+  v1.schedule[0].activities[0].durationLabel = 'half a day';
+  v1.schedule[0].activities[0].category = 'Nature';
+  const result = upgradeV1ToV2(v1, matchingProfile);
+  const publicText = JSON.stringify(result.value);
+  for (const leak of ['Sunrise', 'half a day', 'Waktu:', 'Durasi:', 'Kategori:']) assert.equal(publicText.includes(leak), false, leak);
+  const note = result.notes.find((entry) => entry.targetId === idsV1.activity1)!.text;
+  assert.equal(note, 'timeLabel: Sunrise\ndurationLabel: half a day\ncategory: Nature');
+});
+
+test('meal entries are matched independently and unmatched ones become private notes', () => {
+  const run = (items: string[]) => {
+    const v1: any = createContentV1('multi_day', 'en');
+    v1.schedule[0].mealsIncluded = items;
+    return upgradeV1ToV2(v1, matchingProfile);
+  };
+  assert.deepEqual(run(['Breakfast & dinner']).value.days[0].meals, { breakfast: true, lunch: false, dinner: true });
+  assert.deepEqual(run(['Makan siang dan makan malam']).value.days[0].meals, { breakfast: false, lunch: true, dinner: true });
+  const picnic = run(['Picnic']);
+  assert.deepEqual(picnic.value.days[0].meals, { breakfast: false, lunch: false, dinner: false });
+  assert.ok(codes(picnic.warnings).includes('MEAL_UNMATCHED'));
+  assert.equal(picnic.notes.find((entry) => entry.targetId === picnic.value.days[0].id)!.text, 'mealsIncluded: Picnic');
 });
 
 test('block dates seed the trip start date, and conflicting dates are reported', () => {

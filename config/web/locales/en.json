@@ -119,6 +119,7 @@
     "dayTitle": "Day title",
     "placeGroup": "Place group",
     "bestTime": "Best time",
-    "nearby": "Nearby"
+    "nearby": "Nearby",
+    "dayRange": "Days {start}–{end}"
   }
 }
