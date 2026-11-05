@@ -1,537 +1,393 @@
-# Itinerary Brochure Engine — Checkpoints
+# Itinerary Engine Web App — Checkpoints
 
-**Authority:** `SPEC.md` defines behaviour, `RULES.md` defines process, this
-file defines CP order and status.
+**Updated:** 2026-11-05 (revisi guide-centric schema `web-2.0.0` untuk CP019–CP025 diprioritaskan; lalu chapter import CP030–CP032; CP029 paling akhir).
+**Authority:** `SPEC.md` v3.2 menentukan scope; `RULES.md` menentukan proses.
+**Keputusan pengguna:** engine selesai dulu, satu workspace lokal/private, empat mode; app terpisah + API SaaS Laravel menyusul.
+**Status:** CP021–CP023 and CP024–CP025 initial planner reviews ACCEPTed. CP024 V27-01/V27-02/V27-03 and CP025 V27-04/V27-05/V27-06 revisions are logged/pass. CP027 local matrix and CP028 local deployment-readiness both passed; chapter review records ACCEPT as standalone-ready/not-deployed. AWS target remains undecided; public HTTPS/WhatsApp verification needs separate deployment authorization.
 
-**Legend:** `pending` | `in_progress` | `blocked` | `completed`
+**Target Laravel berikutnya:** `D:\belajar-pemograman` (TourFlow, constraint Laravel `^13.17`, Blade/Tailwind v4). Kesiapan SaaS ini bukan dependency CP018–CP028.
 
-Per `RULES.md` §4 and §5, every CP requires an Ask Question gate and an
-implementation plan at `plans/cpNNN_implementation-plan_<object>.md` before
-any code, workflow mutation, or template work for that CP.
+## 1. Riwayat dan aturan eksekusi
 
-**Revised 2026-08-27** for `SPEC.md` v2 — four trip modes (§4) and the
-Brochure-and-Guidance Standard (§6). CP009 split into two layout CPs;
-downstream CPs renumbered.
+- CP001–CP017 tidak dihapus/renumber; riwayat lengkap berada di `docs/archive/TODOS-n8n.md`, dengan plan/log lama tetap tersedia.
+- CP n8n yang belum selesai tidak menjadi dependency rilis web. Scope yang masih relevan masuk checkpoint web baru secara explicit.
+- Arsip memiliki ketidakkonsistenan CP011: overview `pending`, section `in_progress`. Ini dipertahankan sebagai evidence historis dan harus diklarifikasi jika pekerjaan n8n dilanjutkan; bukan status web.
+- Sebelum menjalankan CP: dependency completed + log tersedia, Ask Question, lalu implementation plan sesuai `RULES.md`.
+- Urutan wajib: Diskusi → Planning → Working → Review → Test → Revise.
+- Hanya satu CP `in_progress`. Tidak ada instalasi, kode, API/credential mutation, atau deployment sebelum plan CP terkait tersedia.
+- `completed` hanya setelah verification nyata, acceptance criteria lulus, dan `logs/cpNNN_completion-log_<object>.md` tersedia.
+- Plan/log CP lama tidak diubah untuk menutupi migrasi. Jika merevisi artefak completed, gunakan revision plan ID asal.
+- Implementasi di repo SaaS Laravel harus membaca aturan repo tersebut; checkpoint integrasi tidak boleh dinyatakan selesai hanya dari mock app.
+- CP018–CP028 memakai engine backend/storage/AI/publish nyata yang berdiri sendiri. Mock Laravel hanya menguji kontrak future adapter, bukan pengganti persistence atau backend engine.
+- CP029 dijalankan setelah Laravel siap. Menunggu CP029 tidak menghalangi status rilis mandiri selesai.
+- Keputusan 2026-11-05: CP029 ditunda dan menjadi CP **paling terakhir** dalam roadmap; chapter CP030–CP032 dijalankan lebih dulu. ID tidak di-renumber.
 
----
+**Chapter CP018–CP020 — standalone engine foundation:** satu Ask Question round dan plan `plans/cp018-cp020_implementation-plan_standalone-engine-foundation.md`; planner ACCEPT 2026-10-06 (lihat `logs/cp018-cp020_planner-review_standalone-engine-foundation.md`). Technical completion tetap bukan klaim full app siap.
 
-## Status Overview
+**Chapter CP021–CP023 — persistent editor and field AI:** keputusan Ask Question 2026-10-06: satu plan `plans/cp021-cp023_implementation-plan_persistent-editor-and-field-ai.md`, manual Save, limit awal 30 operasi AI/workspace/hari dan live-test budget maksimal US$2 total. Eksekusi CP021 → CP022 → CP023 berurutan dengan satu CP in-progress, log terpisah dan dependency gate per CP; berhenti sebelum CP024, lalu evaluasi planner. Perencanaan tidak memulai implementasi atau provider calls.
+
+**Revision gate 2026-10-07:** user memilih **Bug + gap** lewat structured Ask Question. Audit `logs/cp021-cp023_review-log_bug-and-evidence-audit.md` memberi REVISE. Urutan CP021 → CP023 revision lulus dan tercatat; planner re-review memberi ACCEPT (lihat log tersebut di atas). CP022 tidak memerlukan revision terpisah.
+
+**Chapter CP024–CP025 — preview, publish and share links:** satu chapter/plan `plans/cp024-cp025_implementation-plan_preview-publish-and-share-links.md`; keputusan 2026-10-07 mencakup saved-draft preview + diagnostics, warning jadwal ambigu, link aktif stabil, revoke permanen/token rotation, retained HTML/assets tanpa auto-expiry/delete dan Open Graph preview image. PDF export dihapus dan CP026 removed. Revisions CP024 V27-01/V27-02/V27-03 dan CP025 V27-04/V27-05/V27-06 (server, pending-retry UI, workspace-safe recovery) completed/logged. Planner ACCEPT awal tetap historis; final chapter review setelah E2E. Live WhatsApp card menunggu public HTTPS deployment sesuai W15.
+
+**Chapter CP027–CP028 — standalone verification and deployment readiness:** structured Ask Question 2026-10-07: **Target belum diputuskan** + **Readiness saja**. Satu shared plan `plans/cp027-cp028_implementation-plan_standalone-verification-and-deployment-readiness.md`, CP027 → CP028, log masing-masing. V27-01…06 passed original-CP revisions. CP027 synthetic four-mode/six-locale E2E, publish crash and cross-workspace recovery pass; broader matrix/review remains in progress. CP028 remains pending. Scope CP028: runtime-only release tanpa PDF/browser, local Linux/TLS proxy, backup/restore/rollback dan resource report. Tidak ada AWS provisioning/spend, staging, DNS atau production deploy. Public HTTPS/WhatsApp card test tetap deferred.
+
+**Chapter CP030–CP032 — document and text import:** structured Ask Question 2026-11-05 (tiga putaran). Satu shared plan `plans/cp030-cp032_implementation-plan_document-and-text-import.md`, CP030 → CP031 → CP032, log masing-masing, chapter review setelah CP032. Keputusan: hasil import = draft untuk review/edit yang mengisi field canonical asli (tanpa auto-publish); format teks/DOCX/PDF ber-teks (tanpa OCR); tanpa kuota/plafon budget import tetapi biaya tiap import dicatat di ledger terpisah (tidak memakai ledger US$2/kuota 30 harian); data hilang = kosong + warning; deskripsi hanya dari dokumen; guide memilih mode sebelum import; kutipan sumber per field disimpan privat. Status: planned, belum ada eksekusi.
+
+**Revisi CP019–CP025 — guide-centric schema & editor (`web-2.0.0`), PRIORITAS:** structured Ask Question 2026-11-05 (dua putaran) setelah owner melaporkan UI berantakan, field tidak nyambung, dan mode tidak berbeda; audit read-only backend/DB mengonfirmasi cacat schema, editor dan backend. Satu shared revision plan `plans/cp019-cp025_revision-plan_guide-centric-schema-and-editor.md` dengan tahap bergerbang R1 (CP019) → R2 (CP021/CP023) → R3 (CP020) → R4 (CP024/CP025) → R5 (CP022) → R6 regression/E2E/log. Ditujukan untuk dieksekusi Claude Haiku; plan mengunci schema, mapping migrasi, teks UI dan perintah gate. Keputusan: schema + UI dirombak; tetap 4 mode (half ≤6 jam tanpa makan, full ≤12 jam dengan makan); tambah titik/jam kumpul, penjemputan, guide trip, ketentuan; hapus field turunan/duplikat, profil wisatawan, tema/jenis destinasi (diganti warna tema), sorotan/musim terbaik; tempat destination guide wajib nama+area+deskripsi; draft dimigrasi otomatis, snapshot published tetap. Chapter import CP030–CP032 menunggu revisi ini selesai dan plan import direvisi ke `web-2.0.0`.
+
+### Checklist revisi (status CP terkait diubah ke `in_progress` per tahap)
+
+- [x] Ask Question + revision plan (2026-11-05).
+- [ ] R1 — CP019: schema `web-2.0.0`, generated types, registry v2, validator per mode, `upgradeV1ToV2`, locale keys 6 bahasa, `createBlankDraft` v2. Gate: `check:web-types`, `typecheck:web-contracts`, `test:web-contracts`.
+- [ ] R2 — CP021/CP023: migration runner nyata + migration 3 (backup, transaksional, revision tidak naik), `schema_version` saat save, list urut `updated_at`, publish pending/duplicate fix, asset file hilang → 404, AI paths v2 (`place`). Gate: `typecheck:web-app`, `test:web-api`, `test:web-publication`, `test:web-ai` + run pada salinan `.runtime/`.
+- [ ] R3 — CP020: renderer v2 (info strip waktu/titik kumpul/penjemputan/guide, layout per mode, ketentuan, kredit foto & ringkasan rute turunan, agensi dari profil). Gate: `test:web-render`, `verify:web-render` + screenshot phone/desktop per mode diperiksa.
+- [ ] R4 — CP024/CP025: batas 360/720/960 menit, policy scanner path v2, warning titik kumpul, raster decode & focus diagnostik v2, OG dari v2. Gate: `test:web-preview`, `test:web-publication`, `verify:web-preview`, `verify:web-publication`.
+- [ ] R5 — CP022: editor dipecah per section, 4 kartu mode + badge warna, section per mode, registry-driven `fieldMeta` + `data-field-path`, teks bahasa awam, mode change membersihkan field. Gate: `typecheck:web-app`, `test:web-editor`, `verify:web-editor` + screenshot per mode.
+- [ ] R6 — regression penuh + `build:web-release`/`validate:web-release`; revision section di log CP019–CP025; docs kontrak diperbarui; plan CP030–CP032 ditandai perlu revisi.
+
+## 2. Status overview
 
 | CP | Object | Depends on | Status |
 |---|---|---|---|
-| CP001 | foundation-and-input-intake | — | completed |
-| CP002 | brief-interpretation-and-mode-resolution | CP001 | completed |
-| CP003 | body-skeleton | CP002 | completed |
-| CP004 | venue-verification | CP003 | completed |
-| CP005 | travel-time-guard | CP004 | completed |
-| CP006 | final-copy-and-canonical-assembly | CP005 | completed |
-| CP007 | photo-acquisition | CP006 | completed |
-| CP008 | qa-gate | CP007 | completed |
-| CP009 | html-shell-and-scheduled-layout | CP008 | completed |
-| CP010 | guide-layout | CP009 | completed |
-| CP011 | pdf-generation | CP010 | pending |
-| CP012 | publish-link-and-delivery | CP011 | pending |
-| CP013 | end-to-end-verification | CP012 | pending |
-| CP014 | guide-ordered-route-anchors | CP008 | completed |
-| CP015 | landing-page | CP011 | completed |
-| CP016 | web-form-and-webhook-intake | CP014, CP015 | pending |
-| CP017 | github-package-and-aws-deployment | CP013, CP016 | pending |
-
-Only one CP may be `in_progress` at a time (`RULES.md` §9).
-
-**Chapter grouping (`RULES.md` §5a):** CP015 and CP016 form one chapter —
-"public web surface" — sharing a single Ask Question round, a single plan
-document (`plans/cp015-cp016_implementation-plan_public-web-surface.md`), and
-one review pass. Each still requires its own completion log (`RULES.md` §7).
-
----
-
-## CP001 — Foundation and Input Intake
-
-**Status:** completed
-
-- [x] Ask Question gate
-- [x] Implementation plan
-- [x] Create new n8n workflow (leave inactive)
-- [x] `config/config.json` — model slugs, endpoints, photo API config, limits, schema version
-- [x] `config/itinerary-schema.json` from `SPEC.md` §11
-- [x] `config/palettes.json` — the 7 palettes from §10.1
-- [x] `config/travel-rules.json` — hard travel-time rules (§9.3), seeded with at least Bali
-- [x] `config/mode-profiles.json` — per-mode section matrix (§4.2), active-hour caps (§9.3), page expectations (§4.3)
-- [x] Form trigger with all fields from §12, including **`tripScope`**
-- [x] `Validate and Normalize Input` with per-field `LIMITS` caps
-- [x] **Mode resolution per §9.2:** `tripScope` is the single source of truth;
-      `durationDays` read **only** for `multi_day`, forced otherwise —
-      never trust two fields that can contradict
-- [x] Reject `durationDays` outside 2–14 when `multi_day` (D6)
-- [x] Derive `scopeLabel` from the resolved mode
-- [x] Resolve output language: `auto` from input text (D10)
-- [x] `Derive Palette` node — deterministic, from `destinationType`, no AI
-- [x] Verify: each of the 4 `tripScope` values resolves to the right mode
-- [x] Verify: `half_day` + `durationDays=7` cannot produce a 7-day trip
-- [x] Verify: workflow validates with 0 errors and 0 warnings
-- [x] Verify: workflow left **inactive**
-- [x] Verify: no other product directory in this repo modified
-- [x] Completion log
-
-## CP002 — Brief Interpretation and Mode Resolution
-
-**Status:** completed · **Depends on:** CP001
-
-Smallest AI stage: free-text brief → structured trip frame.
-
-- [x] Ask Question gate
-- [x] Implementation plan
-- [x] `Build Brief Request` — enumerate every required output key (§9.1.4)
-- [x] AI call node
-- [x] `Parse Brief Result` implementing all of §9.1:
-  - [x] Re-anchor via `$('Build Brief Request').first().json`
-  - [x] Take the LAST `type: 'message'` item
-  - [x] Strip markdown fences, brace-scan fallback
-- [x] `Handle Brief Call Failure` with a distinct failure code
-- [x] Produce `destinationType`, `paceLevel`, `themes`, `tripTitle`, `region`, `country`
-- [x] Model may **confirm** but never **override** the resolved mode (§9.2)
-- [x] Verify: every enum value inside §11.1
-- [x] Verify: `destinationType` never empty (it drives the palette)
-- [x] Verify: Indonesian input yields Indonesian values (D10)
-- [x] Completion log
-
-## CP003 — Body Skeleton
-
-**Status:** completed · **Depends on:** CP002
-
-Produces `schedule[]` **or** `spots[]` depending on mode — never both.
-
-- [x] Ask Question gate
-- [x] Implementation plan
-- [x] `Build Skeleton Request`, branching on mode:
-  - [x] Scheduled modes → `schedule[]` with `activities[]`
-  - [x] `destination_guide` → `spots[]`
-  - [x] Request **only** the sections the mode needs, per the §4.2 matrix
-  - [x] Enumerate every required key for the chosen shape
-  - [x] State §11.1 controlled vocabulary explicitly
-  - [x] Instruct: honour `mustInclude` / `mustAvoid`
-  - [x] Instruct: **no monetary values at all** (D7)
-  - [x] Instruct: **no opening hours, no ticket prices** (D11)
-  - [x] Instruct: **§6 standard** — required guidance elements, forbidden
-        OTA product-page tells, stated explicitly not implied
-  - [x] Instruct: condense similar consecutive days when `multi_day > 7` (D6)
-  - [x] Instruct: group spots by area/theme when count ≥ 9 (§4.4, D15)
-  - [x] `max_tokens` sized for the largest supported shape
-- [x] AI call node
-- [x] `Parse Skeleton Result` with all §9.1 patterns
-- [x] `Handle Skeleton Call Failure` branch
-- [x] Verify: exactly one of `schedule[]` / `spots[]` populated
-- [x] Verify: `multi_day` block count reconciles with `durationDays`
-- [x] Verify: no block has zero activities
-- [x] Verify: a 14-day fixture produces condensed ranges, not 14 full cards
-- [x] Verify: a 12-spot guide fixture comes back **grouped**, not thinned (§4.4)
-- [x] Verify: `destination_guide` output contains no time values
-- [x] Completion log
-
-## CP004 — Venue Verification
-
-**Status:** completed · **Depends on:** CP003
-
-- [ ] Ask Question gate
-- [ ] Implementation plan
-- [ ] `Collect High-Risk Venues` — deterministic filter per §8 risk table
-- [ ] Batch **one search per block** (D8)
-- [ ] Budget for `destination_guide` carrying a higher verification load —
-      the spots *are* the named entities (§8 mode note)
-- [ ] Search call node(s) + parse with all §9.1 patterns
-- [ ] `Handle Verification Failure` branch
-- [ ] `Reconcile Verification` — deterministic:
-  - [ ] Verified venues keep their names
-  - [ ] Unverified venues are **genericised**, never silently kept (§8)
-  - [ ] Record a verified-venue set for the QA gate
-- [ ] Verify: a fixture with an invented restaurant gets genericised
-- [ ] Verify: major landmarks are NOT sent for verification (cost control)
-- [ ] Verify: search count scales per block, not per venue
-- [ ] Completion log
-
-## CP005 — Travel-Time Guard
-
-**Status:** completed · **Depends on:** CP004
-
-Deterministic. Scheduled modes only.
-
-- [ ] Ask Question gate
-- [ ] Implementation plan
-- [ ] Load hard rules from `config/travel-rules.json`
-- [ ] **Per-mode active-hour caps** from `config/mode-profiles.json`:
-      `half_day` 6 · `full_day` 11 · `multi_day` 11/day (§9.3)
-- [ ] Region-realistic speeds, not highway speeds (§9.3)
-- [ ] Coordinate-distance check where coordinates exist
-- [ ] Skip cleanly for `destination_guide`; still sanity-check that grouped
-      spots are not geographically absurd together
-- [ ] Bounded repair loop: return the failing block to the model, small cap
-- [ ] Fail closed after the cap — never ship an impossible schedule
-- [ ] Verify: `Ubud → Nusa Penida → Uluwatu` same-day fixture is caught
-- [ ] Verify: **a 10-hour `half_day` fixture is rejected** — a generic
-      11-hour cap would have wrongly passed it
-- [ ] Verify: a reasonable itinerary passes untouched
-- [ ] Verify: repair loop terminates and cannot spin
-- [ ] Completion log
-
-## CP006 — Final Copy and Canonical Assembly
-
-**Status:** completed · **Depends on:** CP005
-
-- [ ] Ask Question gate
-- [ ] Implementation plan
-- [ ] `Build Final Copy Request` — verified places only, all keys enumerated,
-      §6 standard restated
-- [ ] AI call node + parse with all §9.1 patterns
-- [ ] `Handle Final Copy Failure` branch
-- [ ] Produce `overview`, `practical`, `closing` scoped by the §4.2 matrix
-- [ ] `Assemble canonicalItinerary` — deterministic merge to §11 shape
-- [ ] Verify: `practical` scope matches the mode (no 14-day packing list on a
-      half-day tour)
-- [ ] Verify: no venue name outside the CP004 verified set
-- [ ] Verify: no monetary value (D7), no hours/ticket claims (D11)
-- [ ] Completion log
-
-## CP007 — Photo Acquisition
-
-**Status:** completed · **Depends on:** CP006
-
-All of `SPEC.md` §7 is binding.
-
-- [ ] Ask Question gate
-- [ ] Implementation plan
-- [ ] Honour `heroPhotoUrl` override when supplied (§7.5) — skip search
-- [ ] Hero photo search using landmark-biased queries (§7.3)
-- [ ] Region-level images only — **never per-activity, never a claimed photo
-      of a specific spot** (§7.1)
-- [ ] Gradient fallback on low confidence — never a doubtful photo (§7.4)
-- [ ] Capture attribution for every photo (§7.6)
-- [ ] Trigger the provider's required download/usage endpoint (§7.6)
-- [ ] `Handle Photo Failure` — degrade to gradient, do not fail the run
-- [ ] Verify: no caption asserts a specific venue (§7.2)
-- [ ] Verify: attribution present for every photo used
-- [ ] Verify: an obscure destination yields gradients, not wrong photos
-- [ ] Completion log
-
-## CP008 — QA Gate
-
-**Status:** completed · **Depends on:** CP007
-
-Deterministic, mode-aware, fail closed. Implements all of §9.4.
-
-- [x] Ask Question gate
-- [x] Implementation plan
-- [ ] Structural rules, branching per mode (§9.4)
-- [ ] **Quality floor checks (§6.3)** — spot description substance, required
-      spot fields, actionable tip, activity description not a restatement
-- [ ] **OTA product-page tell detection (§6.1)** — ratings, review counts,
-      scarcity claims, per-spot booking CTA, bare feature checklists
-- [ ] **Money check must be pattern-based, not word-based** (§9.1.9)
-- [ ] Integrity checks: guard passed, attribution present, venues verified
-- [ ] Distinct failure code per rule
-- [ ] Verify: fixture with `Rp 500.000` is rejected
-- [ ] Verify: **fixture with the word "harga" but no figure is accepted** —
-      regression guard for the Web Scoping Engine over-blocking bug
-- [ ] Verify: fixture with "4.8 ★ (2,341 ulasan)" is rejected (§6.1)
-- [ ] Verify: fixture with a one-line spot description is rejected (§6.3)
-- [ ] Verify: `destination_guide` fixture containing a time value is rejected
-- [ ] Verify: fixture with both `schedule[]` and `spots[]` is rejected
-- [ ] Verify: a valid fixture in each of the 4 modes passes
-- [ ] Completion log
-
-## CP009 — HTML Shell and Scheduled Layout
-
-**Status:** completed · **Depends on:** CP008
-
-Shared shell + the timeline body (`SPEC.md` §5, §10).
-
-- [x] Ask Question gate
-- [x] Implementation plan
-- [ ] Write `render-itinerary-html.js` (no DOCX tooling)
-- [ ] Shared shell: hero, overview, practical, closing (§10.2)
-- [ ] Hero with photo/gradient overlay
-- [ ] Overview: quick-facts strip, route summary, highlights with icons
-- [ ] **Vertical connected timeline** with block markers (D12)
-- [ ] Day markers for `multi_day` only; continuous timeline for
-      `half_day`/`full_day` with no block header (§10.2)
-- [ ] Inline SVG icon set for all 7 activity types (§11.1)
-- [ ] Palette injected from `config/palettes.json` (§10.1)
-- [ ] Section visibility driven by `config/mode-profiles.json` (§4.2)
-- [ ] Self-contained output: inline CSS, inline SVG, no CDN (§10.3)
-- [ ] At most one base64-embedded display font; system stack for body
-- [ ] Mobile-first — phone view is the primary view (§10.3)
-- [ ] Empty arrays remove their section entirely, no empty shells
-- [ ] **Rendered visual verification** at phone and desktop width, for all
-      three scheduled modes (§13)
-- [ ] Completion log recording the visual evidence
-
-## CP010 — Guide Layout
-
-**Status:** completed · **Depends on:** CP009
-
-The place-ordered body (`SPEC.md` §5.4). **Not** the timeline with times
-removed — a distinct component.
-
-- [x] Ask Question gate
-- [x] Implementation plan
-- [ ] Spot card grid, reusing the CP009 shell unchanged
-- [ ] Card shows name, area, category, description, suggested duration,
-      best time, getting there, tips, nearby pairing
-- [ ] Grouped rendering with group intro when `groupLabel` present (§4.4)
-- [ ] Region-level image or icon per card — never a claimed venue photo (§7.1)
-- [ ] Verify: a 5-spot flat guide renders correctly
-- [ ] Verify: a 15-spot grouped guide renders correctly and stays readable
-- [ ] Verify: no time value appears anywhere in the rendered output
-- [ ] **Rendered visual verification** at phone and desktop width (§13)
-- [ ] Completion log recording the visual evidence
-
-## CP011 — PDF Generation
-
-**Status:** in_progress · **Depends on:** CP010
-
-**Plan:** `plans/cp011_implementation-plan_pdf-generation.md`
-
-- [ ] Ask Question gate
-- [ ] Implementation plan
-- [ ] Playwright HTML → PDF
-- [ ] **`printBackground: true`** — without it all colour is lost (§10.3)
-- [ ] `break-inside: avoid` verified effective on block and spot cards
-- [ ] Explicit `@page` margins
-- [ ] Temp files use `$execution.id`, never `Date.now()` (§9.1.8)
-- [ ] `Handle PDF Failure` — HTML retained
-- [ ] **Rendered visual verification of the PDF specifically** — confirm
-      gradients and backgrounds actually survived (§13.3)
-- [ ] Verify: no card splits across a page break (§13.4)
-- [ ] Verify: page count within §4.3 expectations for each mode
-- [ ] Completion log
-
-## CP012 — Publish Link and Delivery
-
-**Status:** pending · **Depends on:** CP011
-
-- [ ] Ask Question gate
-- [ ] Implementation plan
-- [ ] Serve HTML behind an unguessable token (D5)
-- [ ] **Long lifetime, 6–12 months — NOT the 24-hour pattern** from
-      Website Research Engine (D5 rationale)
-- [ ] Decide and document the retention/cleanup policy
-- [ ] Email to **the agent's** address (D9), PDF attached, link included
-- [ ] Attachment verified present and non-zero length
-- [ ] Email body in the resolved output language (D10)
-- [ ] `Handle Delivery Failure` — generated files retained
-- [ ] Verify: link resolves; token cannot be guessed or enumerated
-- [ ] Verify: link still resolves well beyond 24 hours
-- [ ] Verify: attachment opens as a valid PDF
-- [ ] Completion log
-
-## CP013 — End-to-End Verification
-
-**Status:** pending · **Depends on:** CP012
-
-- [ ] Ask Question gate
-- [ ] Implementation plan
-- [ ] Full run in **each of the 4 modes** (D13)
-- [ ] Full run, Indonesian submission (D10)
-- [ ] Full run, English submission (D10)
-- [ ] `multi_day` 14-day run — condensing verified (D6)
-- [ ] High-spot-count guide run — grouping verified, not thinned (§4.4)
-- [ ] Run with `heroPhotoUrl` supplied — search skipped (§7.5)
-- [ ] Run with an obscure destination — gradients, not wrong photos (§7.4)
-- [ ] Impossible-itinerary fixture — caught by the guard (§9.3)
-- [ ] 10-hour `half_day` fixture — rejected (§9.3)
-- [ ] Confirm no monetary value anywhere (D7)
-- [ ] Confirm no opening hours or ticket prices (D11)
-- [ ] Confirm no OTA product-page tell; quality floor holds (§6)
-- [ ] Confirm photo attribution present (§7.6)
-- [ ] Rendered visual verification of final HTML and PDF (§13)
-- [ ] Confirm the other five products in this repo are unchanged
-- [ ] Activate the workflow only after all criteria pass
-- [ ] Completion log
-
----
-
-## CP014 — Guide-Ordered Route Anchors
-
-**Status:** completed · **Depends on:** CP008
-**Plan:** `plans/cp014_implementation-plan_guide-ordered-route-anchors.md`
-**Log:** `logs/cp014_completion-log_guide-ordered-route-anchors.md`
-
-Previously `blocked` on an external CP002 bug (invalid AI model name); fixed
-2026-09-04 (see CP002's revision log) which unblocked a full live
-end-to-end proof — see the completion log for evidence.
-
-The guide states the visiting order per day; the pipeline enforces it
-deterministically. No geodata API — the guide's input *is* the ground truth.
-
-- [x] Ask Question gate (2026-09-03: day-labelled format, plan-only)
-- [x] Implementation plan
-- [x] Form Trigger field `routePlan` (textarea, optional)
-- [x] `config/config.json` → `limits.routePlan: 4000`
-- [~] `config/itinerary-schema.json` — **deviation:** this file is the
-      `canonicalItinerary` **output/rendering** schema
-      (`additionalProperties: false`), not an intake schema; `routePlanOrdered`
-      is a pipeline-internal field never rendered, so adding it there would be
-      unjustified scope creep. Not changed; documented in the plan.
-- [x] New deterministic `Parse Route Plan` node (no separate failure branch —
-      **deviation:** reuses the existing `ok:false`/`errorCode` cascade
-      pattern that CP001's own `Validate and Normalize Input` already uses,
-      for consistency rather than introducing a second error-handling shape)
-  - [x] Day-marker grammar accepts `Hari N:` **and** `Day N:` (D10)
-  - [x] Mode-aware acceptance table (bare list ok for half/full day and guide;
-        rejected for `multi_day`)
-  - [x] Distinct code per validation rule, fail closed
-  - [x] `routePlanBlockCount < durationDays` allowed; model fills the rest
-- [x] CP003 `Build Skeleton Request`: anchors are a fixed ordered spine —
-      fill between, never reorder, never move block, never drop
-- [x] CP008 QA Gate: anchor subsequence check per block
-  - [x] **Normalised matching, not exact-string** (§11c)
-  - [x] `ROUTE_ANCHOR_MISSING` / `_OUT_OF_ORDER` / `_WRONG_BLOCK`
-- [x] CP005 stays authoritative on feasibility; no path reorders guide anchors
-      (verified by construction — CP005 node untouched)
-- [x] Verify: guide's order reproduced exactly, per block — confirmed live
-      for `Parse Route Plan` (execution 4476); confirmed deterministically
-      for the QA Gate anchor check and the CP003 prompt injection (local
-      fixtures, `output/cp014-test-*.{js,cjs}`)
-- [x] Verify: reorder / drop / wrong-block fixtures all rejected
-- [x] **Verify: translated anchor ("Terasering Tegallalang" for "Tegallalang
-      Rice Terraces") is ACCEPTED** — regression guard for the
-      `web-scoping-engine` over-blocking bug
-- [x] Verify: `routePlan` empty reproduces current behaviour exactly
-- [x] Verify: `multi_day` bare list rejected; day gaps rejected; over-duration
-      rejected
-- [x] Verify: `destination_guide` ordered list sets `spots[]` order
-- [x] Verify: workflow validates 0 errors / 0 warnings, left inactive
-      (confirmed `active: false` after every operation)
-- [x] Live end-to-end run through a real AI-generated schedule — CP002's
-      model-name bug fixed 2026-09-04 (external, see CP002's revision log);
-      live execution 4521 (`half_day`, real web form submission) produced
-      `routePlanProvided: true`, the anchor correctly placed and rendered,
-      and `qaOk: true` with **zero** `ROUTE_ANCHOR_*` failures
-- [x] Completion log
-
-## CP015 — Landing Page
-
-**Status:** completed · **Depends on:** CP011 (gap accepted 2026-09-03: proceeded
-with ad-hoc `e2e-pdf-results/` evidence as the demo, before CP011 formally
-completes — see plan's Execution Status and the completion log's Known
-Limitations)
-**Plan:** `plans/cp015-cp016_implementation-plan_public-web-surface.md`
-**Chapter:** CP015–CP016 (public web surface)
-**Log:** `logs/cp015_completion-log_landing-page.md`
-
-Subpage on `repeatable.co` in the existing Carbon Copy system. Site relocated
-to `repeatable/` mid-plan (commit `5ef379b`) — plan updated to match before
-execution.
-
-- [x] Ask Question gate (2026-09-03: free + email capture, separate form page)
-- [x] Implementation plan (chapter)
-- [x] `repeatable/t/itinerary-generator.html`, `lang="id"`, following the `t/*.html` structure
-- [x] Sections: hero, stats, overview, four modes, how it works, what it is
-      **not**, FAQ, CTA (guide's route section deferred — needs CP014
-      `completed`, currently `blocked`)
-- [x] `SoftwareApplication` + `FAQPage` JSON-LD
-- [x] `demo-embed` shows **real** output from `e2e-pdf-results/`
-- [x] Catalog card in `repeatable/index.html` + `Travel` filter tag
-- [x] `repeatable/sitemap.xml` entry (landing page only; form page stays out)
-- [x] Additive CSS only, existing tokens, self-hosted IBM Plex, no CDN
-      (in the end, **zero new CSS was needed** — every component already existed)
-- [x] Anti-slop rules hold: no invented figures, no testimonials, no logo wall;
-      every claim traceable to a `SPEC.md` section (see completion log table)
-- [x] Verify: FAQ accordion works with `main.js` **unmodified**
-- [x] Verify: no external stylesheet/font/script request (from the network log)
-- [x] **Rendered visual verification** at 390×844 and 1440×1000, side by side
-      with an existing `t/` page (§13, §11a)
-- [x] Completion log recording the visual evidence and the claim→spec mapping
-
-## CP016 — Web Form and Webhook Intake
-
-**Status:** pending · **Depends on:** CP014, CP015
-**Plan:** `plans/cp015-cp016_implementation-plan_public-web-surface.md`
-**Chapter:** CP015–CP016 (public web surface)
-
-The form the n8n Form Trigger architecturally cannot be: per-day route rows
-generated from the chosen duration. (`formTrigger` v2.5 `displayOptions` can
-only key off a field's own `fieldType`, never another field's submitted value.)
-
-- [x] Ask Question gate (2026-09-03, shared with CP015)
-- [x] Implementation plan (chapter)
-- [ ] `app/itinerary-generator.html`, `noindex`, same header/footer/CSS
-- [ ] Full `SPEC.md` §12 field set plus `routePlan`
-- [ ] Per-day rows from `tripScope` + `durationDays`; none for half/full day
-      and `destination_guide`
-- [ ] Serialise rows into the **exact** CP014 grammar — one grammar, one parser
-- [ ] Client validation mirrors `LIMITS` but is never trusted
-- [ ] New Webhook node + `Normalize Webhook Payload` converging into
-      `Validate and Normalize Input`; Form Trigger kept for internal testing
-- [ ] Immediate ack response; delivery stays with CP012
-- [ ] CORS + `OPTIONS` preflight
-- [ ] Honeypot, required email, proxy-level rate limit; residual risk stated
-- [ ] Verify: 5 day rows for `durationDays: 5`; no orphaned values after change
-- [ ] Verify: serialised `routePlan` asserted against CP014's own fixtures
-- [ ] Verify: webhook and Form Trigger produce equivalent normalised output
-- [ ] Verify: **CORS preflight from the real page origin in a browser**, not curl
-- [ ] Verify: oversized field rejected server-side with client JS disabled
-- [ ] Verify: webhook failure preserves the user's input
-- [ ] Verify: no credential in page source
-- [ ] Verify: end-to-end submit → email with PDF + link, order matching the rows
-- [ ] **Rendered visual verification** at both widths (§13, §11a)
-- [ ] Completion log
-
----
-
-## CP017 — GitHub Package and AWS Deployment
-
-**Status:** pending · **Depends on:** CP013, CP016  
-**Plan:** plans/cp017_implementation-plan_github-package-and-aws-deployment.md
-
-- [x] Ask Question gate (2026-09-20: repository fixed to
-      https://github.com/satrya370/itenary-generator.git; package files and
-      supporting deployment artifacts belong in that repository)
-- [x] Implementation plan
-- [ ] Confirm CP011, CP012, CP013, and CP016 are completed with matching logs
-- [ ] Export the exact live workflow GRuSSwnW38U1HNgK and sanitize it
-- [ ] Create a reproducible npm package and lockfile for HTML/PDF rendering
-- [ ] Add package validation, fixtures, tests, CI, deployment, verification,
-      and rollback scripts
-- [ ] Push the sanitized package to satrya370/itenary-generator
-- [ ] Back up the existing AWS n8n deployment before mutation
-- [ ] Merge the itinerary package into the existing Docker image and Compose
-      stack without disrupting active products
-- [ ] Configure credential remapping and secret environment injection without
-      committing credential values
-- [ ] Import under a production workflow ID, verify inactive, then activate
-      only after smoke tests pass
-- [ ] Verify all four modes, Indonesian and English output, HTML/PDF visual
-      quality, persistent public link, and email delivery
-- [ ] Verify all pre-existing workflows remain active and healthy
-- [ ] Completion log
-
----
-
-## Follow-ups (not yet CPs)
-
-Recorded so they are not silently absorbed into an active CP
-(`RULES.md` §10).
-
-- Seed `config/travel-rules.json` beyond Bali as real usage reveals which
-  regions matter.
-- Agent-facing regenerate/swap-photo action, rather than requiring a whole
-  new submission to change one image.
-- Embedded map or click-to-open-Maps links per activity/spot — natural fit
-  for the long-lived link (D5), out of scope for the PDF.
-- Coordinate-based backtrack detection for the case where the guide leaves
-  `routePlan` empty (CP014 covers the case where they fill it). Checked
-  2026-09-03: Google's flat $200/month credit was retired in March 2025 and
-  Text/Nearby Search now bills from a 5,000-call Pro tier at $32/1,000 with
-  billing mandatory, so **OpenStreetMap Nominatim first** — free, no key, no
-  billing, and its 1 req/s public limit is ample at one lookup per block.
-  Google Places only as a paid fallback where OSM coverage is thin. Would also
-  sharpen the travel-time guard (§9.3).
-- Bounded model-repair loop for CP014 anchor violations, instead of
-  fail-closed only.
-- Durable storage for emails captured by CP016 (currently the address is only
-  used as `recipientEmail`).
-- Replace the `about:blank` `demo-embed` placeholders on the five existing
-  `t/*.html` pages once CP015 establishes a real embedded-demo pattern.
-- Consider whether `destination_guide` should support a "pick your own days"
-  hand-off into a scheduled mode once both are stable.
+| CP018 | standalone-api-and-runtime-contract | — | completed |
+| CP019 | canonical-schema-and-field-registry | CP018 | in_progress (R1 — schema v2) |
+| CP020 | portable-html-renderer | CP019 | completed |
+| CP021 | engine-api-and-draft-persistence | CP019 | completed |
+| CP022 | dynamic-itinerary-editor | CP020, CP021 | completed |
+| CP023 | field-scoped-ai-writing | CP022 | completed |
+| CP024 | draft-preview-and-publish-validation | CP023 | completed (revisions passed) |
+| CP025 | published-web-link-and-versioning | CP024 | completed |
+| CP026 | removed-pdf-export | — | removed from product scope |
+| CP027 | standalone-end-to-end-verification | CP025 | completed |
+| CP028 | standalone-deployment-readiness | CP027 | completed (standalone-ready / not deployed) |
+| CP030 | import-source-intake | CP028 + revisi `web-2.0.0` (R1–R6) selesai | pending (plan perlu revisi ke v2) |
+| CP031 | ai-structured-itinerary-extraction | CP030 | pending |
+| CP032 | import-review-editor-and-e2e | CP031 | pending |
+| CP029 | laravel-saas-integration | CP032 + kesiapan SaaS Laravel | pending (deferred — last) |
+
+Setiap CP menghasilkan satu hasil yang dapat diverifikasi. CP018–CP028 dan CP030–CP032 adalah fase A (standalone); CP029 fase B (integrasi SaaS) dan dijalankan paling akhir. Urutan eksekusi mengikuti tabel ini, bukan urutan angka ID. Nomor CP yang belum dieksekusi dipertahankan; scope/object disesuaikan keputusan terbaru, bukan menulis ulang hasil pekerjaan completed.
+
+## CP018 — Standalone API and Runtime Contract
+
+**Status:** completed · **Depends on:** —
+**Plan:** `plans/cp018-cp020_implementation-plan_standalone-engine-foundation.md` (§ Proposed Changes — CP018)
+**Log:** `logs/cp018_completion-log_standalone-api-and-runtime-contract.md`
+
+**Hasil:** kontrak app dan runtime mandiri yang dapat dibangun tanpa menunggu SaaS.
+
+- [x] Ask Question: library/backend, port/origin, workspace profile, SQLite/storage directories, AI provider/model, dan Node/Chromium runtime.
+- [x] Tetapkan OpenRouter sebagai provider dan GPT-6 Luna sebagai target; verifikasi exact API model ID/slug serta dukungan request sebelum live test.
+- [x] Tentukan secret loading lokal dari `D:\.agents\Micro Saas\Credential_information.md`; probe lokal hanya mengembalikan status, bukan raw key. Deployment menggunakan secret store/environment injection.
+- [x] Tetapkan auto-detection bahasa brief, locale tag, manual override saat bahasa campur/tidak yakin, dan capability locale/font/model.
+- [x] Verifikasi baseline yang disetujui: Node.js 24+, TypeScript/Fastify, `node:sqlite`, React/Vite/Tailwind v4, file storage dan browser service. Direct local Chromium launch timed out; Puppeteer/print verification adalah bukti historis CP020 renderer, bukan komitmen product PDF export.
+- [x] Tetapkan endpoint/payload/response/version/error contract, timeout, asset/payload limits, local AI usage/rate limits dan idempotency.
+- [x] Tetapkan local/private access boundary, share-link origin/retention, workspace deletion, serta revoke/cache policy.
+- [x] Definisikan future identity/entitlement adapter boundary dengan target `D:\belajar-pemograman`; akses API Laravel bukan blocker fase A.
+- [x] Tetapkan storage layout, migration/backup dan cara menyimpan HTML/asset tanpa kebutuhan cloud atau database Laravel.
+- [x] Tulis implementation plan sebelum pekerjaan kontrak/interface dimulai.
+- [x] Review kontrak terhadap `SPEC.md` §§2–3, 8–10; unresolved direct Chromium execution dicatat sebagai follow-up CP020.
+- [x] Verifikasi contract, runtime probes, package validation/regression test dan availability model/secret tanpa koneksi Laravel.
+- [x] Completion log.
+
+**Acceptance:** pemilik data engine, API, workspace, AI, storage, jobs, exposure dan runtime jelas; OpenRouter/GPT-6 Luna API ID dan secret loading server-side terverifikasi; tidak ada dependency Laravel pada jalur utama.
+
+## CP019 — Canonical Schema and Field Registry
+
+**Status:** completed · **Depends on:** CP018
+**Plan:** `plans/cp018-cp020_implementation-plan_standalone-engine-foundation.md` (§ Proposed Changes — CP019)
+**Revision plan:** `plans/cp019_revision-plan_canonical-schema-and-field-registry.md`
+**Log:** `logs/cp019_completion-log_canonical-schema-and-field-registry.md`
+**Revision 2026-10-06:** validator malformed JSON tidak lagi throw; derived contact/pace/themes disinkronkan dengan warning; konflik legacy dilaporkan. 22 contract tests PASS.
+
+**Hasil:** satu kontrak data versi web dan pemetaan field lengkap.
+
+- [x] Ask Question + implementation plan (satu chapter plan CP018–CP020).
+- [x] Inventaris field schema v2, renderer, form n8n, dan fixture; tetapkan manual/derived/AI/legacy behavior.
+- [x] Schema `web-1.0.0`: nested `brochure`, stable IDs, numeric day ranges, metadata record dipisah.
+- [x] Draft vs publish structural validator, empat mode, exclusivity schedule/spots, coverage numeric dan duration derived.
+- [x] Field registry 89 leaf path dengan localized labels, control, mode, requirement, source, render disposition dan schema constraints source.
+- [x] Mapping agency assets, tanggal/peserta, emergency label+value, credits, tips, legacy URL diagnostics.
+- [x] Adapter root/wrapper/flat tanpa mutasi input; generated UUID disimpan saat first import; private metadata di luar content.
+- [x] Locale catalogs `la`, `fr`, `en`, `id`, `ja`, `zh-Hans`; valid BCP 47 di luar fixture diterima oleh schema.
+- [x] Schema-generated TypeScript declaration dan automatic drift check.
+- [x] Review dan test field coverage, valid/invalid mode, stable IDs/reorder, round-trip, dan 14-day fixture.
+- [x] Completion log.
+
+**Acceptance:** setiap field memiliki sumber dan mapping; editor/API/renderer menggunakan kontrak yang sama.
+
+## CP020 — Portable HTML Renderer
+
+**Status:** completed · **Depends on:** CP019
+**Plan:** `plans/cp018-cp020_implementation-plan_standalone-engine-foundation.md` (§ Proposed Changes — CP020)
+**Revision plan:** `plans/cp020_revision-plan_portable-html-renderer.md`
+**Revision 2026-10-06:** contact/themes fallback otoritatif, locale script-aware (`zh-Hant` → `LOCALE_UNSUPPORTED`, `zh-Hans-*` ok), urutan guide dijaga (contiguous runs), `gradientOnly` dihormati, print keep-with-next + `scripts/web/print-pagination.py` (0 failures, negative control terbukti), harness 11 fixture 0 failures + DOM/glyph assertion, bukti PDF per-halaman, koreksi klaim font/emergency di log. Planner review: `logs/cp018-cp020_planner-review_standalone-engine-foundation.md`.
+
+**Hasil:** renderer web independen dari n8n, siap dipakai preview dan publish.
+
+- [x] Ask Question + implementation plan; gunakan source lama sebagai referensi, pisahkan module web dari wrapper n8n.
+- [x] Jika perlu mengubah artefak CP009/CP010 completed, buat revision plan sesuai ID asal terlebih dahulu. (Tidak diperlukan; artefak lama read-only.)
+- [x] Port hero/overview/timeline/guide/practical/closing dan palette; input langsung schema nested.
+- [x] Tailwind v4 compiled/inline, inline SVG, locale-aware labels/formatting, bahasa dari brief, text escaping, dan field coverage CP019.
+- [x] Katalog/fixture `la`, `fr`, `en`, `id`, `ja`, `zh-Hans`; CJK font embedding dan label coverage terverifikasi tanpa membatasi enum locale.
+- [x] Asset embedding/gradient fallback serta attribution mengikuti storage/asset contract CP018.
+- [x] Module render-HTML pure menerima resources explicit; loader/harness menangani asset lokal. Integrasi endpoint engine/timeout tetap CP021.
+- [x] Review terhadap schema/registry; test output empat mode dan escaping input guide/AI.
+- [x] Rendered visual verification phone/desktop; verifikasi self-contained tanpa request CDN/runtime asset eksternal.
+- [x] Completion log: `logs/cp020_completion-log_portable-html-renderer.md`.
+
+**Acceptance:** HTML lengkap dan coherent untuk empat mode, tanpa n8n context, unresolved placeholder, atau field penting yang hilang.
+
+## CP021 — Engine API and Draft Persistence
+
+**Status:** completed · **Depends on:** CP019
+**Plan:** `plans/cp021-cp023_implementation-plan_persistent-editor-and-field-ai.md` (§ Proposed Changes — CP021)
+**Log:** `logs/cp021_completion-log_engine-api-and-draft-persistence.md`
+**Revision:** `plans/cp021_revision-plan_engine-api-and-draft-persistence.md` — lulus dan tercatat 2026-10-07; chapter re-review masih pending.
+
+**Hasil:** frontend + backend mandiri dapat menyimpan/membaca draft dan asset secara persistent dalam satu workspace.
+
+- [x] Ask Question + implementation plan (chapter CP021–CP023; 2026-10-06).
+- [x] Scaffold frontend/backend mandiri sesuai CP018, Tailwind v4, typed API client dan workspace context yang ditentukan server.
+- [x] SQLite schema/migrations, data directories, workspace/agency profile, itinerary records, revision checking dan asset ownership.
+- [x] Engine context/profile/asset endpoints dan list/create/read/update draft; incomplete draft dapat disimpan.
+- [x] Validated asset upload, file storage dan references; file data tidak masuk source control.
+- [x] Revision checking `409`, invalid record/workspace access, saved/failed states; tidak mempercayai workspace ID browser.
+- [x] API fixture/mock hanya untuk development; aplikasi sebenarnya memakai database, bukan fallback localStorage atau mock SaaS.
+- [x] Review + integration test engine nyata: save/reopen setelah restart, profile/assets persistence, conflict dan koneksi gagal.
+- [x] Completion log.
+
+**Acceptance:** satu workspace operasional tanpa login SaaS, persistent draft/profile/assets dan conflict handling yang mempertahankan input.
+
+## CP022 — Dynamic Itinerary Editor
+
+**Status:** completed · **Depends on:** CP020, CP021
+**Plan:** `plans/cp021-cp023_implementation-plan_persistent-editor-and-field-ai.md` (§ Proposed Changes — CP022)
+**Log:** `logs/cp022_completion-log_dynamic-itinerary-editor.md`
+
+**Hasil:** guide dapat menyusun itinerary lengkap melalui form dinamis empat mode.
+
+- [x] Ask Question + implementation plan (chapter CP021–CP023; manual Save).
+- [x] Informasi perjalanan, hero/asset, overview, practical dan closing dari field registry.
+- [x] Half/full-day: satu blok; multi-day: tambah/hapus/urutkan hari dan aktivitas, akomodasi dan makan.
+- [x] Destination guide: tempat/area/group, logistics, tips; tanpa field jam itinerary.
+- [x] Add/remove/reorder stable IDs; tombol/keyboard alternatif untuk drag-and-drop.
+- [x] Mode-change confirmation, derived duration, field errors, dan status saved/unsaved/save failed.
+- [x] Save/reopen tidak kehilangan konten, order, IDs, asset references, atau manual copy.
+- [x] Review + test user flow empat mode pada phone/desktop, termasuk 14 hari dan banyak tempat.
+- [x] Completion log.
+
+**Acceptance:** semua field yang relevan bisa diisi tanpa mengedit JSON, dan tersimpan sesuai canonical contract.
+
+## CP023 — Field-Scoped AI Writing
+
+**Status:** completed (revision passed; chapter re-review pending) · **Depends on:** CP022
+**Plan:** `plans/cp021-cp023_implementation-plan_persistent-editor-and-field-ai.md` (§ Proposed Changes — CP023)
+**Revision:** `plans/cp023_revision-plan_field-scoped-ai-writing.md` — passed 2026-10-07 · **Log:** `logs/cp023_completion-log_field-scoped-ai-writing.md`
+
+**Hasil:** AI mengusulkan overview/deskripsi tanpa mengambil alih itinerary guide.
+
+- [x] Ask Question + implementation plan: OpenRouter `openai/gpt-6-luna`, default 30 operasi/workspace/hari dan live-test budget maksimal US$2 total.
+- [x] Node engine AI endpoints/provider adapter dengan bounded timeout/retry, local usage/rate limit, operation ID dan minimal context.
+- [x] Prompt/response validation overview dan description satu target ID; tidak membuat field lain.
+- [x] UI Generate/Apply/Discard, manual input tetap tersedia, dan error/kuota state yang jelas.
+- [x] Revision/target staleness check; hasil request lama tidak menimpa edit terbaru atau target yang dihapus.
+- [x] Review + live OpenRouter/GPT-6 Luna test pada bahasa-bahasa yang telah diputuskan CP018, termasuk bahasa/script di luar Latin; secret redacted.
+- [x] Test timeout, local limit exceeded, retry tanpa double usage accounting, malformed response, stale result, dan instruction-like notes.
+- [x] Assert hanya field target berubah; nama, waktu, durasi, rute, dan field manual tetap identik.
+- [x] Completion log: `logs/cp023_completion-log_field-scoped-ai-writing.md`.
+
+**Handoff:** CP021 dan CP023 revisions telah dijalankan dan diverifikasi; hasil/evidence ada di revision section masing-masing completion log. Audit findings untuk replay/pending, unknown usage, language proposal, fixture/rate resume, upload errors dan test coverage ditutup sesuai revision plans. Chapter planner re-review masih diperlukan setelah verdict REVISE; CP024 tetap pending sampai ACCEPT. Budget ledger live tetap US$0.001361 dari US$2, tanpa inference baru pada revision replay.
+
+**Acceptance:** hasil AI adalah usulan editable, applied secara explicit, hanya pada field yang diminta.
+
+## CP024 — Draft Preview and Publish Validation
+
+**Status:** completed (revisions passed) · **Depends on:** CP023
+**Plan:** `plans/cp024-cp025_implementation-plan_preview-publish-and-share-links.md` (§ Proposed Changes — CP024)
+**Log:** `logs/cp024_completion-log_draft-preview-and-publish-validation.md`
+**Revision plan:** `plans/cp024_revision-plan_schedule-cap-with-unknown-start.md` — V27-01 passed 2026-10-07; evidence appended to completion log.
+**Revision plan:** `plans/cp024_revision-plan_full-raster-decode-before-preview.md` — V27-03 passed 2026-10-07; evidence appended to completion log.
+**Revision plan:** `plans/cp024_revision-plan_diagnostic-focus-for-repeaters.md` — V27-02 passed 2026-10-08; evidence appended to completion log.
+**Entry gate:** CP021–CP023 planner re-review ACCEPT 2026-10-07; see `logs/cp021-cp023_planner-review_2026-10-07.md`.
+
+**Hasil:** guide melihat output sebenarnya dan mengetahui apa yang harus diperbaiki sebelum publish.
+
+- [x] Ask Question + implementation plan (chapter CP024–CP025; 2026-10-07).
+- [x] Preview menggunakan renderer CP020 melalui backend engine, isolated dari editor scripts; phone/desktop view.
+- [x] Publish validation: schema, mode exclusivity, required copy/logistics, IDs, attribution, unresolved values.
+- [x] Original schedule overlap/duration/multi-day/transport checks.
+- [x] Revision V27-01: known duration above cap blocks even with unknown start; condensed multi-day only blocks individually provable per-activity violations.
+- [x] Revision V27-03: same-size pixel-corrupt raster fails closed before preview/publish; preserve stored asset/draft/current public version.
+- [x] Revision V27-02: repeater diagnostics return indexed path/stable target and focus the exact invalid field after reordering; CP024 re-reviewed ACCEPT 2026-10-08.
+- [x] Pattern-based guards harga/jam buka/OTA claims; kata "harga" tanpa nominal tetap diterima.
+- [x] Actionable field errors, draft incomplete tetap bisa disimpan, tidak ada silent content thinning.
+- [x] Review + test valid/invalid empat mode, legitimate time labels/duration pada guide, dan renderer unavailable.
+- [x] Rendered visual verification preview vs renderer baseline CP020.
+- [x] Completion log.
+
+**Acceptance:** preview mencerminkan canonical content, publish ditolak dengan alasan konkret jika invalid, pekerjaan guide tetap tersimpan.
+
+## CP025 — Published Web Link and Versioning
+
+**Status:** completed (revisions passed) · **Depends on:** CP024
+**Plan:** `plans/cp024-cp025_implementation-plan_preview-publish-and-share-links.md` (§ Proposed Changes — CP025)
+**Log:** `logs/cp025_completion-log_published-web-link-and-versioning.md`
+**Revision plan:** `plans/cp025_revision-plan_replay-after-permanent-revoke.md` — V27-05 passed 2026-10-07; evidence appended to completion log.
+**Revision plan:** `plans/cp025_revision-plan_recheck-publication-after-async-read.md` — V27-04 passed 2026-10-07; evidence appended to completion log.
+**Revision plan:** `plans/cp025_revision-plan_reuse-pending-publish-operation.md` — pending retry UI revision passed 2026-10-08; evidence appended to completion log.
+**Revision plan:** `plans/cp025_revision-plan_preserve-cross-workspace-publication-recovery.md` — V27-06 recovery revision passed 2026-10-08; evidence appended to completion log.
+
+**Hasil:** traveller dapat membuka versi published melalui link yang stabil.
+
+- [x] Ask Question + implementation plan (chapter CP024–CP025; 2026-10-07).
+- [x] Immutable published snapshots: content, HTML, embedded assets, schema/render version and timestamps; no PDF status/artifact.
+- [x] Idempotent publish revision tertentu; update current published version atomik setelah render/storage sukses.
+- [x] Node engine public share route, random token minimal 128 bit, `noindex`, configured origin dan public/private metadata separation.
+- [x] Copy link, publish status, republish, unpublish/revoke dan cache invalidation; retention tanpa auto-expiry/delete serta token rotation setelah revoke sesuai keputusan chapter 2026-10-07.
+- [x] Initial HTML includes safe Open Graph title/description/canonical URL and absolute image URL; token-scoped preview-image route serves matching committed image to no-cookie/no-JS crawler.
+- [x] Review + test draft edit vs published, republish failure, stale revision, management/public access boundary and revoke HTML/image routes.
+- [x] Verify policy dengan timestamp lebih dari 12 bulan, bukan menunggu selama itu; link tetap hidup sampai revoke.
+- [x] Visual/mobile verification public page, asset persistence dan deep-link reload.
+- [x] Completion log.
+
+**Acceptance:** draft tidak bocor; link tetap menuju versi published yang benar; Open Graph metadata dan preview image tersedia untuk crawler; publish failure tidak merusak versi lama; revoke efektif.
+
+## CP026 — PDF Export (Removed from Product Scope)
+
+**Status:** removed · **Decision:** 2026-10-07, before implementation.
+**Replacement:** shared web link with Open Graph metadata and WhatsApp preview image in CP025.
+
+- [x] Do not implement PDF rendering/export, queue/worker, status, storage, UI or download routes.
+- [x] Preserve CP020 renderer/print-pagination work as completed historical verification; it is not a user-facing PDF export commitment.
+- [ ] Revisit only with a new explicit product decision and plan; do not add opportunistically to CP027/CP028.
+
+## CP027 — Standalone End-to-End Verification
+
+**Status:** completed · **Depends on:** CP025
+**Plan:** `plans/cp027-cp028_implementation-plan_standalone-verification-and-deployment-readiness.md` (§ Proposed Changes — CP027)
+**Log:** `logs/cp027_completion-log_standalone-end-to-end-verification.md`
+**Finding status:** V27-01…V27-06 passed original-CP revision gates. Four-mode UI and publish checks, six locales, long copy, owned assets/OG, anonymous no-JS reads, 14-day/60-spot stress, deterministic AI lifecycle, crash/restart/restore, revocation, retry and cross-workspace recovery all pass. Completion log maps all local `SPEC.md` §12 criteria and marks public HTTPS/WhatsApp crawler testing deferred per W15. CP028 may begin; no AWS or production deployment is claimed.
+
+**Hasil:** local release acceptance pada editor + real backend/SQLite/storage dengan browser verification; historical live AI/replay dan deterministic doubles dipisahkan. Tidak mengklaim external WhatsApp preview.
+
+- [x] Ask Question + shared implementation plan (2026-10-07; AWS target undecided, readiness only).
+- [x] Integrated local E2E rerun: deterministic full-day AI Generate/Apply/Save, restart and revoke/rotation, plus preview/publish/OG for all four modes; safe success/failure summary, no external requests/errors.
+- [x] Flow four-mode UI create/save/reopen + preview/publish/share; anonymous initial OG HTML/image fetched locally without cookies or scripts.
+- [x] Six locale renders, mixed/low-confidence detection and override behavior, 14-day/60-spot stress, missing-photo fallback, supplied photo/logo/credits, and long copy.
+- [x] Workspace scoping, private editor/API boundary, public HTML/OG checks; no PDF download route.
+- [x] Save conflict, AI timeout/local limit, renderer/storage failure, pending publish retry and process restart/crash.
+- [x] Link longevity, stable republish, permanent revoke/rotation, no private metadata and content policy guards.
+- [x] Real persistence/server without Laravel/n8n; deterministic doubles labeled; live ledger read-only checked without inference/reset.
+- [x] V27-01…06 verified and completed-CP defects closed through original revision plans.
+- [x] Actual SaaS adapter integration remains deferred; no Laravel integration claim.
+- [x] Phone/desktop/editor/public/OG screenshots inspected and API/integration evidence recorded without secrets/personal data.
+- [x] All local `SPEC.md` §12 criteria PASS; public HTTPS/WhatsApp external verification is DEFERRED — readiness-only decision.
+- [x] Completion log and CP027 acceptance disposition recorded.
+
+**Acceptance:** seluruh local release acceptance `SPEC.md` §12 terbukti, evidence provider dibedakan dan original-CP defects ditutup melalui revision gates; public HTTPS/WhatsApp evidence explicitly deferred, fase B tetap terpisah.
+
+## CP028 — Standalone Deployment Readiness
+
+**Status:** completed (standalone-ready / not deployed) · **Depends on:** CP027
+**Plan:** `plans/cp027-cp028_implementation-plan_standalone-verification-and-deployment-readiness.md` (§ Proposed Changes — CP028)
+**Log:** `logs/cp028_completion-log_standalone-deployment-readiness.md`
+**Chapter review:** `logs/cp027-cp028_chapter-review_2026-10-09.md` — ACCEPT; standalone-ready/not-deployed.
+
+**Hasil:** reproducible standalone-ready package dengan clean local Linux/runtime, backup/restore/rollback dan measured resource report; target AWS/domain belum ditentukan, belum deployed.
+
+- [x] Ask Question + shared implementation plan (2026-10-07; readiness saja, tidak staging/remote mutation).
+- [x] Runtime-only release: compiled Node backend, built frontend/CSS, fonts/catalogs/Sharp + external persistent SQLite/filesystem; no Puppeteer/Chromium/PDF/helper/test/dev runtime. Native Node 24 Linux x64 clean install verified.
+- [x] Secret-free environment examples, loopback bind, share-only proxy/local TLS, configured origins, readiness checks and one process per data root.
+- [x] Documented setup, API/schema/field mapping, publish/share/OG, retention, backup and rollback in readiness runbook.
+- [x] Clean-start smoke tests four modes, raster asset, manual mode without credentials, share/OG and deep reload; volume/data-root persistence across restart.
+- [x] Local TLS reverse-proxy test allows only exact share HTML/image GET/HEAD; editor/API/assets/path bypass denied. Internet crawler/card gate deferred.
+- [x] Stopped full-root backup/restore and same-build release-path upgrade/rollback preserve IDs, active links, content hashes and revoked-token tombstones; incompatible migration recovery point documented.
+- [x] Measured startup/install/idle/sampled-peak CPU/RSS/release/data/snapshot sizes; future cloud costs unpriced until target/account/region are selected.
+- [x] Future deployment gate documents selected host/region/architecture/budget, domain/origin/DNS owner, admin boundary, backup owner and explicit request. No provisioning/deploy/DNS performed.
+- [x] Completion log and chapter review; status standalone-ready/not-deployed, not staging-ready or production-live.
+
+**Acceptance:** clean local Linux runtime, local TLS/access, resource report dan stopped backup/restore/rollback lulus; local failures atau unavailable required environment tidak boleh ditandai ready. Public HTTPS/WhatsApp verifikasi dan actual deployment deferred; Laravel tidak menjadi gate.
+
+## CP030 — Import Source Intake
+
+**Status:** pending · **Depends on:** CP028 + revisi guide-centric schema R1–R6 selesai
+**Plan:** `plans/cp030-cp032_implementation-plan_document-and-text-import.md` (§ Proposed Changes — CP030) — **harus direvisi ke `web-2.0.0` sebelum mulai** (mapping/blank draft/field paths masih v1).
+
+**Hasil:** guide dapat memasukkan itinerary yang sudah ditulis (ketik/tempel, DOCX, PDF ber-teks) dan engine menyimpan teks bersih yang terbatas secara aman, tanpa AI.
+
+- [x] Ask Question + shared implementation plan (2026-11-05).
+- [ ] Migration `import_sources` + direktori `imports/`; byte asli tidak disimpan, hanya hash.
+- [ ] Ekstraksi deterministik: teks (NFC/newline), DOCX (`mammoth`), PDF (`unpdf`) dengan page marker.
+- [ ] Deteksi magic bytes; batas 10 MB, 60 halaman, DOCX decompressed 50 MB, 120k karakter, deadline 20 s; tanpa truncation diam-diam.
+- [ ] Tolak PDF scan/terenkripsi/korup/spoofed dengan error code stabil.
+- [ ] `POST /api/v1/imports/sources` (multipart atau JSON) + `GET /api/v1/imports/sources/:id`, workspace-scoped; language proposal via `detectLanguage`.
+- [ ] Fixture reproducible lewat generator script; `tests/web/import-intake.test.ts`; asset upload 5 MB tidak berubah.
+- [ ] Review + test; completion log.
+
+**Acceptance:** tiga format menghasilkan teks yang tersimpan dan persistent setelah restart; setiap jalur penolakan menghasilkan code/pesan yang jelas tanpa membuat record.
+
+## CP031 — AI Structured Itinerary Extraction
+
+**Status:** pending · **Depends on:** CP030
+**Plan:** `plans/cp030-cp032_implementation-plan_document-and-text-import.md` (§ Proposed Changes — CP031)
+
+**Hasil:** teks sumber + mode pilihan guide menjadi draft canonical `web-1.0.0` yang valid, dengan kutipan sumber privat per field dan biaya tercatat.
+
+- [ ] Extraction schema per mode (`{ value, quote } | null`) dan provider `extract()`; `generate()` lama tidak berubah.
+- [ ] Prompt transcribe-only, dokumen sebagai untrusted data, bahasa sumber dipertahankan, tanpa terjemahan.
+- [ ] AJV + satu repair retry; quote verification (kutipan harus ada di sumber; angka jam/durasi harus ada di kutipan); gagal = kosong + warning.
+- [ ] Mapping lewat `createBlankDraft(mode)` + UUID baru; `validateDraft`; tidak membuat half-draft saat gagal.
+- [ ] `import_operations` ledger terpisah tanpa plafon/kuota; replay idempotent; satu import in-flight per workspace; restart → `uncertain`.
+- [ ] `import_field_sources` + `GET /api/v1/itineraries/:id/import-provenance`; tidak pernah masuk snapshot/HTML/OG.
+- [ ] Test double empat mode, 14 hari/60 spot, prompt injection, nilai karangan, malformed/timeout/replay/busy; ledger US$2 dan kuota 30/hari tidak berubah.
+- [ ] Live test set tetap (~6 import, id/en/ja, empat mode) dengan biaya dicatat; inspeksi manual hasil vs dokumen.
+- [ ] Review + test; completion log.
+
+**Acceptance:** tidak ada nilai tanpa kutipan terverifikasi di draft; field yang tidak ada di dokumen kosong + warning; draft valid dan bisa diedit; biaya per import tercatat.
+
+## CP032 — Import Review Editor and E2E
+
+**Status:** pending · **Depends on:** CP031
+**Plan:** `plans/cp030-cp032_implementation-plan_document-and-text-import.md` (§ Proposed Changes — CP032)
+
+**Hasil:** guide memakai import dari UI, meninjau dan mengedit hasilnya di editor, lalu publish ke share link seperti biasa.
+
+- [ ] API client import; aksi "Buat dari dokumen/teks": pilih mode → Ketik/Tempel | Upload → hasil intake + bahasa → Ekstrak AI → buka draft.
+- [ ] AI disabled dengan alasan jelas saat credential tidak ada; teks hasil ekstraksi tetap bisa dilihat.
+- [ ] Review: banner, badge "dari dokumen"/"diedit" + kutipan, daftar "tidak ditemukan di dokumen" dengan focus ke field, biaya import tampil.
+- [ ] E2E browser `scripts/web/verify-import.ts`: empat mode × (tempel, DOCX, PDF), penolakan PDF scan, edit → save → reopen → preview → publish → share anonim tanpa provenance.
+- [ ] Screenshot phone/desktop dibuka dan diperiksa.
+- [ ] Regression semua suite web + `build:web-release` + `validate:web-release` (perubahan packager lewat revision gate CP028).
+- [ ] Review + test; completion log; chapter review CP030–CP032.
+
+**Acceptance:** alur import → review → edit → publish berjalan untuk empat mode di phone/desktop tanpa regresi fitur yang sudah ada.
+
+## CP029 — Laravel SaaS Integration (Fase Berikutnya, paling akhir)
+
+**Status:** pending (deferred — last in roadmap) · **Depends on:** CP032 + kesiapan SaaS Laravel
+**Plan:** `plans/cp029_implementation-plan_laravel-saas-integration.md`
+
+**Hasil:** TourFlow dapat mengakses engine yang sudah jadi lewat integrasi API tanpa membangun ulang fitur itinerary.
+
+- [ ] Ask Question + implementation plan: auth/SSO, tenant/roles, entitlement/usage/billing, domains dan deployment sesuai SaaS yang benar-benar tersedia.
+- [ ] Baca aturan `D:\belajar-pemograman\AGENTS.md`; inspeksi existing API/data/auth sebelum perubahan pada repo Laravel.
+- [ ] Implement authenticated server-to-server integration, external tenant → engine workspace mapping, dan identity/entitlement adapter.
+- [ ] Akses editor dari SaaS, expiry/revoke authorization, CORS/CSRF jika diperlukan; credentials hanya di server.
+- [ ] Usage/quota integration idempotent dan contract failures tidak fallback ke standalone workspace.
+- [ ] Engine tetap menyimpan canonical content/artifacts; Laravel menyimpan reference/mapping, bukan salinan itinerary yang bisa drift.
+- [ ] Tentukan explicit mapping workspace standalone ke tenant SaaS; stable itinerary/version IDs, asset references dan share links existing tetap utuh.
+- [ ] Review + test Laravel nyata: login, dua tenant, permissions, entitlement, expiry, retries dan integration unavailable.
+- [ ] Verifikasi engine standalone dan published HTML/share preview tetap berfungsi setelah adapter ditambahkan.
+- [ ] Completion log.
+
+**Acceptance:** acceptance fase B `SPEC.md` §12 terbukti pada TourFlow nyata; fase A tidak perlu dibuka ulang atau menunggu CP029.
+
+## 3. Follow-ups di luar rilis awal
+
+- Email/WhatsApp delivery setelah guide memilih kirim.
+- Venue/route verification berbasis sumber eksternal jika kebutuhan pengguna terbukti.
+- Library tempat/deskripsi yang dapat dipakai ulang oleh guide.
+- Custom template, collaboration, analytics, dan offline mode.
+
+Follow-up belum mendapat CP implementation ID; buat ID baru sebelum dijadwalkan. Jangan memasukkannya diam-diam ke CP018–CP029.

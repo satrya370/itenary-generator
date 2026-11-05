@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "2.0.0",
+  "defaults": { "scheduledModeOnly": true, "coordinateDistanceCheck": true, "repairRetryCap": 2, "failClosed": true },
+  "destinations": {
+    "bali": {
+      "aliases": ["bali", "pulau bali"],
+      "realisticRoadSpeedKph": { "min": 25, "max": 30 },
+      "hardRules": [
+        { "id": "bali-island-hop-min-half-day", "match": { "routeType": "island_hop" }, "minimumDurationHours": 6, "message": "Island hopping requires at least a half-day block." },
+        { "id": "bali-nusa-penida-full-day", "match": { "destinationAliases": ["nusa penida", "penida"] }, "minimumDurationHours": 8, "exclusiveDayRecommended": true, "message": "Nusa Penida requires a full-day allocation including boat transfer." }
+      ],
+      "seedCoordinates": {
+        "denpasar": { "lat": -8.6500, "lng": 115.2167 }, "ubud": { "lat": -8.5069, "lng": 115.2625 },
+        "uluwatu": { "lat": -8.8291, "lng": 115.0849 }, "sanur": { "lat": -8.7071, "lng": 115.2625 },
+        "nusa_penida": { "lat": -8.7278, "lng": 115.5444 }
+      }
+    }
+  }
+}

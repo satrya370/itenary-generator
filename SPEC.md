@@ -1,678 +1,348 @@
-# Itinerary Brochure Engine — Specification
+# Itinerary Engine Web App — Specification
 
-**Version:** 2
-**Created:** 2026-08-27
-**Revised:** 2026-08-27 — added trip modes (§4) and the Brochure-and-Guidance
-Standard (§6); `days[]` replaced by `schedule[]` + `spots[]`
-**Status:** Draft — awaiting CP001 implementation plan
+**Version:** 3.4 — engine-first, aplikasi mandiri; share link web dengan preview WhatsApp, tanpa PDF export; canonical `web-2.0.0` berbasis cara kerja guide; import itinerary dari teks/DOCX/PDF ber-teks ke draft.
+**Tanggal:** 2026-11-05 (v3.3 dan v3.4 pada hari yang sama; v3.2: 2026-10-07).
+**Status:** spesifikasi authoritative; progress implementasi dan chapter/revision gates mengikuti `TODOS.md`.
+**Authority:** perilaku produk di dokumen ini, roadmap di `TODOS.md`, proses eksekusi di `RULES.md`.
 
----
+## 1. Tujuan produk
 
-## 1. Product Definition
+Aplikasi untuk guide/tour operator membuat, mengedit, dan mempublikasikan itinerary sebagai halaman web yang bisa dibagikan. Halaman published menyediakan Open Graph metadata dan gambar preview agar link dapat menampilkan kartu preview di WhatsApp.
 
-**Name:** Itinerary Brochure Engine
-**Deliverable:** `Digital Trip Brochure & Guide`
-— HTML (primary, long-lived shareable link) + PDF (derived, email attachment)
+Guide menentukan tempat, urutan, waktu, durasi, transportasi, dan informasi praktis melalui form dinamis. AI hanya membantu menulis **overview** dan **description tiap tempat/aktivitas**. Hasil AI selalu bisa diedit.
 
-**Who operates it:** travel agent / tour operator.
-**Who reads the output:** that agent's client (the traveller).
+Sejak v3.3 guide juga dapat **mengimpor itinerary yang sudah ia tulis** (ketik/tempel teks, DOCX, atau PDF ber-teks). AI hanya *mentranskripsikan* isi dokumen ke field canonical mode yang dipilih guide; tidak menyusun, menambah, atau menebak tempat, urutan, waktu, durasi, transport, harga, maupun deskripsi. Hasilnya draft biasa yang direview dan diedit guide sebelum publish (§7a).
 
-**Job to be done:** turn trip details into a colourful, shareable digital
-brochure that is *also* genuinely useful as practical guidance while the
-client is travelling.
+Aplikasi diselesaikan lebih dahulu sebagai produk mandiri untuk **satu workspace guide/operator**. Backend engine sendiri menyediakan penyimpanan, AI, preview dan published web link. Rilis awal dapat digunakan lokal/private tanpa Laravel maupun n8n; WhatsApp preview memerlukan origin HTTPS publik yang dapat dijangkau crawler.
 
-**This is a brochure and a guide, not a quotation and not a product
-listing.** Two constraints follow, and they are the spine of this document:
+Setelah SaaS Laravel siap, engine dihubungkan melalui API untuk identitas, akses workspace/tenant, entitlement dan billing. Engine tetap menyimpan konten itinerary dan artefak published; Laravel tidak perlu membangun ulang editor atau renderer.
 
-- Per D7 there is **no pricing anywhere**. Price is negotiated separately by
-  the agent.
-- Per D14 the output must **carry real guidance value, not reproduce an OTA
-  product page**. §6 defines what that means concretely and makes it
-  enforceable rather than aspirational.
+## 2. Keputusan dan batas scope
 
-**Explicitly NOT this product's job:** price quotation, booking or payment
-handling, contracts and terms, invoicing, availability checking,
-seat/room reservation, review scores, or "book now" mechanics.
+### 2.1 Keputusan yang dikonfirmasi pengguna
 
----
-
-## 2. Relationship to the other products in this repo
-
-This is the **sixth** product and the **first** whose output is not a DOCX.
-
-| | Other five (SWOT, BMC, Business Plan, Website Research, Web Scoping) | This one |
-|---|---|---|
-| Renderer | docxtemplater + `.docx` template | HTML + CSS → PDF via Playwright |
-| Primary artifact | DOCX file | HTML page (link), PDF derived |
-| Visual ambition | clean business document | colourful visual brochure |
-| Reader | business owner / client | traveller, often on a phone, mid-trip |
-
-The DOCX toolchain (`postprocess-docx.js`, `tcMar` padding work, OOXML
-surgery) is **not reused here** and its conventions do not apply.
-
----
-
-## 3. Recorded Decisions
-
-Confirmed by the user via structured questions on 2026-08-27. Binding for all
-CPs unless a revision plan changes them.
-
-| # | Decision | Rationale |
-|---|---|---|
-| D1 | **Travel agent / tour operator** operates it; their client reads the output. | Consistent with the rest of this repo: tools for freelancers and small operators to produce client-facing documents. |
-| D2 | **HTML + PDF.** HTML is the single source; PDF is derived from it. | The HTML has to be built anyway to produce the PDF, so the shareable link is nearly free. Agents still need a PDF to attach to email/WhatsApp. |
-| D3 | **Stock photo API (Unsplash / Pexels)** for imagery, under the strict constraints in §7. | User's choice, made after the wrong-location risk was flagged. §7 exists to make that choice safe rather than to revisit it. |
-| D4 | **Hybrid data sourcing:** web search verifies high-risk named venues; model knowledge handles narrative, structure, and cultural guidance. | Verifying everything is slow and wasteful; verifying nothing ships fictional restaurants. Split by risk category (§8). |
-| D5 | **Hosted on the n8n server behind an unguessable token, with a long lifetime (6–12 months).** | The 24-hour expiry pattern from Website Research Engine is *actively wrong* here — the traveller needs this link open during the trip, weeks or months after generation. |
-| D6 | **`multi_day` mode supports 2–14 days.** Days 1–7 get full detail; days 8–14 may condense similar consecutive days into a range. | Prevents the document re-inflating into a 40-page monster — the exact failure just corrected in Website Research Engine. Applies to `multi_day` only; other modes are bounded by their own nature (§4). |
-| D7 | **No pricing anywhere.** No package price, no per-item cost, no currency values at all. | The product is a digital brochure and guide, not a quotation. Also removes the risk of an AI-invented figure becoming a commitment. |
-| D8 | **Verification scope: high-risk categories only,** batched at one search per block rather than per venue. | A 7-day trip costs roughly 7 searches + 3 AI calls instead of 20+ searches. |
-| D13 | **Four trip modes in one product:** `half_day`, `full_day`, `multi_day`, `destination_guide` (§4). | The modes share the machinery (form, photo strategy, verification, palette, HTML/PDF pipeline, delivery) while keeping their data shapes cleanly separated. This is the opposite of the Website Research Engine tangle, where two products shared *content ambition*; here they share only *infrastructure*. |
-| D14 | **No cap on spot or activity count. Instead, a quality floor (§6):** every entry must carry genuine guidance value. Content that reads like an OTA product listing is rejected. | User's framing, and a better rule than an arbitrary number. Applies product-wide, not just to `destination_guide`. |
-
-### 3.1 Decisions taken by the assistant and recorded for confirmation
-
-| # | Decision | Rationale |
-|---|---|---|
-| D9 | **Email goes to the agent, not directly to the client.** | Given the photo and accuracy risks, unreviewed AI content must not reach a paying client. The agent reviews, then forwards. |
-| D10 | **Output language follows the input language.** | Same behaviour as the other five products. |
-| D11 | **Never state specific opening hours or ticket prices.** | The two facts models get wrong most often, and the two whose wrongness most directly harms a traveller standing at a locked gate. |
-| D12 | **Vertical connected timeline** is the reading of the user's "alur itinerary dari bawah ke atas". | Stated to the user and not corrected. Recorded so a later reader knows it was an interpretation, not a verbatim requirement. |
-| D15 | **When spot/activity count grows large, group rather than thin.** | Direct consequence of D14: unlimited count and a quality floor can only coexist if structure absorbs the scale (§4.4). |
-
----
-
-## 4. Trip Modes (D13)
-
-The real fork in this product is **not how many days**. It is
-**time-ordered versus place-ordered**.
-
-- **Time-ordered family** (`half_day`, `full_day`, `multi_day`) — the same
-  structure at three scales. Unit is a time block. Populates `schedule[]`.
-- **Place-ordered family** (`destination_guide`) — a genuinely different
-  document. Unit is a place. No times, no committed sequence.
-  Populates `spots[]`.
-
-`destination_guide` is **not "the timeline with times removed"**. It answers
-different questions: what is here, why it matters, how long to spend, when
-to come, how to get there.
-
-### 4.1 Mode matrix
-
-| Mode | Unit | Block label | Times | Accommodation | Layout |
-|---|---|---|---|---|---|
-| `half_day` | time block | — | ✓ | — | compact timeline |
-| `full_day` | time block | — | ✓ | — | continuous timeline |
-| `multi_day` (2–14) | day | "Hari 1", "Hari 2" | ✓ | ✓ | timeline + day markers |
-| `destination_guide` | place | — | **—** | — | **card grid, not a timeline** |
-
-**Exactly one** of `schedule[]` / `spots[]` is ever populated. Never both,
-never neither. The QA gate enforces this (§9.4).
-
-### 4.2 Mode-aware section requests
-
-Sections are **not requested from the model at all** when the mode does not
-need them. This is stronger than "empty array hides the section" — it avoids
-spending tokens generating a fourteen-day packing list for a four-hour tour,
-and stops the QA gate demanding fields that were never appropriate.
-
-| Section | `half_day` | `full_day` | `multi_day` | `destination_guide` |
-|---|---|---|---|---|
-| Hero | ✓ | ✓ | ✓ | ✓ |
-| Overview summary | ✓ short | ✓ | ✓ | ✓ |
-| Quick facts | ✓ reduced | ✓ | ✓ | ✓ |
-| Route summary | — | ✓ | ✓ | optional |
-| Highlights | 2–3 | 3–5 | 3–5 | ✓ |
-| Timeline (`schedule[]`) | ✓ compact | ✓ | ✓ + day markers | — |
-| Spot cards (`spots[]`) | — | — | — | ✓ |
-| Accommodation | — | — | ✓ | — |
-| Meals included | optional | optional | ✓ | — |
-| What to bring | minimal | day pack | full | general |
-| Local tips | 2–3 | ✓ | ✓ | ✓ |
-| Health & safety | — | optional | ✓ | optional |
-| Emergency contacts | ✓ | ✓ | ✓ | ✓ |
-| Closing | ✓ | ✓ | ✓ | ✓ |
-
-### 4.3 Expected document length
-
-| Mode | Pages |
+| ID | Keputusan |
 |---|---|
-| `half_day` | 2–3 |
-| `full_day` | 3–5 |
-| `multi_day` (7 days) | 8–12 |
-| `multi_day` (14 days) | 12–18 (with condensing, D6) |
-| `destination_guide` | 4–8 flat; more when grouped (§4.4) |
+| W1 | App terpisah + integrasi API dengan SaaS Laravel, bukan editor yang ditanam langsung sebagai modul Laravel. |
+| W2 | Empat mode tersedia pada rilis awal: `half_day`, `full_day`, `multi_day`, `destination_guide`. |
+| W3 | Form dinamis berdasarkan field itinerary; guide mengisi itinerary, AI membantu overview dan deskripsi tempat. |
+| W4 | Output produk adalah published web page melalui share link; HTML menyediakan Open Graph metadata/image untuk social preview. PDF render/export tidak termasuk scope produk. |
+| W5 | Itinerary Engine harus selesai dan dapat digunakan sebelum SaaS Laravel selesai. |
+| W6 | Rilis mandiri awal menggunakan satu workspace, lokal/private; akun multi-guide dikelola SaaS pada fase integrasi. |
+| W7 | Baseline disetujui: Node.js 24+, TypeScript, Fastify, `node:sqlite`, React/Vite/Tailwind v4. |
+| W8 | Fixture multibahasa awal: bahasa Latin (`la`), Prancis (`fr`), Inggris (`en`), Indonesia (`id`), Jepang (`ja`), Mandarin sederhana (`zh-Hans`). Ini bukan enum pembatas bahasa produk. |
+| W9 | Satu implementation plan chapter CP018–CP020 untuk worker AI; scope tidak mencakup CP021. Planner mengevaluasi hasil chapter berdasarkan evidence worker. |
+| W10 | Satu implementation plan chapter CP024–CP025, urutan preview/validasi → publish/versioning/share preview; log per CP dan dependency gate tetap berlaku. Eksekusi menunggu chapter sebelumnya ACCEPT. |
+| W11 | Preview draft yang aman untuk render boleh belum publish-ready; diagnostics publish ditampilkan terpisah. Preview tidak mengubah draft atau memberi izin publish. |
+| W12 | Jadwal/waktu/durasi yang ambigu atau tidak lengkap menghasilkan warning bahwa jadwal belum sepenuhnya diverifikasi, bukan nilai karangan atau blocker otomatis. Pelanggaran overlap/cap yang terbukti tetap error sebelum publish. |
+| W13 | Retain + rotate: republish aktif mempertahankan link; revoke permanen token lama; publish setelah revoke menggunakan token baru. Snapshot/HTML/assets dipertahankan tanpa expiry atau auto-delete. |
+| W14 | Public published HTML mengandung Open Graph title, description, URL dan absolute preview-image URL yang dapat diambil crawler tanpa login. PDF rendering/export dihapus dari scope; CP026 ditandai removed sebelum implementasi. |
+| W16 | Import teks/DOCX/PDF menghasilkan **draft untuk review**, bukan publish otomatis; hasil ekstraksi mengisi field canonical asli dan seluruhnya dapat diedit guide (Ask Question 2026-11-05). |
+| W17 | Format import v1: teks ketik/tempel, DOCX, PDF dengan text layer. PDF scan/foto ditolak dengan pesan jelas; tanpa OCR/vision. |
+| W18 | Import tidak memakai kuota harian maupun plafon budget, dan tidak memotong ledger live US$2 atau kuota 30 operasi menulis; biaya aktual tiap import tetap dicatat di ledger terpisah dan ditampilkan. Batas teknis per request tetap berlaku sebagai pengaman. |
+| W19 | Data yang tidak ada di dokumen dibiarkan kosong + warning (selaras W12); deskripsi/overview hanya diambil dari dokumen; guide memilih mode sebelum import; setiap field hasil import menyimpan kutipan sumber privat. |
+| W20 | Chapter CP030–CP032 (import) dijalankan sebelum CP029; CP029 Laravel menjadi CP paling akhir roadmap. |
+| W21 | Canonical diganti `web-2.0.0` berbasis cara kerja guide (revisi CP019–CP025, prioritas di atas CP030–CP032). Bentuk schema, aturan mode, mapping migrasi dan perilaku editor otoritatif ada di `plans/cp019-cp025_revision-plan_guide-centric-schema-and-editor.md` § Required Behavior; §5–§6 di bawah yang menyebut path `brochure.*`/`schedule[]`/`spots[]` adalah v1 historis. |
+| W22 | Tetap 4 mode yang dibedakan nyata: half day ≤ 6 jam tanpa makan, full day ≤ 12 jam dengan makan, multi day 2–14 hari (hotel/makan/transfer per hari), destination guide tanpa tanggal/jam. Pemilihan mode lewat kartu berpenjelasan, badge warna per mode. |
+| W23 | Field baru: titik & jam kumpul, penjemputan/pengantaran, nama & kontak guide trip, ketentuan/kebijakan, jam mulai–selesai tur. Field dihapus: duplikat turunan (quickFacts, kontak agensi penutup, kredit foto manual, tanggal dibuat), profil wisatawan, tema & jenis destinasi (diganti warna tema), sorotan & musim terbaik. Data agensi hanya dari profil workspace. |
+| W24 | Tempat destination guide wajib nama, area, deskripsi; detail lain opsional. Draft v1 dimigrasi otomatis (backup + warning untuk perubahan lossy); snapshot published tetap HTML immutable lama. |
+| W15 | Chapter CP027–CP028 adalah local E2E + deployment readiness saja (structured decision 2026-10-07); target AWS belum dipilih. Tidak provisioning, staging, DNS atau production deploy. Local TLS/OG contract diuji, external HTTPS/WhatsApp card appearance ditunda ke deployment yang diminta terpisah. |
 
-### 4.4 Scaling by grouping, not thinning (D15)
+### 2.2 Baseline engineering yang harus dikunci pada CP018
 
-There is no product cap on spot or activity count (D14). But token budget is
-finite, so more entries would ordinarily mean less depth each — which
-collides with the §6 quality floor. Structure resolves the tension:
+- Frontend mandiri: React + TypeScript + Vite, **Tailwind CSS v4**.
+- Backend Node.js 24+ + TypeScript + Fastify: API, validasi, persistence, AI provider adapter, render HTML dan publish route.
+- Persistence awal: SQLite server-side melalui `node:sqlite` dan filesystem untuk asset/HTML; real storage yang tetap ada setelah restart, bukan mock atau browser localStorage sebagai source of truth.
+- Satu backend engine; renderer adalah module/worker internal, tidak perlu microservice, Redis, atau database Laravel untuk rilis awal.
+- Provider AI rilis mandiri: OpenRouter, dengan GPT-6 Luna sebagai target model. Verifikasi exact API model ID/slug dan dukungan endpoint pada CP018; nama tampilan model bukan pengganti ID API.
+- Untuk local development, key dirujuk dari `D:\.agents\Micro Saas\Credential_information.md`; file itu di luar repo dan tidak boleh dibaca ke log/context, disalin ke repo, atau dikirim ke browser. Format file belum ditentukan; CP018 menetapkan cara aman memuatnya ke server process. Deployment menggunakan secret store/environment injection, bukan file credential lokal.
+- Limit/rate usage lokal bukan subscription/billing SaaS.
+- Future SaaS adapter untuk identity/authorization/entitlement; canonical data, field registry, editor dan renderer tidak bergantung adapter Laravel.
+- Default standalone bind ke loopback/local-private dengan workspace yang dipilih server. Sebelum editor/API dipaparkan ke jaringan publik, harus ada proteksi operator di boundary deployment; public share routes dipisahkan dari akses editor.
 
-- **1–8 spots:** flat list, full depth per spot.
-- **9+ spots:** group by area or theme. The **group introduction carries the
-  narrative and guidance** ("why this region rewards a slow morning"), and
-  each spot within it keeps its practical essentials. Guidance value is
-  preserved at scale because it moves up a level rather than evaporating.
+CP018 mengunci pilihan library, port/origin, data directories, asset limits, OpenRouter/GPT-6 Luna API model ID dan secret loading, serta Node/Chromium runtime. Pilihan baseline teknis dapat diperbaiki melalui Ask Question sebelum implementation plan, tetapi kemampuan mandiri W5/W6 tidak boleh menjadi fallback mock.
 
-If a request would exceed what the token budget can serve at the quality
-floor even after grouping, **fail with a clear message** rather than
-silently shipping thin content.
+**Target integrasi berikutnya:** `D:\belajar-pemograman` (TourFlow). Pemeriksaan 2026-10-06: `composer.json` mensyaratkan Laravel `^13.17` dan PHP `^8.3`; frontend Blade/Vite dengan Tailwind v4. Route yang diperiksa berisi halaman belajar dan demo tour, belum itinerary API. Kesiapan auth/tenant/subscription/API tidak diasumsikan. Repo ini baru menjadi dependency pada CP029, bukan CP018–CP028.
 
----
+### 2.3 Aturan produk yang dibawa dari v2
 
-## 5. Output Document Structure
+| Referensi lama | Aturan pada versi web |
+|---|---|
+| D1 | Guide/operator membuat output; traveller membaca output published. |
+| D2, D5 | Published HTML/share link adalah output produk; link tidak memakai expiry 24 jam. PDF export tidak termasuk scope terbaru. |
+| D3 | Foto milik guide dapat digunakan; stock photo opsional, hanya dekorasi destinasi/region. |
+| D6 | `multi_day` mendukung 2–14 hari. Guide mengendalikan pengelompokan hari; AI tidak memadatkan jadwal otomatis. |
+| D7 | Tidak ada nilai harga dalam brochure. Billing/subscription SaaS terpisah dari konten itinerary. |
+| D10 (revised) | Itinerary multibahasa; bahasa output mengikuti bahasa yang klien gunakan pada brief/form. Tidak dibatasi ke `id`/`en`; guide boleh memilih override bahasa secara eksplisit. |
+| D11 | AI tidak membuat klaim jam operasional atau harga tiket. Waktu kunjungan dari guide bukan jam buka venue. |
+| D12, D13 | Timeline untuk mode terjadwal; kartu tempat untuk destination guide. |
+| D14, D15 | Konten bersifat brochure dan guidance, tanpa rating, scarcity, atau booking CTA; tempat dapat dikelompokkan tanpa menghilangkan kedalaman. |
 
-Applies per the §4.2 matrix.
+**Multilingual behavior (D10):** bahasa output mengikuti bahasa dominan yang klien gunakan dalam brief dan isian konten. `outputLanguage` menyimpan locale/tag bahasa extensible (misalnya BCP 47), bukan enum tetap `id`/`en`. Guide dapat memilih override bahasa. Jika input bercampur atau deteksi bahasa tidak yakin, minta guide memilih sebelum generate AI/publish; jangan diam-diam menerjemahkan teks manual klien. Generated output dan label brochure mengikuti locale terpilih. Locale catalog/font/model yang belum mendukung bahasa yang dipilih harus dinyatakan jelas sebelum publish, bukan menghasilkan halaman setengah diterjemahkan.
 
-### 5.1 Hero
-Full-width destination photo with overlay: trip title, destination, scope
-label, dates, traveller count, agency name/logo. Falls back to a themed
-gradient when no confident photo is available (§7).
+CP020 memverifikasi katalog label dan render untuk `la`, `fr`, `en`, `id`, `ja`, `zh-Hans`, termasuk font CJK self-contained. Bahasa lain ditambahkan lewat katalog/capability extensible; schema tidak diubah menjadi enum enam bahasa. CP018 menetapkan mekanisme detection, tetapi implementasi detection/AI endpoints menjadi CP023. Fixture chapter tidak boleh diklaim sebagai hasil live AI jika dibuat manual.
 
-### 5.2 Overview
-Trip summary (2–3 sentences) · quick-facts strip · route summary
-(`Denpasar → Ubud → Sidemen`) · 3–5 highlights with icons.
+Pipeline tiga tahap AI, penentuan rute oleh AI, genericisation venue otomatis, serta email wajib pada pipeline lama digantikan oleh editor dan AI per field. D4/D8 tetap menjadi prinsip kehati-hatian fakta, tetapi pencarian/verifikasi venue otomatis bukan syarat rilis awal. D9 berlaku jika fitur email ditambahkan: pengiriman ke guide secara eksplisit, bukan otomatis ke traveller.
 
-### 5.3 Time-ordered body — `schedule[]` (D12)
-A connecting vertical line with a marker per block. Each block card carries:
-
-- Block label (multi_day only), date, title/theme, location
-- Activities in time order: time label, type icon, title, description,
-  optional duration
-- Accommodation for that night (`multi_day` only; named only if verified)
-- Meals included · transport notes · one practical tip
-
-Activity `type` drives the icon: `transport`, `sightseeing`, `food`,
-`activity`, `rest`, `accommodation`, `free`.
-
-For `multi_day` 8–14 days, consecutive similar days may collapse into one
-card with a range label (e.g. "Hari 6–7 · Bebas di Ubud") per D6.
-
-### 5.4 Place-ordered body — `spots[]`
-A card grid, not a timeline. Each spot card carries name, area, category,
-description, suggested visit duration, best time to visit, how to get there,
-and at least one actionable tip. Grouped by area or theme when count is high
-(§4.4).
-
-### 5.5 Practical information
-Weighted heavily — this is the "guide" half of the product. Included / not
-included · what to bring · local tips (currency, tipping, dress code,
-connectivity, local transport, etiquette) · health and safety · emergency
-contacts. Scope varies by mode (§4.2).
-
-### 5.6 Closing
-Closing note, agency contact, the verification disclaimer required by D11,
-and photo credits (§7.6 — licensing requirement, not optional).
-
----
-
-## 6. The Brochure-and-Guidance Standard (D14)
-
-The failure mode this section exists to prevent: producing something that
-looks like an OTA product page — thin, transactional, a listing — instead of
-a brochure that guides someone.
-
-### 6.1 Forbidden — OTA product-page tells
-
-Rejected by the QA gate wherever they appear:
-
-- Any price, "mulai dari", or currency value (already D7)
-- Per-spot "book now" / booking call-to-action
-- Star ratings, review scores, review counts ("4.8 · 2,341 ulasan")
-- Availability or scarcity claims ("sisa 3 slot", "hampir penuh")
-- Bare feature checklists standing in for explanation
-  ("✓ Hotel pickup ✓ Lunch included") with no surrounding guidance
-- Superlative marketing filler carrying no information
-  ("pengalaman tak terlupakan!", "wajib dikunjungi!")
-
-### 6.2 Required — what makes it guidance
-
-Every activity and every spot must carry at least the first item, and spots
-must carry all four:
-
-1. **Why it matters / what is distinct about it** — not a label, a reason.
-2. **Practical logistics** — how to get there, how long to spend, when to go.
-3. **Honest caveats where they exist** — crowded at sunset, slippery after
-   rain, modest dress required, steep walk.
-4. **Context** — what is nearby, what pairs well with it.
-
-### 6.3 Quality floor (enforced, §9.4)
-
-- Spot `description`: substantive prose about the actual experience,
-  roughly 40–90 words. A name plus an adjective fails.
-- Spot `suggestedDuration`, `bestTimeToVisit`, `gettingThere`: all required.
-- At least one **actionable** tip per spot. "Bawa kamera" is not actionable.
-- Activity `description`: must explain or orient, not restate the title.
-
-An entry that cannot meet the floor should be **omitted or merged**, not
-padded.
-
----
-
-## 7. Photo Strategy and Its Constraints (D3)
-
-Stock photo search can return an image of the wrong place — searching
-"Sidemen Bali" can surface a rice terrace in Vietnam. In a brochure a paying
-client receives, that is embarrassing at best and misleading at worst. These
-are requirements, not guidelines:
-
-1. **Destination and region level only. Never venue level.** A hero image
-   captioned "Bali" for a Bali trip is decorative and low-risk. An image
-   presented as a specific named restaurant that is actually a different
-   restaurant is a false claim. Per-activity photos are forbidden — use type
-   icons instead. **Spot cards in `destination_guide` may use a
-   region-level image or an icon, never a claimed photo of that exact
-   venue.**
-2. **No captions asserting a specific place.** Imagery stays decorative,
-   never documentary.
-3. **Prefer well-known landmark queries over small place names.**
-   "Ubud rice terrace" is far safer than "Sidemen".
-4. **Fall back to a themed gradient, never to a low-confidence photo.**
-   No image beats a wrong image.
-5. **Optional `heroPhotoUrl` form field.** If the agent supplies their own
-   photo — ideally from the actual trip — it overrides search entirely.
-   Cheapest and most effective mitigation available.
-6. **Attribution is mandatory.** Unsplash requires photographer credit with
-   links and requires triggering its download endpoint when a photo is used;
-   Pexels requires/strongly expects credit. This is a commercial document
-   sent to a paying client, so credits appear in the closing section and the
-   provider's usage requirements must be honoured.
-
----
-
-## 8. Data Sourcing: What Gets Verified (D4, D8)
-
-Web search verifies **named entities**. Model knowledge handles **narrative,
-sequencing, and cultural guidance**. Split by how likely the fact is to be
-wrong or stale:
-
-| Information | Risk | Treatment |
-|---|---|---|
-| Major landmarks (temples, national parks, famous beaches) | Low — they do not move or close | Model knowledge sufficient |
-| **Named restaurants / cafés / warungs** | **High — most frequent closures** | Verify, or genericise |
-| Specifically named hotels | Medium | Verify when named |
-| Small spas / tour operators / shops | High | Verify, or genericise |
-| **Opening hours, ticket prices** | **Very high** | Never state them (D11) |
-| **Travel time between points** | **High — models are consistently optimistic** | Deterministic guard (§9.3) |
-| Destination character, cultural tips, best season, packing advice | Low | Model knowledge sufficient |
-
-"Genericise" means replacing an unverified specific name with an honest
-generic: *"makan siang di warung lokal sekitar Ubud"* rather than inventing
-a restaurant that may not exist.
-
-Verification is **batched one search per block** (D8).
-
-**Mode note:** in `destination_guide` the spots *are* the named entities and
-they are the entire point, so verification load is proportionally higher
-there than in scheduled modes. Budget for it.
-
----
-
-## 9. Pipeline Architecture
+## 3. Arsitektur dan kepemilikan
 
 ```text
-Form Trigger
-  -> Validate and Normalize Input        (resolves tripScope -> mode)
-  -> Derive Palette                      (deterministic, from destinationType)
-  -> AI Stage A: Interpret Brief         -> trip frame + destinationType + mode confirm
-  -> AI Stage B: Body Skeleton           -> schedule[] OR spots[] per mode
-  -> Collect High-Risk Venues            (deterministic filter, §8)
-  -> Verify Venues                       (batched web search, 1 per block)
-  -> Reconcile Verification              (deterministic: drop or genericise)
-  -> Travel-Time Guard                   (scheduled modes only; bounded repair)
-  -> AI Stage C: Final Copy              -> polished copy, verified places only
-  -> Acquire Photos                      (hero + region level; gradient fallback; attribution)
-  -> Assemble canonicalItinerary
-  -> QA Gate                             (mode-aware, fail closed)
-  -> Render HTML                         (shared shell + mode layout)
-  -> Render PDF                          (Playwright, printBackground: true)
-  -> Publish Link + Email Agent          (token, long-lived per D5; PDF attached)
+FASE A — ENGINE MANDIRI
+Guide → web editor → Node engine API → SQLite + asset/artifact storage
+                            ├─ AI overview/description + local usage limits
+                             └─ HTML renderer → immutable published HTML + OG metadata/image
+Traveller → engine share route → published HTML + social preview image
+
+FASE B — SAAS INTEGRATION
+Laravel TourFlow → authenticated engine API / identity adapter
+  accounts, tenant, entitlement, billing → workspace-scoped engine operations
 ```
 
-Three AI calls plus N batched searches.
+| Komponen | Tanggung jawab |
+|---|---|
+| Web editor | Form dinamis, tambah/hapus/urutkan hari dan tempat, edit hasil AI, preview, status save/publish. |
+| Node engine API | Workspace scope, validasi, CRUD, revision checking, AI, usage limits, publikasi dan storage. |
+| Renderer | Render deterministik dari data tervalidasi dan embed asset yang diizinkan ke HTML; internal ke engine. |
+| Public page | Hanya versi published; tidak menampilkan draft, email internal, atau metadata billing. |
+| Future Laravel adapter | Menerjemahkan identitas, tenant dan entitlement SaaS ke engine workspace; tidak mengambil alih renderer/data tanpa migration plan tersendiri. |
 
-### 9.1 Mandatory reliability patterns
+App tidak bergantung pada Laravel atau n8n untuk create, save, generate copy, preview, atau publish. Workflow lama menjadi referensi migrasi. Fase B tidak mengubah kepemilikan konten secara otomatis atau menggandakan database itinerary di Laravel.
 
-Every one of these is a bug already hit and fixed elsewhere in this
-repository. They are requirements.
+## 4. Alur pengguna
 
-1. **Re-anchor after every HTTP Request node.** n8n `httpRequest` replaces
-   the whole item `json`; recover context via
-   `$('Build <Stage> Request').first().json`.
-2. **Take the LAST `type: 'message'` output item** — multi-turn responses
-   emit several; only the final one holds the answer.
-3. **Strip markdown code fences** before `JSON.parse`, with a brace-scan
-   fallback.
-4. **Enumerate every required output key in the prompt.** Omitting the key
-   list makes the model invent its own field names.
-5. **A dedicated failure branch per AI call**, each with a distinct code.
-6. **Fail closed at the QA gate.**
-7. **No secrets in workflow JSON** — credentials by name only.
-8. **Use `$execution.id`, never `Date.now()`,** in temp file names.
-9. **Validation guards must match patterns, not bare words.** Learned the
-   hard way in Web Project Scoping Engine: a word-list ban on
-   `price`/`budget` rejected almost every valid AI output, because a café's
-   own menu pricing and a legitimate client question both contain those
-   words. Match an actual monetary figure (currency symbol or code adjacent
-   to a digit) instead. **This applies with extra force here**, where the
-   subject matter is restaurants and markets.
+1. Guide membuka app lokal/private dan menggunakan satu workspace operator yang dikonfigurasi server.
+2. Pilih mode dan isi informasi perjalanan.
+3. Tambah hari/blok, tempat/aktivitas, serta informasi praktis; ubah urutan sesuai rute.
+4. Isi overview/deskripsi manual atau minta AI untuk field tertentu.
+5. Edit hasil, simpan draft, dan lihat preview mobile/desktop.
+6. Publish versi tertentu, lalu salin/bagikan web link; WhatsApp dapat menampilkan kartu preview jika crawler dapat mengambil origin HTTPS dan image.
+8. Revisi membuat perubahan di draft. Traveller tetap melihat versi published sebelumnya sampai republish berhasil.
 
-### 9.2 Mode resolution
+Overview/deskripsi manual tetap dapat dipakai ketika provider AI gagal atau local usage limit tercapai. Link lokal hanya dapat diakses pada lingkungan yang dapat menjangkau origin engine; link internet membutuhkan deployment dengan domain/origin yang sesuai. Keduanya menggunakan publish route dan data yang sama, bukan file preview sementara.
 
-`tripScope` from the form is the single source of truth (§12). `durationDays`
-is read **only** when `tripScope = multi_day`; for the other modes it is
-forced to 1 (or null for `destination_guide`) rather than trusted. Two
-separate fields that can contradict each other are not permitted.
+## 5. Empat mode dan form dinamis
 
-### 9.2a Guide-Ordered Route Anchors (`routePlan`, CP014)
+> **v3.4:** tabel dan aturan di bawah adalah perilaku `web-1.0.0`. Perilaku target `web-2.0.0` (W21–W24) ada di revision plan guide-centric; setelah R6 selesai, bagian ini ditulis ulang dari plan tersebut.
 
-When the guide provides `routePlan` (§12.1), it is parsed deterministically —
-no AI — into `routePlanOrdered: [{ blockNumber, anchors[] }]` before CP002/CP003
-run. Mode-aware acceptance:
-
-| Mode | Day labels present | Day labels absent |
+| Mode | Editor | Konten output |
 |---|---|---|
-| `half_day`, `full_day` | Only `Hari 1` accepted | Accepted — whole input becomes block 1 |
-| `multi_day` | Accepted | **Rejected** — `ROUTE_PLAN_MISSING_DAY_LABELS` |
-| `destination_guide` | **Rejected** — `ROUTE_PLAN_DAY_LABELS_NOT_APPLICABLE` | Accepted — sets `spots[]` order |
+| `half_day` | Satu blok aktivitas, waktu/durasi; tidak ada akomodasi malam. | Timeline ringkas. |
+| `full_day` | Satu blok aktivitas, waktu/durasi, catatan transportasi. | Timeline satu hari. |
+| `multi_day` | 2–14 hari, aktivitas per hari, akomodasi dan makan. | Timeline dengan penanda hari. |
+| `destination_guide` | Tempat dan kelompok area/tema, tanpa jam atau urutan perjalanan wajib. | Kartu tempat dengan durasi kunjungan, best time, akses, dan tips. |
 
-Other fail-closed parse checks, each its own code: day numbers not a
-contiguous `1..N` sequence (`ROUTE_PLAN_DAY_SEQUENCE_INVALID`), more days than
-`durationDays` (`ROUTE_PLAN_EXCEEDS_DURATION` — fewer is fine, the model plans
-the remaining days), more than 12 anchors in one day or 60 total
-(`ROUTE_PLAN_TOO_MANY_ANCHORS`), and nothing left to parse
-(`ROUTE_PLAN_EMPTY_AFTER_PARSE`). Leaving `routePlan` empty reproduces prior
-behaviour exactly — nothing about this section changes when it is unused.
+- Tepat satu dari `schedule[]` atau `spots[]` berisi data pada output final.
+- ID stabil pada hari/aktivitas/tempat dipakai untuk editing, reorder, dan target AI; posisi array tidak menjadi identitas.
+- Perubahan mode yang membuang data harus dikonfirmasi; data tidak dihapus diam-diam.
+- `durationDays` berasal dari hari yang dibuat pada editor multi-day, tidak menjadi input yang bisa bertentangan dengan isi jadwal.
+- Reorder, tambah, dan hapus dapat digunakan lewat keyboard serta tombol, bukan drag-and-drop saja.
+- Jumlah tempat tidak dibatasi sebagai aturan konten; batas ukuran payload/performa ditentukan dan didokumentasikan pada CP018/CP019. Batas tidak boleh menyebabkan pemotongan diam-diam.
+- Deskripsi aktivitas menjelaskan pengalaman/konteks, bukan mengulang judul. Deskripsi spot guide menargetkan 40–90 kata, disertai logistics dan minimal satu tip actionable; jumlah kata bukan satu-satunya ukuran kualitas.
+- Waktu tumpang tindih dan durasi yang melebihi 6 jam untuk half-day atau 11 jam per hari untuk full/multi-day ditampilkan sebagai kesalahan yang harus dibereskan sebelum publish. AI tidak memperbaiki atau mengubah rute otomatis.
+- Panduan travel-time lama hanya diadaptasi jika datanya mencukupi; aplikasi tidak mengklaim rute feasible tanpa bukti geografi/durasi yang memadai.
+- Keputusan CP024–CP025 (2026-10-07): label waktu/durasi yang tidak bisa dihitung pasti tetap disimpan dan memunculkan warning/partial schedule verification. Tidak menginfer durasi dari aktivitas berikutnya atau membagi durasi blok condensed ke hari-hari tanpa data. Error publish hanya untuk konflik/pelanggaran yang bisa dibuktikan dari input; tidak mengubah field duration opsional menjadi required secara diam-diam.
 
-CP003's skeleton prompt then treats the anchors as a **fixed ordered spine**:
-it may insert filler activities between anchors, but may not reorder an
-anchor, move it to a different block, or drop it. The Travel-Time Guard
-(§9.3) remains authoritative on feasibility — it may still fail a guide's
-route if it is physically impossible, and nothing in this pipeline is allowed
-to silently reorder a guide's anchors to make an infeasible route pass.
+## 6. Kontrak data dan pemetaan field
 
-The QA Gate (§9.4) then verifies, deterministically, that the final
-`schedule[]` (or `spots[]` for `destination_guide`) actually reproduces the
-given anchors, in order, in the given block. Matching is **normalised, not
-exact-string** — lowercased, diacritics and punctuation stripped, common
-locality stopwords removed, matched by token overlap and containment. A
-legitimate output that renders "Tegallalang Rice Terraces" as "Terasering
-Tegallalang" under `outputLanguage: id` must be **accepted**; exact-string
-matching would over-block valid runs, which is the failure mode this
-normalisation exists to prevent (the same class of bug that shipped in
-`web-scoping-engine`'s money-word guard before it was caught).
+### 6.1 Satu canonical document
 
-This section deliberately introduces no coordinate or geodata dependency —
-see the `TODOS.md` follow-up for the case where `routePlan` is left empty.
-
-### 9.3 Travel-Time Guard (deterministic, scheduled modes only)
-
-The single most common way an AI itinerary becomes unusable: it will happily
-schedule `Ubud → Nusa Penida → Uluwatu` in one day, when Nusa Penida alone
-requires a boat crossing and most of a day.
-
-**Thresholds are per-mode** — this is easy to get wrong. A "half day" tour
-containing ten hours of activity would pass a generic 11-hour cap while no
-longer being a half-day tour at all:
-
-| Mode | Max active hours |
-|---|---|
-| `half_day` | 6 |
-| `full_day` | 11 |
-| `multi_day` | 11 per day |
-| `destination_guide` | not applicable (no schedule) |
-
-Other checks:
-- **Hard rules table per destination** — island hop = minimum half day;
-  Nusa Penida = full day.
-- **Realistic speed by mode and region** — Bali road travel is roughly
-  25–30 km/h in practice, not 60. Do not use generic highway speeds.
-- Coordinate-based distance check where coordinates are available.
-- For `destination_guide`, no schedule to validate, but still sanity-check
-  that grouped spots are not geographically absurd together.
-
-On failure: return that specific block to the model for repair, bounded to a
-small retry cap, then fail closed rather than shipping an impossible
-schedule.
-
-### 9.4 QA Gate (mode-aware, fail closed)
-
-**Structural**
-- Exactly one of `schedule[]` / `spots[]` populated (§4.1)
-- `multi_day`: block count reconciles with `durationDays`, accounting for
-  condensed ranges (D6); accommodation present per night
-- `half_day` / `full_day`: exactly one block; accommodation not required
-- `destination_guide`: `spots[]` non-empty; **no time value anywhere**
-- No block with zero activities (scheduled modes)
-- Every enum value inside §11.1
-
-**Quality floor (§6.3)**
-- Spot descriptions meet the substance floor; required spot fields present
-- At least one actionable tip per spot
-- Activity descriptions do not merely restate their titles
-
-**Forbidden content**
-- Any monetary figure anywhere (D7) — matched as a **pattern** per §9.1.9
-- Any specific opening-hours or ticket-price claim (D11)
-- Any §6.1 OTA product-page tell
-- `undefined`, `null`, `[object Object]`, unresolved template placeholder
-
-**Integrity**
-- Travel-Time Guard passed (scheduled modes)
-- Every photo used carries attribution (§7.6)
-- Every named high-risk venue is in the verified set (§8)
-- When `routePlan` was provided (§9.2a): every anchor appears, in its given
-  block, in the given order — normalised matching, fail closed on
-  `ROUTE_ANCHOR_MISSING` / `ROUTE_ANCHOR_OUT_OF_ORDER` / `ROUTE_ANCHOR_WRONG_BLOCK`
-
----
-
-## 10. Visual System
-
-### 10.1 Palette derived deterministically from `destinationType`
-
-Chosen in code, not by the model, so the same destination type always looks
-consistent. One template that still feels designed per trip.
-
-| `destinationType` | Direction |
-|---|---|
-| `beach` | teal + coral + sand |
-| `mountain` | deep green + slate + warm cream |
-| `city` | indigo + amber + light grey |
-| `cultural` | terracotta + deep brown + cream |
-| `nature` | forest green + lime + off-white |
-| `desert` | burnt orange + ochre + sand |
-| `mixed` | neutral navy + warm accent |
-
-Each palette supplies `primary`, `secondary`, `accent`, `surface`,
-`textDark`, `textMuted`, and gradient stops.
-
-### 10.2 Two layout families, one shell
-
-Hero, overview, practical information, and closing are **shared** across all
-modes. Only the body differs:
-
-- **Scheduled layout** — vertical connected timeline (§5.3). Day markers
-  appear for `multi_day` only; `half_day`/`full_day` render one continuous
-  timeline with no block header.
-- **Guide layout** — card grid (§5.4), optionally grouped by area/theme
-  (§4.4). Not a timeline with the times stripped out.
-
-### 10.3 Rendering requirements
-
-- **`printBackground: true`** on the Playwright PDF call. Without it every
-  background colour and gradient silently disappears — the classic failure
-  for a document whose entire point is being colourful.
-- **`break-inside: avoid`** on block and spot cards.
-- Explicit `@page` margins.
-- **Self-contained HTML** — inline CSS, inline SVG icons. The shareable link
-  and the PDF must both render correctly without external CSS or icon-font
-  CDNs.
-- Fonts: base64-embed at most one display font for headings; system sans
-  stack for body. Avoids both licensing questions and load failure during
-  PDF render.
-- **Mobile-first.** The traveller reads this on a phone during the trip
-  (D5), so the phone view is the primary view, not an afterthought.
-
----
-
-## 11. Data Contract — `canonicalItinerary`
-
-Arrays are loop-bearing. **No field anywhere carries a price** (D7).
+`config/itinerary-schema.json` adalah fondasi v2, bukan kontrak editor yang sudah selesai. Kontrak web ada di `config/web/itinerary.schema.json` (`web-1.0.0`) beserta `field-registry.json` dan locale catalogs; perubahan tidak menimpa schema n8n lama.
 
 ```text
-brochure
-  agencyName, agencyLogoUrl?, agencyContact
-  tripTitle, destination, region?, country
-  itineraryMode        half_day | full_day | multi_day | destination_guide
-  durationDays?        multi_day only (2-14)
-  scopeLabel           human-readable, e.g. "Setengah hari", "7 hari"
-  startDate?, endDate?, travelerCount?, travelerType?
-  paceLevel            Relaxed | Balanced | Packed
-  themes[]
-  destinationType      beach | mountain | city | cultural | nature | desert | mixed
-  generatedDate, outputLanguage
+ItineraryRecord                 dimiliki backend engine, tidak dikirim seluruhnya ke AI
+  id, workspaceId, revision, schemaVersion
+  draftContent, currentPublishedVersionId
+  languageContext                requestedLanguage, resolved outputLanguage, source (detected|explicit|unresolved)
+  createdAt, updatedAt
 
-hero
-  photoUrl?, photoAttribution? { photographer, photographerUrl, source }
-  gradientOnly         true when no confident photo (§7.4)
-
-overview
-  summary
-  quickFacts           { scope, bestSeason, pace, themes }
-  routeSummary[]
-  highlights[]         { icon, title, note }
-
-schedule[]             scheduled modes only; empty for destination_guide
-  blockNumber?, blockLabel?          blockLabel null for half_day/full_day
-  blockRangeLabel?, date?, title, location
-  isCondensed          bool (D6, multi_day only)
-  photoUrl?, photoAttribution?       region level only (§7.1)
-  activities[]         { timeLabel, type, title, description, durationLabel? }
-  accommodation?       { name?, area, note }     multi_day only; name if verified
-  mealsIncluded[]
-  transportNote?
-  blockTip?
-
-spots[]                destination_guide only; empty for scheduled modes
-  groupLabel?          set when grouped (§4.4)
-  name, area, category
-  description          40-90 words, substance floor (§6.3)
-  suggestedDuration, bestTimeToVisit, gettingThere
-  tips[]               at least one actionable (§6.3)
-  nearbyPairing?       context requirement (§6.2.4)
-  photoUrl?, photoAttribution?       region level or icon only (§7.1)
-
-practical
-  included[], notIncluded[], whatToBring[]
-  localTips[]          { topic, note }
-  healthSafety[]
-  emergencyContacts[]  { label, value }
-
-closing
-  closingNote, agencyContact, disclaimer
-  photoCredits[]       { photographer, photographerUrl, source }
+canonical content
+  brochure                      agency, title, destination, mode, dates, travellers, language
+  hero                          photo asset, attribution, gradient fallback
+  overview                      summary, quickFacts, routeSummary, highlights
+  schedule[]                    stable id, numeric dayStart/dayEnd, activities[], accommodation, notes
+    activities[]                stable id, timeLabel, type, title, description, durationLabel
+  spots[]                       stable id, group, name, area, category, description, logistics, tips
+  practical                     included, notIncluded, packing, local tips, safety, emergency contacts
+  closing                       closingNote, agencyContact, disclaimer, photoCredits
 ```
 
-### 11.1 Controlled vocabulary
+Renderer menerima canonical content dengan `brochure` bersarang, bukan bergantung pada field duplikat di root. Metadata workspace/revision dan state form bukan bagian brochure. Future external tenant/user IDs disimpan dalam mapping integrasi tersendiri, tidak menggantikan stable IDs itinerary/version.
 
-| Field | Allowed values |
+### 6.2 Field registry untuk editor
+
+Registry terpusat mendefinisikan `path`, label per bahasa, tipe kontrol, required-on-publish, mode visibility, grup/repeater, sumber nilai (`manual`, `derived`, `ai-assisted`), dan batas panjang. Registry harus cocok dengan schema dan pemetaan renderer.
+
+| Path | Kontrol | Pemilik nilai | Output |
+|---|---|---|---|
+| `brochure.tripTitle` | Text | Guide | Judul hero. |
+| `brochure.destination` | Text | Guide | Lokasi hero. |
+| `brochure.agencyName`, `brochure.agencyContact` | Text | Profil workspace/guide; profil SaaS opsional pada fase B | Identitas dan kontak guide. |
+| `brochure.itineraryMode` | Select | Guide | Memilih editor/layout. |
+| `brochure.durationDays`, `brochure.scopeLabel` | Read-only | Derived | Durasi/scope. |
+| `brochure.startDate`, `endDate`, `travelerCount`, `travelerType` | Date/number/select | Guide/derived | Informasi perjalanan. |
+| `brochure.outputLanguage` | Auto-detect + searchable locale selector override | Derived dari brief/input; guide dapat override | Mengatur AI, format tanggal/angka, dan label brochure; locale extensible, bukan enum tetap `id`/`en`. |
+| `hero.photoUrl`, `photoAttribution` | Asset selector + credit fields | Guide | Hero dan credit. |
+| `overview.summary` | Textarea + Generate | Guide/AI | Overview. |
+| `schedule[].activities[].title` | Text | Guide | Nama tempat/aktivitas. |
+| `schedule[].activities[].description` | Textarea + Generate | Guide/AI | Deskripsi timeline. |
+| `schedule[].activities[].timeLabel`, `durationLabel` | Time/duration | Guide | Jadwal dan durasi. |
+| `spots[].name`, `area`, `category` | Text/select | Guide | Identitas kartu tempat. |
+| `spots[].description` | Textarea + Generate | Guide/AI | Deskripsi kartu tempat. |
+| `spots[].suggestedDuration`, `bestTimeToVisit`, `gettingThere`, `tips[]` | Text/repeater | Guide | Guidance praktis. |
+| `practical.*`, `closing.*` | Field/group/repeater sesuai schema | Guide/default terkurasi | Informasi praktis dan penutup. |
+
+Tabel ini menjelaskan pemetaan utama. CP019 wajib menginventarisasi seluruh field: setiap field memiliki input, derivation/default, atau alasan explicit tidak ditampilkan. Placeholder tidak dipertontonkan mentah sebagai nama form.
+
+## 7. AI writing yang terbatas
+
+- Dua operasi: overview seluruh itinerary dan deskripsi satu aktivitas/spot berdasarkan ID stabil.
+- Konteks: locale terpilih/dideteksi, destinasi, nama/area tempat, jenis aktivitas, itinerary relevan, dan catatan faktual guide.
+- Overview hanya menghasilkan `overview.summary`; deskripsi hanya menghasilkan `description` untuk target yang diminta.
+- AI tidak mengubah nama tempat, urutan, tanggal, waktu, durasi, transportasi, hotel, atau field lain.
+- Tidak membuat tempat baru, harga, jam operasional, rating, atau klaim fasilitas yang tidak didukung konteks. Konteks kurang: minta guide melengkapi atau gunakan deskripsi umum yang tidak membuat klaim spesifik.
+- Catatan guide diperlakukan sebagai data, bukan instruksi yang mengubah batas tugas AI.
+- Response terstruktur, validasi tipe/panjang/konsistensi terhadap locale terpilih/konten sebelum menawarkan hasil ke guide; deteksi bahasa bukan bukti dukungan model.
+- Hasil ditampilkan sebagai usulan; Apply mengganti field target, Discard mempertahankan teks lama. Tidak autosave hasil AI sebelum Apply.
+- Request terikat `itineraryId`, `targetId`, `revision`, dan operation ID. Hasil yang stale tidak menimpa perubahan yang lebih baru.
+- Kunci OpenRouter hanya di backend engine. AI menerima konteks minimum, bukan email penerima atau metadata akun/billing. GPT-6 Luna adalah target; request live baru dilakukan setelah CP018 mengonfirmasi model ID yang didukung dan secret loading berfungsi.
+- Timeout/retry terbatas; satu operation ID tidak menggandakan usage accounting karena retry transport. Local usage limit/idempotency dikunci pada CP018; subscription charge/refund baru dikunci dengan Laravel pada CP029.
+
+## 7a. Import itinerary dari dokumen/teks (v3.3)
+
+- Input: mode pilihan guide + teks ketik/tempel, DOCX, atau PDF ber-teks. Tipe dideteksi dari magic bytes; batas ukuran/halaman/dekompresi/panjang teks ditolak secara eksplisit, bukan dipotong diam-diam. Byte file asli tidak disimpan setelah ekstraksi; teks hasil ekstraksi disimpan privat milik workspace.
+- Ekstraksi teks deterministik (tanpa AI). Ekstraksi struktur oleh AI hanya transkripsi: setiap nilai wajib memiliki kutipan verbatim yang terbukti ada di teks sumber; angka jam/durasi harus muncul di kutipannya. Nilai tanpa kutipan terverifikasi dibuang menjadi field kosong + warning.
+- Dokumen diperlakukan sebagai data tak tepercaya, bukan instruksi. Bahasa mengikuti dokumen (D10); tidak ada terjemahan diam-diam. Teks guide yang berisi harga/jam buka tidak dihapus; guard publish CP024 tetap melaporkannya.
+- Hasil selalu draft baru yang lolos `validateDraft`; kegagalan tidak membuat half-draft. Kutipan/provenance dan teks sumber privat, tidak pernah masuk snapshot published, HTML, OG atau route publik.
+- Operasi import idempotent per operation ID, satu import in-flight per workspace, biaya/token dicatat di ledger import terpisah (W18).
+
+## 8. Penyimpanan, preview, dan publish
+
+- Draft boleh belum lengkap; publish wajib lolos schema dan aturan konten.
+- Save menggunakan optimistic revision check. Konflik `409` mempertahankan input lokal dan menawarkan reload/reconcile; tidak silent last-write-wins.
+- Preview memakai renderer dan stylesheet yang sama dengan output published. Autosave/debounce hanya diperkenalkan jika status saved/unsaved/error selalu jelas.
+- Preview CP024 memakai saved revision setelah manual Save dan terisolasi dari editor; draft yang incomplete dapat dirender jika struktur, locale dan resource aman. Publish-readiness errors/warnings terpisah; locale/resource unsafe/unresolved tetap memblokir render, tanpa fallback bahasa diam-diam.
+- PublishedVersion menyimpan snapshot canonical content, self-contained HTML, asset references dan render/schema version; tidak ada PDF status.
+- Snapshot published immutable. Link itinerary stabil menunjuk current published version.
+- Publish/republish atomik setelah HTML berhasil dibuat dan disimpan. Kegagalan mempertahankan published version lama serta draft.
+- Share token acak minimal 128 bit, tidak berasal dari sequential ID. Default tanpa expiry otomatis; dapat di-unpublish/revoke oleh guide berizin.
+- Republish saat aktif mempertahankan link. Revoke mematikan token lama secara permanen; publish baru setelah revoke membuat token baru dan replay operasi lama tidak mengaktifkan kembali link yang dicabut.
+- Link berlaku setidaknya 12 bulan selama tidak direvoke/dihapus berdasarkan kebijakan retention operator dan origin/storage engine tetap tersedia. Kebijakan retention standalone diperjelas oleh keputusan chapter CP024–CP025 di bawah; account/tenant closure SaaS ditambahkan pada CP029.
+- Keputusan chapter 2026-10-07 melengkapi gap retention CP018: tidak ada purge/expiry otomatis; seluruh committed snapshots, HTML dan assets embedded disimpan. Revoke hanya mencabut public access, bukan menghapus owner history. Kebijakan deletion baru memerlukan keputusan terpisah.
+- Public page mobile-first, `noindex`, dan tidak membutuhkan login. Ini akses bearer-link, bukan akses privat berbasis identitas.
+- Public HTML menyediakan `og:title`, `og:description`, absolute `og:url` dan absolute `og:image`; public OG image route hanya menyajikan asset preview dari active current published version. WhatsApp/Meta scraping membutuhkan origin HTTPS yang dapat diakses publik dan dapat memakai cache eksternal.
+- Keputusan 2026-10-07: tidak ada PDF render, export, download, job, worker atau PDF API/UI dalam product scope; CP026 dihapus sebelum implementasi. CP020 print CSS/pagination artifacts tetap sebagai hasil renderer historis, bukan product PDF feature.
+
+## 9. Kontrak API engine dan integrasi mendatang
+
+Endpoint rilis awal dimiliki Node engine. Browser menggunakan same-origin engine API; tidak memerlukan API Laravel. Nama/version/payload final dikunci CP018/CP019 dan dapat diakses future Laravel adapter tanpa mengubah editor.
+
+### 9.1 Browser → Node engine
+
+| Method/path | Fungsi |
 |---|---|
-| `itineraryMode` | `half_day`, `full_day`, `multi_day`, `destination_guide` |
-| `activities[].type` | `transport`, `sightseeing`, `food`, `activity`, `rest`, `accommodation`, `free` |
-| `paceLevel` | `Relaxed`, `Balanced`, `Packed` |
-| `destinationType` | `beach`, `mountain`, `city`, `cultural`, `nature`, `desert`, `mixed` |
+| `GET /api/v1/itinerary-engine/context` | Workspace, agency defaults, access mode, local usage, capabilities. |
+| `GET/PATCH /api/v1/itinerary-engine/profile` | Baca / simpan agency defaults workspace. |
+| `POST /api/v1/assets` | Upload asset tervalidasi milik workspace. |
+| `GET/POST /api/v1/itineraries` | Daftar milik workspace / buat draft. |
+| `GET/PATCH /api/v1/itineraries/{id}` | Baca / simpan draft dengan expected revision. |
+| `POST /api/v1/itineraries/{id}/ai/overview` | Usulan overview. |
+| `POST /api/v1/itineraries/{id}/ai/description` | Usulan deskripsi untuk activity/spot ID. |
+| `POST /api/v1/imports/sources` | Intake import: mode + teks atau file DOCX/PDF → teks terekstrak tersimpan + language proposal. |
+| `GET /api/v1/imports/sources/{id}` | Metadata + teks hasil ekstraksi (privat). |
+| `POST /api/v1/imports/sources/{id}/extract` | Ekstraksi AI terstruktur → draft baru + warnings/missing + biaya. |
+| `GET /api/v1/itineraries/{id}/import-provenance` | Kutipan sumber per field hasil import (privat). |
+| `POST /api/v1/itineraries/{id}/preview` | Preview draft tervalidasi untuk render. |
+| `POST /api/v1/itineraries/{id}/publish` | Publish revision tertentu secara idempotent. |
+| `POST /api/v1/itineraries/{id}/unpublish` | Cabut akses link. |
+| `GET /i/{shareToken}` | HTML published untuk traveller. |
+| `GET /i/{shareToken}/og-image` | Preview image versi published aktif untuk crawler sosial. |
 
----
+Response error memiliki code stabil, message, field errors jika ada, request ID; tidak membocorkan secret atau path server. Minimal: `401`, `403`, `404`, `409`, `422`, `429`, dan `503` untuk dependency unavailable.
 
-## 12. Input Contract (Form)
+### 9.2 API → HTML renderer
 
-| Field | Required | Notes |
-|---|---|---|
-| `agencyName` | yes | shown in hero and closing |
-| `agencyContact` | yes | email / WhatsApp shown in the brochure |
-| `agencyLogoUrl` | no | |
-| `destination` | yes | |
-| **`tripScope`** | **yes** | **single source of truth (§9.2):** `half_day` / `full_day` / `multi_day` / `destination_guide` |
-| `durationDays` | conditional | required and read **only** when `tripScope = multi_day`; 2–14 (D6) |
-| `tripTitle` | no | generated when omitted |
-| `startDate` | no | enables real dates on block cards |
-| `travelerCount` | no | |
-| `travelerType` | no | couple / family / solo / group / honeymoon |
-| `pace` | no | relaxed / balanced / packed, default balanced |
-| `themes` | no | free text, e.g. "kuliner, budaya, pantai" |
-| `mustInclude` | no | places the client specifically asked for |
-| `mustAvoid` | no | e.g. "tidak mau hiking berat" |
-| `accommodationNote` | no | hotels already booked, if any (`multi_day`) |
-| `heroPhotoUrl` | no | §7.5 — overrides photo search entirely |
-| `outputLanguage` | no | `auto` (default, D10) / `id` / `en` |
-| `recipientEmail` | yes | **the agent's** address, per D9 |
-| `routePlan` | no | the guide's own visiting order, per day (§9.2a) |
+- Renderer dipanggil internal oleh engine API; tidak perlu endpoint render publik terpisah.
+- Input: operation ID, render/schema version, canonical snapshot, serta asset yang sudah di-resolve oleh backend.
+- Result HTML; errors terstruktur, timeout terbatas. Path file arbitrer dari client tidak diterima.
+- Immutable published HTML dan embedded preview image disimpan; tidak ada PDF job queue atau export worker.
 
-All fields length-capped at validation time, following the `LIMITS` pattern
-used elsewhere in this repo.
+### 9.3 Akses standalone dan future SaaS adapter
 
-### 12.1 `routePlan` — guide-ordered route anchors (§9.2a)
+- Standalone: tidak ada signup atau akun multi-guide. Workspace tunggal berasal dari konfigurasi server; browser tidak dapat memilih workspace dengan payload.
+- Editor/management API bersifat lokal/private. Jika share routes dihost publik, perimeter harus tetap membatasi editor/API; public access hanya ke token routes dan asset snapshot yang diperlukan. Konfigurasi exposure diuji sebelum deployment.
+- Semua record/asset/version/AI operation tetap workspace-scoped untuk memudahkan integrasi nantinya.
+- Fase B: Laravel mengirim identitas/entitlement lewat integrasi server-to-server yang diautentikasi; engine memetakan external tenant ke workspace internal. Jangan mempercayai tenant/user headers dari browser.
+- Contract tests future adapter dapat ditulis sebelum Laravel siap; actual SSO, permission, billing/kuota, CORS/CSRF dan dua tenant baru dinyatakan terintegrasi setelah diuji terhadap Laravel nyata pada CP029.
+- Mode integrasi yang tidak valid/unavailable tidak boleh fallback ke workspace standalone. Service credentials tidak pernah dikirim ke frontend.
 
-The guide who fills the form usually already knows the real route on the
-ground. `routePlan` lets them state it directly instead of the model guessing
-geography from scratch — and instead of adding an external geodata API. See
-§9.2a for the parsing and enforcement contract.
+## 10. Rendering and assets
 
-Format, one line per day when day boundaries matter:
+- Satu layout/render contract untuk preview dan HTML published. Tailwind CSS **v4**, compiled dan inline pada snapshot agar self-contained; tidak bergantung CDN runtime.
+- Reuse fungsi/layout dari `render-itinerary-html.js`; implementasi web baru diselaraskan dengan schema nested, bukan copy bug flattening.
+- Seluruh text escaped; tidak menerima arbitrary HTML/script dari guide maupun AI.
+- Render agency logo, tanggal, peserta, emergency **label + value**, dan attribution berupa credit/link yang sesuai schema.
+- Foto/asset di-resolve melalui storage engine atau allowlisted backend acquisition. Tidak membiarkan Chromium mengambil URL arbitrer dari form.
+- Validasi size, MIME, dan protokol asset; cegah akses private network/file URL pada fetch backend. Foto gagal menjadi gradient fallback yang jelas.
+- Stock photo bersifat dekoratif destinasi/region, tidak diklaim sebagai foto venue tertentu. Credit wajib; provider download attribution requirements dipenuhi jika integrasinya digunakan.
+- Print CSS tetap menjadi styling/regression renderer jika relevan, bukan kemampuan export/download produk.
+- OG preview image yang bounded berasal dari hero/gradient versi published dan disajikan melalui route active-token.
+- Temporary preview/publish files memakai operation UUID, bukan `Date.now()` atau path pengguna; cleanup dalam `finally`, termasuk timeout/gagal.
 
-```text
-Hari 1: Tegallalang Rice Terraces, Warung lokal Ubud
-Hari 2: Uluwatu Temple, Pantai Padang-Padang
-```
+## 11. Reuse dan gap yang sudah diketahui
 
-`Hari N:` or `Day N:` (case-insensitive). A bare comma-separated list with no
-day marker is also accepted for `half_day`, `full_day`, and
-`destination_guide`, where day boundaries do not apply.
+| Bahan sekarang | Perlakuan |
+|---|---|
+| `config/itinerary-schema.json` | Dasar schema web baru dengan stable IDs dan pemisahan metadata. |
+| `config/mode-profiles.json`, `palettes.json`, `travel-rules.json` | Port nilai/aturan yang masih sesuai, hindari duplikasi sumber config. |
+| `render-itinerary-html.js` | Referensi fungsi/layout; nested mapping, label bahasa, field yang hilang, dan Tailwind v4 perlu diselaraskan. |
+| `scripts/render-pdf.mjs` | Historical standalone helper; jangan port ke product export kecuali scope dipulihkan melalui keputusan baru. |
+| Workflow n8n 63 node | Sumber referensi prompt/parser/validation; `$input`, `$execution`, dan lookup node tidak masuk runtime web. |
+| `output/`, `e2e-pdf-results/` | Fixture dan contoh visual untuk regression, bukan sumber data produksi. |
+| Landing page CP015 | Referensi marketing; tidak dianggap editor yang sudah selesai. |
 
----
+Schema output dan renderer sekarang berbeda nested/flat; sebagian metadata belum ditampilkan; tips renderer belum seluruhnya masuk schema; render emergency contacts dapat kehilangan value. Tidak ditemukan standalone editor, database/API aplikasi, atau field registry lengkap pada repo ini.
 
-## 13. Verification Requirements
+PDF/print artifacts adalah bukti validasi renderer yang telah selesai. Scope sekarang tidak memerlukan verifikasi export PDF baru; verifikasi public OG HTML/image secara terpisah.
 
-Format-affecting CPs require **rendered visual verification**, not code
-inspection alone:
+## 12. Acceptance criteria rilis awal
 
-1. Generate HTML from real pipeline output.
-2. Render at phone width and desktop width.
-3. Generate the PDF and confirm backgrounds/gradients survived (the
-   `printBackground` trap).
-4. Confirm no block or spot card splits across a page break.
-5. Confirm no unresolved placeholder, no `undefined`, no empty section shell.
+1. Satu operator dapat menjalankan editor + engine API + storage tanpa menjalankan Laravel atau n8n.
+2. Workspace dipilih server; editor/management API terbatas lokal/private, public token routes tidak membocorkan draft atau asset private.
+3. Empat mode dapat dibuat, disimpan, dibuka kembali, diedit, dipreview dan dipublish sebagai web page.
+4. Semua field registry memiliki sumber nilai dan pemetaan output; nested schema dipakai konsisten.
+5. AI overview/deskripsi hanya mengubah field yang di-Apply; urutan dan data guide tetap identik.
+6. Timeout AI, local usage limit, revision conflict, dan renderer unavailable mempertahankan pekerjaan guide.
+7. Draft edit tidak mengubah public page; republish berhasil mengganti current version secara atomik.
+8. Link tidak expired dalam 24 jam; revoke berlaku untuk HTML/OG image dan tidak menyajikan cached snapshot lama.
+9. Published HTML memiliki Open Graph metadata dan public preview image yang benar, aman, dan dapat diambil tanpa login dari reachable HTTPS origin.
+10. Preview/public page diperiksa visual pada phone dan desktop untuk empat mode, termasuk multi-day 14 hari dan guide banyak tempat.
+11. Bahasa itinerary mengikuti brief klien atau override guide, tidak dibatasi ke Indonesia/Inggris; locale dan label output konsisten, tanpa unresolved placeholder, metadata internal, harga, booking CTA, atau klaim jam buka dari AI.
+12. AI/provider keys dan service credentials tidak ada di browser, workflow export baru, atau source control.
+13. Draft, published link, assets, HTML snapshots dan OG preview image bertahan setelah restart.
+14. Kontrak API dan adapter boundary terdokumentasi; rilis mandiri tidak menunggu implementasi SaaS.
+15. (v3.3, CP030–CP032) Guide dapat membuat draft dari teks, DOCX, atau PDF ber-teks untuk empat mode; file scan/terenkripsi/terlalu besar ditolak dengan pesan jelas; setiap nilai hasil import memiliki kutipan sumber terverifikasi, field yang tidak ada di dokumen kosong + warning; draft hasil import dapat diedit, dipreview dan dipublish lewat aturan yang sama; provenance tidak bocor ke route publik; ledger US$2 dan kuota menulis tidak berubah karena import.
 
-Additional required checks:
+**Readiness boundary (W15):** untuk CP027–CP028, kriteria 9 dibagi menjadi local initial-HTML/OG-image/TLS access contract dan external HTTPS/WhatsApp crawler verification. Seluruh local criteria wajib PASS; external portion dicatat **DEFERRED — target/domain/deployment belum diotorisasi**, bukan PASS. CP028 dapat selesai sebagai `standalone-ready/not-deployed` setelah clean runtime, private/public proxy boundary, restore/rollback dan resource measurements lulus. Label staging-ready/production-live serta kartu WhatsApp internet membutuhkan verifikasi pada origin nyata setelah deployment diotorisasi. Deterministic provider doubles menguji lifecycle/faults; evidence live CP023/replay dicatat terpisah dan tidak disebut inference baru.
 
-- **All four modes** produce a coherent document (D13).
-- **D7:** no monetary value anywhere in HTML or PDF.
-- **D11:** no specific opening hours or ticket prices.
-- **D14 / §6:** no OTA product-page tell; quality floor holds.
-- **§9.1.9 regression guard:** a fixture containing the word "harga" with no
-  figure must be **accepted** — the Web Scoping Engine over-blocking bug
-  must not recur here.
-- **§7:** every photo carries attribution; no per-activity photo; no caption
-  asserting a specific venue.
-- **D6:** a 14-day trip stays within a sane page count via condensing.
-- **§9.3:** an impossible-itinerary fixture is caught and repaired or
-  rejected — never shipped. A 10-hour `half_day` fixture is rejected.
-- **§4.4:** a high-spot-count `destination_guide` groups rather than thins.
-- **D5:** the published link still resolves well beyond 24 hours.
-- **D10:** an Indonesian submission produces an Indonesian brochure.
+**Acceptance fase B (CP029, bukan gate rilis awal):** akses engine dari identitas Laravel, tenant/workspace mapping, permission dan entitlement/usage accounting bekerja pada SaaS nyata. Dua tenant tidak dapat mengakses draft/version/asset/AI operation tenant lain; mode standalone tidak menjadi authorization bypass. Itinerary IDs dan published links tetap utuh setelah integrasi.
 
----
+## 13. Out of scope rilis awal
 
-## 14. Out of Scope
+- AI menyusun itinerary/rute, mengganti tempat, atau mengoptimasi jadwal otomatis. (Import v3.3 hanya mentranskripsikan dokumen guide, bukan menyusun; lihat §7a.)
+- OCR/vision untuk PDF scan/foto, ekstraksi gambar dari dokumen, format selain teks/DOCX/PDF ber-teks, dan publish otomatis hasil import.
+- Geocoding, live traffic, opening-hours verification, dan venue search wajib.
+- Booking, pembayaran perjalanan, quotation, rating/review, atau katalog OTA.
+- Sistem user/tenant/subscription baru yang menduplikasi SaaS Laravel.
+- Integrasi Laravel nyata, SSO, multi-guide onboarding dan billing sebagai gate rilis awal; semuanya dijadwalkan terpisah pada CP029 setelah SaaS siap.
+- Real-time collaborative editing, offline sync, marketplace template, custom template builder.
+- Automated WhatsApp messaging; social preview is rendered by the receiving app from the share URL and is not an outbound messaging integration.
+- Memindahkan seluruh kode n8n satu-per-satu atau mengubah workflow lama sebagai bagian penulisan dokumen ini.
 
-- Pricing, quotations, invoicing, payment, currency of any kind (D7).
-- Booking, availability checking, seat/room reservation, "book now" (D14).
-- Review scores, ratings, or social proof metrics (§6.1).
-- Contracts, terms and conditions, cancellation policy.
-- Flight search or flight status.
-- Live weather or live traffic.
-- Real-time collaboration or client-side editing.
-- Multi-currency or multi-language output in a single document.
-- Any modification to the other five products in this repository.
+## 14. Arsip dan proses migrasi
+
+- Spesifikasi v2: `docs/archive/SPEC-n8n-v2.md`.
+- Checkpoint CP001–CP017: `docs/archive/TODOS-n8n.md`; status dicatat historis, bukan bukti kesiapan web.
+- Plan/log lama tetap di `plans/` dan `logs/`; referensi `SPEC.md` pada log lama mengacu v2 pada tanggal pekerjaan tersebut.
+- `RULES.md` tetap mengatur Ask Question, plan gate, review/test/revise, dan completion log. Aturan n8n berlaku hanya jika artefak/instance n8n benar-benar disentuh; aturan HTML, social metadata, foto, validation, dan evidence tetap berlaku pada web.
+- Roadmap web memakai ID baru mulai CP018. Jika implementasi mengubah perilaku artefak CP lama yang completed, buat revision plan pada ID lama sesuai `RULES.md`, bukan menyamarkannya sebagai perubahan roadmap baru.
+- Revisi v3.2 mencatat penghapusan PDF rendering/export sebelum CP026 dimulai dan mengganti hasil CP024–CP025 dengan share-link Open Graph preview. Roadmap CP018–CP028 adalah rilis standalone; CP029 adalah integrasi berikutnya dengan `D:\belajar-pemograman`.

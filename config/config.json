@@ -1,0 +1,15 @@
+{
+  "product": "itinerary-brochure-engine",
+  "schemaVersion": "2.0.0",
+  "models": { "brief": "gpt-oss-120b", "skeleton": "gpt-oss-120b", "finalCopy": "gpt-oss-120b" },
+  "endpoints": { "modelBaseUrlEnv": "ITINERARY_MODEL_BASE_URL", "webSearchBaseUrlEnv": "ITINERARY_SEARCH_BASE_URL" },
+  "photoApi": { "provider": "unsplash", "baseUrl": "https://api.unsplash.com", "accessKeyEnv": "UNSPLASH_ACCESS_KEY", "confidenceThreshold": 0.8, "fallbackToGradient": true, "venueLevelPhotosAllowed": false, "attributionRequired": true },
+  "limits": {
+    "agencyName": 160, "agencyContact": 320, "agencyLogoUrl": 2048,
+    "destination": 200, "tripScope": 32, "durationDays": 2,
+    "tripTitle": 200, "startDate": 10, "travelerCount": 6,
+    "travelerType": 40, "pace": 16, "themes": 1000,
+    "mustInclude": 3000, "mustAvoid": 3000, "accommodationNote": 3000,
+    "heroPhotoUrl": 2048, "outputLanguage": 8, "recipientEmail": 320, "routePlan": 4000
+  }
+}

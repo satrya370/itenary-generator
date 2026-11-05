@@ -1,0 +1,76 @@
+{
+  "canonicalItinerary": {
+    "brochure": {
+      "agencyName": "Studio Perjalanan",
+      "agencyContact": "hello@example.test",
+      "tripTitle": "Ubud in a day",
+      "destination": "Ubud",
+      "region": "Bali",
+      "country": "Indonesia",
+      "itineraryMode": "full_day",
+      "durationDays": 1,
+      "scopeLabel": "Full day",
+      "startDate": null,
+      "endDate": null,
+      "travelerCount": 2,
+      "travelerType": "couple",
+      "paceLevel": "Balanced",
+      "themes": ["culture"],
+      "destinationType": "cultural",
+      "generatedDate": "2026-10-06",
+      "outputLanguage": "en"
+    },
+    "hero": {
+      "photoUrl": "https://images.example.test/region.jpg",
+      "photoAttribution": { "photographer": "A. Photographer", "photographerUrl": "https://credits.example.test/a", "source": "Unsplash" },
+      "gradientOnly": false
+    },
+    "overview": {
+      "summary": "Spend the day between rice terraces and a local lunch.",
+      "quickFacts": { "scope": "Full day", "bestSeason": "Dry season", "pace": "Balanced", "themes": ["culture"] },
+      "routeSummary": ["Ubud center", "Tegallalang"],
+      "highlights": [{ "icon": "sightseeing", "title": "Rice terraces", "note": "A landscape shaped by local farming." }]
+    },
+    "schedule": [{
+      "blockNumber": 1,
+      "blockLabel": null,
+      "blockRangeLabel": null,
+      "date": null,
+      "title": "Ubud and the terraces",
+      "location": "Ubud",
+      "isCondensed": false,
+      "photoUrl": null,
+      "photoAttribution": null,
+      "activities": [{
+        "timeLabel": "08:00",
+        "type": "sightseeing",
+        "title": "Tegallalang Rice Terraces",
+        "description": "Walk among the cultivated terraces and learn how the subak irrigation system shapes the landscape.",
+        "durationLabel": "90 minutes",
+        "tip": "Use the marked path and bring water."
+      }],
+      "accommodation": null,
+      "mealsIncluded": ["Lunch"],
+      "transportNote": "Private transfer",
+      "blockTip": "Keep the route flexible."
+    }],
+    "spots": [],
+    "practical": {
+      "included": ["Private transfer"],
+      "notIncluded": [],
+      "whatToBring": ["Water"],
+      "localTips": [{ "topic": "Dress", "note": "Wear comfortable walking shoes." }],
+      "healthSafety": [],
+      "emergencyContacts": [{ "label": "Local guide", "value": "+62-000-0000" }]
+    },
+    "closing": {
+      "closingNote": "Enjoy the day at your own pace.",
+      "agencyContact": "hello@example.test",
+      "disclaimer": "Times are visit suggestions, not venue opening hours.",
+      "photoCredits": []
+    },
+    "verifiedVenueSet": ["private execution value"]
+  },
+  "recipientEmail": "guide@example.test",
+  "executionId": "fixture-execution-id"
+}

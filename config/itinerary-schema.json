@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://itinerary-brochure-engine.local/schemas/canonical-itinerary-v2.json",
+  "title": "canonicalItinerary",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["brochure", "hero", "overview", "schedule", "spots", "practical", "closing"],
+  "properties": {
+    "brochure": {
+      "type": "object", "additionalProperties": false,
+      "required": ["agencyName", "agencyContact", "tripTitle", "destination", "country", "itineraryMode", "scopeLabel", "paceLevel", "themes", "destinationType", "generatedDate", "outputLanguage"],
+      "properties": {
+        "agencyName": { "type": "string" }, "agencyLogoUrl": { "type": ["string", "null"], "format": "uri" }, "agencyContact": { "type": "string" },
+        "tripTitle": { "type": "string" }, "destination": { "type": "string" }, "region": { "type": ["string", "null"] }, "country": { "type": "string" },
+        "itineraryMode": { "enum": ["half_day", "full_day", "multi_day", "destination_guide"] }, "durationDays": { "type": ["integer", "null"], "minimum": 2, "maximum": 14 },
+        "scopeLabel": { "type": "string" }, "startDate": { "type": ["string", "null"], "format": "date" }, "endDate": { "type": ["string", "null"], "format": "date" },
+        "travelerCount": { "type": ["integer", "null"], "minimum": 1 }, "travelerType": { "type": ["string", "null"] },
+        "paceLevel": { "enum": ["Relaxed", "Balanced", "Packed"] }, "themes": { "type": "array", "items": { "type": "string" } },
+        "destinationType": { "enum": ["beach", "mountain", "city", "cultural", "nature", "desert", "mixed"] },
+        "generatedDate": { "type": "string", "format": "date" }, "outputLanguage": { "enum": ["id", "en"] }
+      }
+    },
+    "hero": {
+      "type": "object", "additionalProperties": false, "required": ["gradientOnly"],
+      "properties": { "photoUrl": { "type": ["string", "null"], "format": "uri" }, "photoAttribution": { "$ref": "#/$defs/photoAttribution" }, "gradientOnly": { "type": "boolean" } }
+    },
+    "overview": {
+      "type": "object", "additionalProperties": false, "required": ["summary", "quickFacts", "routeSummary", "highlights"],
+      "properties": {
+        "summary": { "type": "string" },
+        "quickFacts": { "type": "object", "additionalProperties": false, "required": ["scope", "bestSeason", "pace", "themes"], "properties": { "scope": { "type": "string" }, "bestSeason": { "type": "string" }, "pace": { "type": "string" }, "themes": { "type": "array", "items": { "type": "string" } } } },
+        "routeSummary": { "type": "array", "items": { "type": "string" } },
+        "highlights": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["icon", "title", "note"], "properties": { "icon": { "type": "string" }, "title": { "type": "string" }, "note": { "type": "string" } } } }
+      }
+    },
+    "schedule": { "type": "array", "items": { "$ref": "#/$defs/scheduleBlock" } },
+    "spots": { "type": "array", "items": { "$ref": "#/$defs/spot" } },
+    "practical": {
+      "type": "object", "additionalProperties": false, "required": ["included", "notIncluded", "whatToBring", "localTips", "healthSafety", "emergencyContacts"],
+      "properties": {
+        "included": { "type": "array", "items": { "type": "string" } }, "notIncluded": { "type": "array", "items": { "type": "string" } }, "whatToBring": { "type": "array", "items": { "type": "string" } },
+        "localTips": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["topic", "note"], "properties": { "topic": { "type": "string" }, "note": { "type": "string" } } } },
+        "healthSafety": { "type": "array", "items": { "type": "string" } },
+        "emergencyContacts": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["label", "value"], "properties": { "label": { "type": "string" }, "value": { "type": "string" } } } }
+      }
+    },
+    "closing": {
+      "type": "object", "additionalProperties": false, "required": ["closingNote", "agencyContact", "disclaimer", "photoCredits"],
+      "properties": { "closingNote": { "type": "string" }, "agencyContact": { "type": "string" }, "disclaimer": { "type": "string" }, "photoCredits": { "type": "array", "items": { "$ref": "#/$defs/photoAttribution" } } }
+    }
+  },
+  "$defs": {
+    "photoAttribution": { "type": ["object", "null"], "additionalProperties": false, "required": ["photographer", "photographerUrl", "source"], "properties": { "photographer": { "type": "string" }, "photographerUrl": { "type": "string", "format": "uri" }, "source": { "type": "string" } } },
+    "activity": { "type": "object", "additionalProperties": false, "required": ["timeLabel", "type", "title", "description"], "properties": { "timeLabel": { "type": "string" }, "type": { "enum": ["transport", "sightseeing", "food", "activity", "rest", "accommodation", "free"] }, "title": { "type": "string" }, "description": { "type": "string" }, "durationLabel": { "type": ["string", "null"] } } },
+    "scheduleBlock": {
+      "type": "object", "additionalProperties": false, "required": ["title", "location", "isCondensed", "activities", "mealsIncluded"],
+      "properties": {
+        "blockNumber": { "type": ["integer", "null"] }, "blockLabel": { "type": ["string", "null"] }, "blockRangeLabel": { "type": ["string", "null"] }, "date": { "type": ["string", "null"], "format": "date" },
+        "title": { "type": "string" }, "location": { "type": "string" }, "isCondensed": { "type": "boolean" }, "photoUrl": { "type": ["string", "null"], "format": "uri" }, "photoAttribution": { "$ref": "#/$defs/photoAttribution" },
+        "activities": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/activity" } },
+        "accommodation": { "type": ["object", "null"], "additionalProperties": false, "required": ["area", "note"], "properties": { "name": { "type": ["string", "null"] }, "area": { "type": "string" }, "note": { "type": "string" } } },
+        "mealsIncluded": { "type": "array", "items": { "type": "string" } }, "transportNote": { "type": ["string", "null"] }, "blockTip": { "type": ["string", "null"] }
+      }
+    },
+    "spot": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "area", "category", "description", "suggestedDuration", "bestTimeToVisit", "gettingThere", "tips"],
+      "properties": {
+        "groupLabel": { "type": ["string", "null"] }, "name": { "type": "string" }, "area": { "type": "string" }, "category": { "type": "string" },
+        "description": { "type": "string" }, "suggestedDuration": { "type": "string" }, "bestTimeToVisit": { "type": "string" }, "gettingThere": { "type": "string" },
+        "tips": { "type": "array", "minItems": 1, "items": { "type": "string" } }, "nearbyPairing": { "type": ["string", "null"] },
+        "photoUrl": { "type": ["string", "null"], "format": "uri" }, "photoAttribution": { "$ref": "#/$defs/photoAttribution" }
+      }
+    }
+  },
+  "allOf": [
+    { "if": { "properties": { "brochure": { "properties": { "itineraryMode": { "const": "destination_guide" } } } } }, "then": { "properties": { "schedule": { "maxItems": 0 }, "spots": { "minItems": 1 } } }, "else": { "properties": { "schedule": { "minItems": 1 }, "spots": { "maxItems": 0 } } } }
+  ]
+}

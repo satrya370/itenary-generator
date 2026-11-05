@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "2.0.0",
+  "palettes": {
+    "beach": { "primary": "#0F766E", "secondary": "#155E75", "accent": "#CFF5ED", "surface": "#F7F8FA", "textDark": "#102A43", "textMuted": "#667085", "gradientStops": ["#0B3B46", "#0F766E", "#66C7B8"] },
+    "mountain": { "primary": "#243B53", "secondary": "#3B6978", "accent": "#D7E9E8", "surface": "#F7F8FA", "textDark": "#172B4D", "textMuted": "#667085", "gradientStops": ["#172B4D", "#243B53", "#3B6978"] },
+    "city": { "primary": "#334E68", "secondary": "#2563EB", "accent": "#E8F0FF", "surface": "#F7F8FA", "textDark": "#111827", "textMuted": "#667085", "gradientStops": ["#172B4D", "#334E68", "#2563EB"] },
+    "cultural": { "primary": "#3B4D6B", "secondary": "#0F766E", "accent": "#E6F4F1", "surface": "#F7F8FA", "textDark": "#111827", "textMuted": "#667085", "gradientStops": ["#172B4D", "#3B4D6B", "#0F766E"] },
+    "nature": { "primary": "#166534", "secondary": "#0F766E", "accent": "#E2F4EA", "surface": "#F7F8FA", "textDark": "#102A43", "textMuted": "#667085", "gradientStops": ["#14532D", "#166534", "#0F766E"] },
+    "desert": { "primary": "#4B5563", "secondary": "#B7791F", "accent": "#FFF4D6", "surface": "#F7F8FA", "textDark": "#111827", "textMuted": "#667085", "gradientStops": ["#374151", "#4B5563", "#B7791F"] },
+    "mixed": { "primary": "#172B4D", "secondary": "#0F766E", "accent": "#DFF4F0", "surface": "#F7F8FA", "textDark": "#111827", "textMuted": "#667085", "gradientStops": ["#102A43", "#155E75", "#0F766E"] }
+  }
+}

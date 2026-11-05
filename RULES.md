@@ -255,8 +255,9 @@ Revision section format:
 - Verify the HTML is genuinely self-contained (inline CSS, inline SVG, no
   external CDN dependency) by rendering it with network access disabled or
   by inspecting the request log during render.
-- Temp and output file names use `$execution.id`, never `Date.now()` or any
-  wall-clock-derived value (see `SPEC.md` §9.1.8).
+- Temp and output file names use the platform execution/job ID: `$execution.id`
+  for n8n, operation/job UUID for the standalone web engine. Never use
+  `Date.now()` or a wall-clock-derived value (see `SPEC.md` §10).
 
 ## 11b. Photo Sourcing Rules (D3, D4 in `SPEC.md`)
 

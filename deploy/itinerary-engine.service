@@ -1,0 +1,24 @@
+[Unit]
+Description=Standalone Itinerary Engine
+After=network.target
+
+[Service]
+Type=simple
+User=itinerary-engine
+Group=itinerary-engine
+WorkingDirectory=/opt/itinerary-engine/current
+EnvironmentFile=/etc/itinerary-engine/runtime.env
+ExecStart=/usr/bin/env node /opt/itinerary-engine/current/server/server/main.js
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+KillSignal=SIGTERM
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/itinerary-engine
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,16 @@
+https://localhost:8443 {
+	tls internal
+
+	@publishedShare {
+		method GET HEAD
+		path_regexp share ^/i/[A-Za-z0-9_-]{32,64}(/og-image)?$
+	}
+	handle @publishedShare {
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	# Fail closed: no editor shell, API, arbitrary assets, path prefixes or SPA fallback.
+	handle {
+		respond "Not Found" 404
+	}
+}

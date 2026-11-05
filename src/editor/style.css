@@ -1,0 +1,6 @@
+@import "tailwindcss";
+
+:root { font-family: "Noto Sans Variable", ui-sans-serif, system-ui, sans-serif; color: #0f172a; background: #f8fafc; font-synthesis: none; }
+body { margin: 0; }
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
