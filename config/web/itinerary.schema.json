@@ -1,192 +1,682 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://itinerary-engine.local/schemas/web-itinerary-1.0.0.json",
+  "$id": "https://itinerary-engine.local/schemas/web-itinerary-2.0.0.json",
   "title": "Standalone Itinerary Content",
-  "description": "Canonical nested brochure content. Publish-only requirements are defined by the field registry and validators.",
+  "description": "Canonical guide-centric itinerary content (web-2.0.0). Publish-only requirements and mode applicability are defined by the field registry and validators.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "brochure", "hero", "overview", "schedule", "spots", "practical", "closing"],
+  "required": [
+    "schemaVersion",
+    "trip",
+    "guide",
+    "meeting",
+    "pickup",
+    "cover",
+    "summary",
+    "days",
+    "places",
+    "included",
+    "notIncluded",
+    "whatToBring",
+    "localTips",
+    "healthSafety",
+    "emergencyContacts",
+    "policies",
+    "closingNote",
+    "disclaimer"
+  ],
   "properties": {
-    "schemaVersion": { "const": "web-1.0.0" },
-    "brochure": { "$ref": "#/$defs/brochure" },
-    "hero": { "$ref": "#/$defs/hero" },
-    "overview": { "$ref": "#/$defs/overview" },
-    "schedule": { "type": "array", "items": { "$ref": "#/$defs/scheduleBlock" } },
-    "spots": { "type": "array", "items": { "$ref": "#/$defs/spot" } },
-    "practical": { "$ref": "#/$defs/practical" },
-    "closing": { "$ref": "#/$defs/closing" }
+    "schemaVersion": {
+      "const": "web-2.0.0"
+    },
+    "trip": {
+      "$ref": "#/$defs/trip"
+    },
+    "guide": {
+      "$ref": "#/$defs/guide"
+    },
+    "meeting": {
+      "$ref": "#/$defs/meeting"
+    },
+    "pickup": {
+      "$ref": "#/$defs/pickup"
+    },
+    "cover": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/photo"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "maxLength": 4000
+    },
+    "days": {
+      "type": "array",
+      "maxItems": 14,
+      "items": {
+        "$ref": "#/$defs/day"
+      }
+    },
+    "places": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/place"
+      }
+    },
+    "included": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "string",
+        "maxLength": 500
+      }
+    },
+    "notIncluded": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "string",
+        "maxLength": 500
+      }
+    },
+    "whatToBring": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "string",
+        "maxLength": 500
+      }
+    },
+    "localTips": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "string",
+        "maxLength": 1200
+      }
+    },
+    "healthSafety": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "string",
+        "maxLength": 500
+      }
+    },
+    "emergencyContacts": {
+      "type": "array",
+      "maxItems": 30,
+      "items": {
+        "$ref": "#/$defs/emergencyContact"
+      }
+    },
+    "policies": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 4000
+    },
+    "closingNote": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 2000
+    },
+    "disclaimer": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 2000
+    }
   },
   "$defs": {
-    "nullableText": { "type": ["string", "null"], "maxLength": 4000 },
-    "photoAttribution": {
-      "type": ["object", "null"],
-      "additionalProperties": false,
-      "required": ["photographer", "photographerUrl", "source"],
-      "properties": {
-        "photographer": { "type": "string", "maxLength": 240 },
-        "photographerUrl": { "type": ["string", "null"], "maxLength": 2048, "format": "uri", "pattern": "^https?://" },
-        "source": { "type": "string", "maxLength": 120 }
-      }
-    },
-    "brochure": {
+    "trip": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["agencyName", "agencyContact", "tripTitle", "destination", "region", "country", "itineraryMode", "durationDays", "scopeLabel", "startDate", "endDate", "travelerCount", "travelerType", "paceLevel", "themes", "destinationType", "generatedDate", "outputLanguage"],
+      "required": [
+        "mode",
+        "title",
+        "destination",
+        "country",
+        "region",
+        "language",
+        "colorTheme",
+        "startDate",
+        "startTime",
+        "endTime"
+      ],
       "properties": {
-        "agencyName": { "type": "string", "maxLength": 160 },
-        "agencyContact": { "type": "string", "maxLength": 320 },
-        "agencyLogoAssetId": { "$ref": "#/$defs/nullableText", "maxLength": 80 },
-        "tripTitle": { "type": "string", "maxLength": 200 },
-        "destination": { "type": "string", "maxLength": 200 },
-        "region": { "$ref": "#/$defs/nullableText", "maxLength": 200 },
-        "country": { "type": "string", "maxLength": 120 },
-        "itineraryMode": { "enum": ["half_day", "full_day", "multi_day", "destination_guide"] },
-        "durationDays": { "type": ["integer", "null"], "minimum": 2, "maximum": 14 },
-        "scopeLabel": { "type": "string", "maxLength": 80 },
-        "startDate": { "type": ["string", "null"], "format": "date" },
-        "endDate": { "type": ["string", "null"], "format": "date" },
-        "travelerCount": { "type": ["integer", "null"], "minimum": 1, "maximum": 100000 },
-        "travelerType": { "$ref": "#/$defs/nullableText", "maxLength": 40 },
-        "paceLevel": { "enum": ["Relaxed", "Balanced", "Packed"] },
-        "themes": { "type": "array", "maxItems": 30, "items": { "type": "string", "maxLength": 120 } },
-        "destinationType": { "enum": ["beach", "mountain", "city", "cultural", "nature", "desert", "mixed"] },
-        "generatedDate": { "type": ["string", "null"], "format": "date" },
-        "outputLanguage": { "type": ["string", "null"], "minLength": 2, "maxLength": 35 }
-      }
-    },
-    "hero": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["assetId", "photoAttribution", "gradientOnly"],
-      "properties": {
-        "assetId": { "$ref": "#/$defs/nullableText", "maxLength": 80 },
-        "photoAttribution": { "$ref": "#/$defs/photoAttribution" },
-        "gradientOnly": { "type": "boolean" }
-      }
-    },
-    "overview": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["summary", "quickFacts", "routeSummary", "highlights"],
-      "properties": {
-        "summary": { "type": "string", "maxLength": 4000 },
-        "quickFacts": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["scope", "bestSeason", "pace", "themes"],
-          "properties": {
-            "scope": { "type": "string", "maxLength": 120 },
-            "bestSeason": { "type": "string", "maxLength": 240 },
-            "pace": { "type": "string", "maxLength": 80 },
-            "themes": { "type": "array", "maxItems": 30, "items": { "type": "string", "maxLength": 120 } }
-          }
+        "mode": {
+          "enum": [
+            "half_day",
+            "full_day",
+            "multi_day",
+            "destination_guide"
+          ]
         },
-        "routeSummary": { "type": "array", "maxItems": 40, "items": { "type": "string", "maxLength": 300 } },
-        "highlights": {
-          "type": "array",
-          "maxItems": 12,
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["icon", "title", "note"],
-            "properties": {
-              "icon": { "type": "string", "maxLength": 40 },
-              "title": { "type": "string", "maxLength": 120 },
-              "note": { "type": "string", "maxLength": 500 }
+        "title": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "destination": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "country": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "region": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 200
+        },
+        "language": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 35
+        },
+        "colorTheme": {
+          "enum": [
+            "beach",
+            "mountain",
+            "city",
+            "cultural",
+            "nature",
+            "desert",
+            "mixed"
+          ]
+        },
+        "startDate": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        },
+        "startTime": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+        },
+        "endTime": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+        }
+      }
+    },
+    "guide": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "phone"
+      ],
+      "properties": {
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 160
+        },
+        "phone": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 80
+        }
+      }
+    },
+    "meeting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "place",
+        "mapsUrl",
+        "time",
+        "note"
+      ],
+      "properties": {
+        "place": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 240
+        },
+        "mapsUrl": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2048,
+          "format": "uri",
+          "pattern": "^https://"
+        },
+        "time": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 500
+        }
+      }
+    },
+    "pickup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "offered",
+        "area",
+        "time",
+        "dropoffNote"
+      ],
+      "properties": {
+        "offered": {
+          "type": "boolean"
+        },
+        "area": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 200
+        },
+        "time": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+        },
+        "dropoffNote": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 500
+        }
+      }
+    },
+    "photoCredit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "photographer",
+        "url",
+        "source"
+      ],
+      "properties": {
+        "photographer": {
+          "type": "string",
+          "maxLength": 240
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2048,
+          "format": "uri",
+          "pattern": "^https://"
+        },
+        "source": {
+          "type": "string",
+          "maxLength": 120
+        }
+      }
+    },
+    "photo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assetId",
+        "credit"
+      ],
+      "properties": {
+        "assetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "credit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/photoCredit"
+            },
+            {
+              "type": "null"
             }
-          }
+          ]
+        }
+      }
+    },
+    "hotel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "area",
+        "note"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "area": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 200
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 1000
+        }
+      }
+    },
+    "meals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "breakfast",
+        "lunch",
+        "dinner"
+      ],
+      "properties": {
+        "breakfast": {
+          "type": "boolean"
+        },
+        "lunch": {
+          "type": "boolean"
+        },
+        "dinner": {
+          "type": "boolean"
         }
       }
     },
     "activity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "timeLabel", "type", "title", "description", "durationLabel", "area", "category", "tip"],
+      "required": [
+        "id",
+        "time",
+        "durationMinutes",
+        "kind",
+        "title",
+        "place",
+        "description",
+        "tip"
+      ],
       "properties": {
-        "id": { "type": "string", "format": "uuid" },
-        "timeLabel": { "type": "string", "maxLength": 80 },
-        "type": { "enum": ["transport", "sightseeing", "food", "activity", "rest", "accommodation", "free"] },
-        "title": { "type": "string", "maxLength": 200 },
-        "description": { "type": "string", "maxLength": 4000 },
-        "durationLabel": { "$ref": "#/$defs/nullableText", "maxLength": 80 },
-        "area": { "$ref": "#/$defs/nullableText", "maxLength": 160 },
-        "category": { "$ref": "#/$defs/nullableText", "maxLength": 120 },
-        "tip": { "$ref": "#/$defs/nullableText", "maxLength": 1000 }
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "time": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+        },
+        "durationMinutes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 1440
+        },
+        "kind": {
+          "enum": [
+            "sightseeing",
+            "food",
+            "activity",
+            "transport",
+            "free"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "place": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 4000
+        },
+        "tip": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 4000
+        }
       }
     },
-    "scheduleBlock": {
+    "day": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "dayStart", "dayEnd", "date", "title", "location", "isCondensed", "activities", "accommodation", "mealsIncluded", "transportNote", "blockTip"],
+      "required": [
+        "id",
+        "dayNumber",
+        "title",
+        "location",
+        "photo",
+        "activities",
+        "hotel",
+        "meals",
+        "transferNote"
+      ],
       "properties": {
-        "id": { "type": "string", "format": "uuid" },
-        "dayStart": { "type": "integer", "minimum": 1, "maximum": 14 },
-        "dayEnd": { "type": "integer", "minimum": 1, "maximum": 14 },
-        "date": { "type": ["string", "null"], "format": "date" },
-        "title": { "type": "string", "maxLength": 200 },
-        "location": { "type": "string", "maxLength": 240 },
-        "isCondensed": { "type": "boolean" },
-        "assetId": { "$ref": "#/$defs/nullableText", "maxLength": 80 },
-        "photoAttribution": { "$ref": "#/$defs/photoAttribution" },
-        "activities": { "type": "array", "items": { "$ref": "#/$defs/activity" } },
-        "accommodation": { "$ref": "#/$defs/accommodation" },
-        "mealsIncluded": { "type": "array", "maxItems": 12, "items": { "type": "string", "maxLength": 120 } },
-        "transportNote": { "$ref": "#/$defs/nullableText", "maxLength": 1000 },
-        "blockTip": { "$ref": "#/$defs/nullableText", "maxLength": 1000 }
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "dayNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 14
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "location": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 240
+        },
+        "photo": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/photo"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "activities": {
+          "type": "array",
+          "maxItems": 30,
+          "items": {
+            "$ref": "#/$defs/activity"
+          }
+        },
+        "hotel": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/hotel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meals": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/meals"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "transferNote": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2100
+        }
       }
     },
-    "accommodation": {
-      "type": ["object", "null"],
-      "additionalProperties": false,
-      "required": ["name", "area", "note"],
-      "properties": {
-        "name": { "$ref": "#/$defs/nullableText", "maxLength": 200 },
-        "area": { "type": "string", "maxLength": 200 },
-        "note": { "type": "string", "maxLength": 1000 }
-      }
-    },
-    "spot": {
+    "place": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "groupLabel", "name", "area", "category", "description", "suggestedDuration", "bestTimeToVisit", "gettingThere", "tips", "nearbyPairing", "assetId", "photoAttribution"],
+      "required": [
+        "id",
+        "group",
+        "name",
+        "area",
+        "description",
+        "tips",
+        "gettingThere",
+        "suggestedDuration",
+        "bestTime",
+        "nearby",
+        "photo"
+      ],
       "properties": {
-        "id": { "type": "string", "format": "uuid" },
-        "groupLabel": { "$ref": "#/$defs/nullableText", "maxLength": 160 },
-        "name": { "type": "string", "maxLength": 200 },
-        "area": { "type": "string", "maxLength": 160 },
-        "category": { "type": "string", "maxLength": 120 },
-        "description": { "type": "string", "maxLength": 6000 },
-        "suggestedDuration": { "type": "string", "maxLength": 120 },
-        "bestTimeToVisit": { "type": "string", "maxLength": 240 },
-        "gettingThere": { "type": "string", "maxLength": 1000 },
-        "tips": { "type": "array", "maxItems": 20, "items": { "type": "string", "maxLength": 1000 } },
-        "nearbyPairing": { "$ref": "#/$defs/nullableText", "maxLength": 500 },
-        "assetId": { "$ref": "#/$defs/nullableText", "maxLength": 80 },
-        "photoAttribution": { "$ref": "#/$defs/photoAttribution" }
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "group": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 160
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "area": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 6000
+        },
+        "tips": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "string",
+            "maxLength": 1000
+          }
+        },
+        "gettingThere": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 1000
+        },
+        "suggestedDuration": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 120
+        },
+        "bestTime": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 240
+        },
+        "nearby": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 500
+        },
+        "photo": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/photo"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
       }
     },
-    "practical": {
+    "emergencyContact": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["included", "notIncluded", "whatToBring", "localTips", "healthSafety", "emergencyContacts"],
+      "required": [
+        "label",
+        "value"
+      ],
       "properties": {
-        "included": { "type": "array", "maxItems": 50, "items": { "type": "string", "maxLength": 500 } },
-        "notIncluded": { "type": "array", "maxItems": 50, "items": { "type": "string", "maxLength": 500 } },
-        "whatToBring": { "type": "array", "maxItems": 50, "items": { "type": "string", "maxLength": 500 } },
-        "localTips": { "type": "array", "maxItems": 50, "items": { "type": "object", "additionalProperties": false, "required": ["topic", "note"], "properties": { "topic": { "type": "string", "maxLength": 120 }, "note": { "type": "string", "maxLength": 1000 } } } },
-        "healthSafety": { "type": "array", "maxItems": 50, "items": { "type": "string", "maxLength": 500 } },
-        "emergencyContacts": { "type": "array", "maxItems": 30, "items": { "type": "object", "additionalProperties": false, "required": ["label", "value"], "properties": { "label": { "type": "string", "maxLength": 120 }, "value": { "type": "string", "maxLength": 240 } } } }
-      }
-    },
-    "closing": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["closingNote", "agencyContact", "disclaimer", "photoCredits"],
-      "properties": {
-        "closingNote": { "type": "string", "maxLength": 2000 },
-        "agencyContact": { "type": "string", "maxLength": 320 },
-        "disclaimer": { "type": "string", "maxLength": 1200 },
-        "photoCredits": { "type": "array", "maxItems": 40, "items": { "$ref": "#/$defs/photoAttribution" } }
+        "label": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 240
+        }
       }
     }
   }

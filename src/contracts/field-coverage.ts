@@ -5,6 +5,10 @@ type JsonSchema = Record<string, any>;
 type FieldRegistryEntry = (typeof registry.fields)[number];
 
 function dereference(node: JsonSchema, root: JsonSchema): JsonSchema {
+  if (Array.isArray(node.anyOf)) {
+    const branch = node.anyOf.find((candidate: JsonSchema) => candidate.type !== 'null');
+    if (branch) return dereference(branch, root);
+  }
   if (typeof node.$ref !== 'string' || !node.$ref.startsWith('#/$defs/')) return node;
   return root.$defs[node.$ref.slice('#/$defs/'.length)];
 }

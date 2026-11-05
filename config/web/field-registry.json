@@ -1,97 +1,785 @@
 {
-  "registryVersion": "web-1.0.0",
+  "registryVersion": "web-2.0.0",
   "schema": "./itinerary.schema.json",
   "constraintsSource": "itinerary.schema.json",
-  "displayLabelKeys": ["activities", "activityTypeActivity", "activityTypeAccommodation", "activityTypeFood", "activityTypeFree", "activityTypeRest", "activityTypeSightseeing", "activityTypeTransport", "closingHeading", "dayLabel", "exploreDestinations", "highlights", "itinerary", "modeDestinationGuide", "modeFullDay", "modeHalfDay", "modeMultiDay", "paceBalanced", "pacePacked", "paceRelaxed", "photoCredits", "practicalInfo", "quickFacts", "scopeDestinationGuide", "scopeFullDay", "scopeHalfDay", "scopeMultiDay", "tripOverview", "travelNotes"],
+  "displayLabelKeys": [
+    "activities",
+    "activityTypeActivity",
+    "activityTypeAccommodation",
+    "activityTypeFood",
+    "activityTypeFree",
+    "activityTypeRest",
+    "activityTypeSightseeing",
+    "activityTypeTransport",
+    "closingHeading",
+    "dayLabel",
+    "exploreDestinations",
+    "highlights",
+    "itinerary",
+    "modeDestinationGuide",
+    "modeFullDay",
+    "modeHalfDay",
+    "modeMultiDay",
+    "paceBalanced",
+    "pacePacked",
+    "paceRelaxed",
+    "photoCredits",
+    "practicalInfo",
+    "quickFacts",
+    "scopeDestinationGuide",
+    "scopeFullDay",
+    "scopeHalfDay",
+    "scopeMultiDay",
+    "tripOverview",
+    "travelNotes",
+    "hotel",
+    "meals"
+  ],
+  "legacyLabelKeys": [
+    "agencyContact",
+    "agencyLogo",
+    "agencyName",
+    "bestSeason",
+    "bestTimeToVisit",
+    "blockTitle",
+    "category",
+    "condensed",
+    "date",
+    "dayEnd",
+    "dayStart",
+    "destinationType",
+    "duration",
+    "endDate",
+    "generatedDate",
+    "gradientFallback",
+    "group",
+    "highlightNote",
+    "highlightTitle",
+    "icon",
+    "mealsIncluded",
+    "nearbyPairing",
+    "pace",
+    "regionPhoto",
+    "routeSummary",
+    "scope",
+    "themes",
+    "topic",
+    "transport",
+    "travelerCount",
+    "travelerType"
+  ],
   "fields": [
-    { "path": "schemaVersion", "labelKey": "schemaVersion", "control": "hidden", "source": "derived", "modes": "all", "requiredOnPublish": false, "notRenderedReason": "Schema compatibility metadata." },
-    { "path": "brochure.agencyName", "labelKey": "agencyName", "control": "text", "source": "manual", "modes": "all", "requiredOnPublish": true, "renderTarget": "hero.agencyName" },
-    { "path": "brochure.agencyContact", "labelKey": "agencyContact", "control": "text", "source": "manual", "modes": "all", "requiredOnPublish": true, "renderTarget": "closing.agencyContact" },
-    { "path": "brochure.agencyLogoAssetId", "labelKey": "agencyLogo", "control": "assetPicker", "source": "manual", "modes": "all", "requiredOnPublish": false, "renderTarget": "hero.agencyLogo" },
-    { "path": "brochure.tripTitle", "labelKey": "tripTitle", "control": "text", "source": "manual", "modes": "all", "requiredOnPublish": true, "renderTarget": "hero.title" },
-    { "path": "brochure.destination", "labelKey": "destination", "control": "text", "source": "manual", "modes": "all", "requiredOnPublish": true, "renderTarget": "hero.destination" },
-    { "path": "brochure.region", "labelKey": "region", "control": "text", "source": "manual", "modes": "all", "requiredOnPublish": false, "renderTarget": "hero.region" },
-    { "path": "brochure.country", "labelKey": "country", "control": "text", "source": "manual", "modes": "all", "requiredOnPublish": true, "renderTarget": "hero.country" },
-    { "path": "brochure.itineraryMode", "labelKey": "itineraryMode", "control": "select", "source": "manual", "modes": "all", "requiredOnPublish": true, "renderTarget": "layout.mode" },
-    { "path": "brochure.durationDays", "labelKey": "duration", "control": "derived", "source": "derived", "modes": ["multi_day"], "requiredOnPublish": true, "renderTarget": "facts.duration" },
-    { "path": "brochure.scopeLabel", "labelKey": "scope", "control": "derived", "source": "derived", "modes": "all", "requiredOnPublish": true, "renderTarget": "hero.scope" },
-    { "path": "brochure.startDate", "labelKey": "startDate", "control": "date", "source": "manual", "modes": "all", "requiredOnPublish": false, "renderTarget": "facts.startDate" },
-    { "path": "brochure.endDate", "labelKey": "endDate", "control": "date", "source": "manual", "modes": ["multi_day"], "requiredOnPublish": false, "renderTarget": "facts.endDate" },
-    { "path": "brochure.travelerCount", "labelKey": "travelerCount", "control": "number", "source": "manual", "modes": "all", "requiredOnPublish": false, "renderTarget": "facts.travelerCount" },
-    { "path": "brochure.travelerType", "labelKey": "travelerType", "control": "select", "source": "manual", "modes": "all", "requiredOnPublish": false, "renderTarget": "facts.travelerType" },
-    { "path": "brochure.paceLevel", "labelKey": "pace", "control": "select", "source": "manual", "modes": "all", "requiredOnPublish": false, "renderTarget": "facts.pace" },
-    { "path": "brochure.themes[]", "labelKey": "themes", "control": "repeater", "source": "manual", "modes": "all", "requiredOnPublish": false, "renderTarget": "facts.themes" },
-    { "path": "brochure.destinationType", "labelKey": "destinationType", "control": "select", "source": "manual", "modes": "all", "requiredOnPublish": false, "notRenderedReason": "Selects deterministic palette; palette itself is rendered." },
-    { "path": "brochure.generatedDate", "labelKey": "generatedDate", "control": "derived", "source": "derived", "modes": "all", "requiredOnPublish": false, "renderTarget": "facts.generatedDate" },
-    { "path": "brochure.outputLanguage", "labelKey": "outputLanguage", "control": "localeSelect", "source": "derived", "overrideAllowed": true, "modes": "all", "requiredOnPublish": true, "renderTarget": "html.lang" },
-    { "path": "hero.assetId", "labelKey": "heroPhoto", "control": "assetPicker", "source": "manual", "modes": "all", "requiredOnPublish": false, "renderTarget": "hero.image" },
-    { "path": "hero.photoAttribution.photographer", "labelKey": "photographer", "control": "text", "source": "manual", "modes": "all", "requiredOnPublish": false, "renderTarget": "closing.photoCredits" },
-    { "path": "hero.photoAttribution.photographerUrl", "labelKey": "photographerLink", "control": "url", "source": "manual", "modes": "all", "requiredOnPublish": false, "renderTarget": "closing.photoCredits" },
-    { "path": "hero.photoAttribution.source", "labelKey": "photoSource", "control": "text", "source": "manual", "modes": "all", "requiredOnPublish": false, "renderTarget": "closing.photoCredits" },
-    { "path": "hero.gradientOnly", "labelKey": "gradientFallback", "control": "derived", "source": "derived", "modes": "all", "requiredOnPublish": false, "notRenderedReason": "Internal flag; determines hero fallback rendering." },
-    { "path": "overview.summary", "labelKey": "overviewSummary", "control": "textarea", "source": "ai-assisted", "modes": "all", "requiredOnPublish": true, "renderTarget": "overview.summary" },
-    { "path": "overview.quickFacts.scope", "labelKey": "scope", "control": "text", "source": "derived", "modes": "all", "requiredOnPublish": false, "renderTarget": "overview.quickFacts.scope" },
-    { "path": "overview.quickFacts.bestSeason", "labelKey": "bestSeason", "control": "textarea", "source": "manual", "modes": "all", "requiredOnPublish": false, "renderTarget": "overview.quickFacts.bestSeason" },
-    { "path": "overview.quickFacts.pace", "labelKey": "pace", "control": "text", "source": "derived", "modes": "all", "requiredOnPublish": false, "renderTarget": "overview.quickFacts.pace" },
-    { "path": "overview.quickFacts.themes[]", "labelKey": "themes", "control": "repeater", "source": "derived", "modes": "all", "requiredOnPublish": false, "renderTarget": "overview.quickFacts.themes" },
-    { "path": "overview.routeSummary[]", "labelKey": "routeSummary", "control": "repeater", "source": "manual", "modes": ["full_day", "multi_day", "destination_guide"], "requiredOnPublish": false, "renderTarget": "overview.routeSummary" },
-    { "path": "overview.highlights[].icon", "labelKey": "icon", "control": "select", "source": "manual", "modes": "all", "requiredOnPublish": false, "renderTarget": "overview.highlights.icon" },
-    { "path": "overview.highlights[].title", "labelKey": "highlightTitle", "control": "text", "source": "manual", "modes": "all", "requiredOnPublish": false, "renderTarget": "overview.highlights.title" },
-    { "path": "overview.highlights[].note", "labelKey": "highlightNote", "control": "textarea", "source": "manual", "modes": "all", "requiredOnPublish": false, "renderTarget": "overview.highlights.note" },
-    { "path": "schedule[].id", "labelKey": "stableId", "control": "hidden", "source": "derived", "modes": "scheduled", "requiredOnPublish": true, "notRenderedReason": "Stable identity for edit/reorder/AI targeting." },
-    { "path": "schedule[].dayStart", "labelKey": "dayStart", "control": "derived", "source": "derived", "modes": "scheduled", "requiredOnPublish": true, "renderTarget": "schedule.dayMarker" },
-    { "path": "schedule[].dayEnd", "labelKey": "dayEnd", "control": "derived", "source": "derived", "modes": "scheduled", "requiredOnPublish": true, "renderTarget": "schedule.dayMarker" },
-    { "path": "schedule[].date", "labelKey": "date", "control": "date", "source": "manual", "modes": "scheduled", "requiredOnPublish": false, "renderTarget": "schedule.date" },
-    { "path": "schedule[].title", "labelKey": "blockTitle", "control": "text", "source": "manual", "modes": "scheduled", "requiredOnPublish": false, "renderTarget": "schedule.title" },
-    { "path": "schedule[].location", "labelKey": "location", "control": "text", "source": "manual", "modes": "scheduled", "requiredOnPublish": false, "renderTarget": "schedule.location" },
-    { "path": "schedule[].isCondensed", "labelKey": "condensed", "control": "derived", "source": "derived", "modes": ["multi_day"], "requiredOnPublish": true, "notRenderedReason": "Derived from numeric dayStart/dayEnd; marker text is rendered separately." },
-    { "path": "schedule[].assetId", "labelKey": "regionPhoto", "control": "assetPicker", "source": "manual", "modes": "scheduled", "requiredOnPublish": false, "renderTarget": "schedule.regionImage" },
-    { "path": "schedule[].photoAttribution.photographer", "labelKey": "photographer", "control": "text", "source": "manual", "modes": "scheduled", "requiredOnPublish": false, "renderTarget": "closing.photoCredits" },
-    { "path": "schedule[].photoAttribution.photographerUrl", "labelKey": "photographerLink", "control": "url", "source": "manual", "modes": "scheduled", "requiredOnPublish": false, "renderTarget": "closing.photoCredits" },
-    { "path": "schedule[].photoAttribution.source", "labelKey": "photoSource", "control": "text", "source": "manual", "modes": "scheduled", "requiredOnPublish": false, "renderTarget": "closing.photoCredits" },
-    { "path": "schedule[].activities[].id", "labelKey": "stableId", "control": "hidden", "source": "derived", "modes": "scheduled", "requiredOnPublish": true, "notRenderedReason": "Stable identity for edit/reorder/AI targeting." },
-    { "path": "schedule[].activities[].timeLabel", "labelKey": "time", "control": "text", "source": "manual", "modes": "scheduled", "requiredOnPublish": true, "renderTarget": "schedule.activity.time" },
-    { "path": "schedule[].activities[].type", "labelKey": "activityType", "control": "select", "source": "manual", "modes": "scheduled", "requiredOnPublish": true, "renderTarget": "schedule.activity.icon" },
-    { "path": "schedule[].activities[].title", "labelKey": "activityTitle", "control": "text", "source": "manual", "modes": "scheduled", "requiredOnPublish": true, "renderTarget": "schedule.activity.title" },
-    { "path": "schedule[].activities[].description", "labelKey": "description", "control": "textarea", "source": "ai-assisted", "modes": "scheduled", "requiredOnPublish": true, "renderTarget": "schedule.activity.description" },
-    { "path": "schedule[].activities[].durationLabel", "labelKey": "duration", "control": "text", "source": "manual", "modes": "scheduled", "requiredOnPublish": false, "renderTarget": "schedule.activity.duration" },
-    { "path": "schedule[].activities[].area", "labelKey": "area", "control": "text", "source": "manual", "modes": "scheduled", "requiredOnPublish": false, "renderTarget": "schedule.activity.area" },
-    { "path": "schedule[].activities[].category", "labelKey": "category", "control": "text", "source": "manual", "modes": "scheduled", "requiredOnPublish": false, "renderTarget": "schedule.activity.category" },
-    { "path": "schedule[].activities[].tip", "labelKey": "localTip", "control": "textarea", "source": "manual", "modes": "scheduled", "requiredOnPublish": false, "renderTarget": "schedule.activity.tip" },
-    { "path": "schedule[].accommodation.name", "labelKey": "accommodationName", "control": "text", "source": "manual", "modes": ["multi_day"], "requiredOnPublish": false, "renderTarget": "schedule.accommodation.name" },
-    { "path": "schedule[].accommodation.area", "labelKey": "area", "control": "text", "source": "manual", "modes": ["multi_day"], "requiredOnPublish": false, "renderTarget": "schedule.accommodation.area" },
-    { "path": "schedule[].accommodation.note", "labelKey": "accommodationNote", "control": "textarea", "source": "manual", "modes": ["multi_day"], "requiredOnPublish": false, "renderTarget": "schedule.accommodation.note" },
-    { "path": "schedule[].mealsIncluded[]", "labelKey": "mealsIncluded", "control": "repeater", "source": "manual", "modes": ["half_day", "full_day", "multi_day"], "requiredOnPublish": false, "renderTarget": "schedule.meals" },
-    { "path": "schedule[].transportNote", "labelKey": "transport", "control": "textarea", "source": "manual", "modes": "scheduled", "requiredOnPublish": false, "renderTarget": "schedule.transport" },
-    { "path": "schedule[].blockTip", "labelKey": "localTip", "control": "textarea", "source": "manual", "modes": "scheduled", "requiredOnPublish": false, "renderTarget": "schedule.blockTip" },
-    { "path": "spots[].id", "labelKey": "stableId", "control": "hidden", "source": "derived", "modes": ["destination_guide"], "requiredOnPublish": true, "notRenderedReason": "Stable identity for edit/reorder/AI targeting." },
-    { "path": "spots[].groupLabel", "labelKey": "group", "control": "text", "source": "manual", "modes": ["destination_guide"], "requiredOnPublish": false, "renderTarget": "guide.groupLabel" },
-    { "path": "spots[].name", "labelKey": "placeName", "control": "text", "source": "manual", "modes": ["destination_guide"], "requiredOnPublish": true, "renderTarget": "guide.spot.name" },
-    { "path": "spots[].area", "labelKey": "area", "control": "text", "source": "manual", "modes": ["destination_guide"], "requiredOnPublish": true, "renderTarget": "guide.spot.area" },
-    { "path": "spots[].category", "labelKey": "category", "control": "text", "source": "manual", "modes": ["destination_guide"], "requiredOnPublish": false, "renderTarget": "guide.spot.category" },
-    { "path": "spots[].description", "labelKey": "description", "control": "textarea", "source": "ai-assisted", "modes": ["destination_guide"], "requiredOnPublish": true, "renderTarget": "guide.spot.description" },
-    { "path": "spots[].suggestedDuration", "labelKey": "suggestedDuration", "control": "text", "source": "manual", "modes": ["destination_guide"], "requiredOnPublish": true, "renderTarget": "guide.spot.suggestedDuration" },
-    { "path": "spots[].bestTimeToVisit", "labelKey": "bestTimeToVisit", "control": "text", "source": "manual", "modes": ["destination_guide"], "requiredOnPublish": true, "renderTarget": "guide.spot.bestTimeToVisit" },
-    { "path": "spots[].gettingThere", "labelKey": "gettingThere", "control": "textarea", "source": "manual", "modes": ["destination_guide"], "requiredOnPublish": true, "renderTarget": "guide.spot.gettingThere" },
-    { "path": "spots[].tips[]", "labelKey": "localTip", "control": "repeater", "source": "manual", "modes": ["destination_guide"], "requiredOnPublish": true, "renderTarget": "guide.spot.tips" },
-    { "path": "spots[].nearbyPairing", "labelKey": "nearbyPairing", "control": "text", "source": "manual", "modes": ["destination_guide"], "requiredOnPublish": false, "renderTarget": "guide.spot.nearbyPairing" },
-    { "path": "spots[].assetId", "labelKey": "regionPhoto", "control": "assetPicker", "source": "manual", "modes": ["destination_guide"], "requiredOnPublish": false, "renderTarget": "guide.spot.regionImage" },
-    { "path": "spots[].photoAttribution.photographer", "labelKey": "photographer", "control": "text", "source": "manual", "modes": ["destination_guide"], "requiredOnPublish": false, "renderTarget": "closing.photoCredits" },
-    { "path": "spots[].photoAttribution.photographerUrl", "labelKey": "photographerLink", "control": "url", "source": "manual", "modes": ["destination_guide"], "requiredOnPublish": false, "renderTarget": "closing.photoCredits" },
-    { "path": "spots[].photoAttribution.source", "labelKey": "photoSource", "control": "text", "source": "manual", "modes": ["destination_guide"], "requiredOnPublish": false, "renderTarget": "closing.photoCredits" },
-    { "path": "practical.included[]", "labelKey": "included", "control": "repeater", "source": "manual", "modes": "all", "requiredOnPublish": false, "renderTarget": "practical.included" },
-    { "path": "practical.notIncluded[]", "labelKey": "notIncluded", "control": "repeater", "source": "manual", "modes": "all", "requiredOnPublish": false, "renderTarget": "practical.notIncluded" },
-    { "path": "practical.whatToBring[]", "labelKey": "whatToBring", "control": "repeater", "source": "manual", "modes": "all", "requiredOnPublish": false, "renderTarget": "practical.whatToBring" },
-    { "path": "practical.localTips[].topic", "labelKey": "topic", "control": "text", "source": "manual", "modes": "all", "requiredOnPublish": false, "renderTarget": "practical.localTips.topic" },
-    { "path": "practical.localTips[].note", "labelKey": "localTip", "control": "textarea", "source": "manual", "modes": "all", "requiredOnPublish": false, "renderTarget": "practical.localTips.note" },
-    { "path": "practical.healthSafety[]", "labelKey": "healthSafety", "control": "repeater", "source": "manual", "modes": "all", "requiredOnPublish": false, "renderTarget": "practical.healthSafety" },
-    { "path": "practical.emergencyContacts[].label", "labelKey": "emergencyContact", "control": "text", "source": "manual", "modes": "all", "requiredOnPublish": false, "renderTarget": "practical.emergencyContacts.label" },
-    { "path": "practical.emergencyContacts[].value", "labelKey": "contactValue", "control": "text", "source": "manual", "modes": "all", "requiredOnPublish": false, "renderTarget": "practical.emergencyContacts.value" },
-    { "path": "closing.closingNote", "labelKey": "closingNote", "control": "textarea", "source": "manual", "modes": "all", "requiredOnPublish": false, "renderTarget": "closing.note" },
-    { "path": "closing.agencyContact", "labelKey": "agencyContact", "control": "text", "source": "derived", "modes": "all", "requiredOnPublish": false, "renderTarget": "closing.agencyContact" },
-    { "path": "closing.disclaimer", "labelKey": "disclaimer", "control": "textarea", "source": "manual", "modes": "all", "requiredOnPublish": false, "renderTarget": "closing.disclaimer" },
-    { "path": "closing.photoCredits[].photographer", "labelKey": "photographer", "control": "text", "source": "manual", "modes": "all", "requiredOnPublish": false, "renderTarget": "closing.photoCredits" },
-    { "path": "closing.photoCredits[].photographerUrl", "labelKey": "photographerLink", "control": "url", "source": "manual", "modes": "all", "requiredOnPublish": false, "renderTarget": "closing.photoCredits" },
-    { "path": "closing.photoCredits[].source", "labelKey": "photoSource", "control": "text", "source": "manual", "modes": "all", "requiredOnPublish": false, "renderTarget": "closing.photoCredits" }
+    {
+      "path": "closingNote",
+      "labelKey": "closingNote",
+      "control": "textarea",
+      "source": "manual",
+      "modes": "all",
+      "requiredOnPublish": false,
+      "renderTarget": "closing.note"
+    },
+    {
+      "path": "cover.assetId",
+      "labelKey": "heroPhoto",
+      "control": "assetPicker",
+      "source": "manual",
+      "modes": "all",
+      "requiredOnPublish": false,
+      "renderTarget": "hero.photo"
+    },
+    {
+      "path": "cover.credit.photographer",
+      "labelKey": "photographer",
+      "control": "text",
+      "source": "manual",
+      "modes": "all",
+      "requiredOnPublish": false,
+      "renderTarget": "closing.photoCredits"
+    },
+    {
+      "path": "cover.credit.source",
+      "labelKey": "photoSource",
+      "control": "text",
+      "source": "manual",
+      "modes": "all",
+      "requiredOnPublish": false,
+      "renderTarget": "closing.photoCredits"
+    },
+    {
+      "path": "cover.credit.url",
+      "labelKey": "photographerLink",
+      "control": "url",
+      "source": "manual",
+      "modes": "all",
+      "requiredOnPublish": false,
+      "renderTarget": "closing.photoCredits"
+    },
+    {
+      "path": "days[].activities[].description",
+      "labelKey": "description",
+      "control": "textarea",
+      "source": "ai-assisted",
+      "modes": "scheduled",
+      "requiredOnPublish": true,
+      "renderTarget": "activity.description"
+    },
+    {
+      "path": "days[].activities[].durationMinutes",
+      "labelKey": "durationMinutes",
+      "control": "number",
+      "source": "manual",
+      "modes": "scheduled",
+      "requiredOnPublish": false,
+      "renderTarget": "activity.duration"
+    },
+    {
+      "path": "days[].activities[].id",
+      "labelKey": "stableId",
+      "control": "hidden",
+      "source": "derived",
+      "modes": "scheduled",
+      "requiredOnPublish": true,
+      "notRenderedReason": "Stable identity for edit/reorder/AI targeting."
+    },
+    {
+      "path": "days[].activities[].kind",
+      "labelKey": "activityType",
+      "control": "select",
+      "source": "manual",
+      "modes": "scheduled",
+      "requiredOnPublish": true,
+      "renderTarget": "activity.kind"
+    },
+    {
+      "path": "days[].activities[].place",
+      "labelKey": "placeName",
+      "control": "text",
+      "source": "manual",
+      "modes": "scheduled",
+      "requiredOnPublish": false,
+      "renderTarget": "activity.place"
+    },
+    {
+      "path": "days[].activities[].time",
+      "labelKey": "time",
+      "control": "time",
+      "source": "manual",
+      "modes": "scheduled",
+      "requiredOnPublish": false,
+      "renderTarget": "activity.time"
+    },
+    {
+      "path": "days[].activities[].tip",
+      "labelKey": "localTip",
+      "control": "textarea",
+      "source": "manual",
+      "modes": "scheduled",
+      "requiredOnPublish": false,
+      "renderTarget": "activity.tip"
+    },
+    {
+      "path": "days[].activities[].title",
+      "labelKey": "activityTitle",
+      "control": "text",
+      "source": "manual",
+      "modes": "scheduled",
+      "requiredOnPublish": true,
+      "renderTarget": "activity.title"
+    },
+    {
+      "path": "days[].dayNumber",
+      "labelKey": "dayLabel",
+      "control": "derived",
+      "source": "derived",
+      "modes": "scheduled",
+      "requiredOnPublish": true,
+      "renderTarget": "day.marker"
+    },
+    {
+      "path": "days[].hotel.area",
+      "labelKey": "area",
+      "control": "text",
+      "source": "manual",
+      "modes": [
+        "multi_day"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "day.hotel"
+    },
+    {
+      "path": "days[].hotel.name",
+      "labelKey": "accommodationName",
+      "control": "text",
+      "source": "manual",
+      "modes": [
+        "multi_day"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "day.hotel"
+    },
+    {
+      "path": "days[].hotel.note",
+      "labelKey": "accommodationNote",
+      "control": "textarea",
+      "source": "manual",
+      "modes": [
+        "multi_day"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "day.hotel"
+    },
+    {
+      "path": "days[].id",
+      "labelKey": "stableId",
+      "control": "hidden",
+      "source": "derived",
+      "modes": "scheduled",
+      "requiredOnPublish": true,
+      "notRenderedReason": "Stable identity for edit/reorder/AI targeting."
+    },
+    {
+      "path": "days[].location",
+      "labelKey": "location",
+      "control": "text",
+      "source": "manual",
+      "modes": "scheduled",
+      "requiredOnPublish": false,
+      "renderTarget": "day.location"
+    },
+    {
+      "path": "days[].meals.breakfast",
+      "labelKey": "breakfast",
+      "control": "toggle",
+      "source": "manual",
+      "modes": [
+        "full_day",
+        "multi_day"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "day.meals"
+    },
+    {
+      "path": "days[].meals.dinner",
+      "labelKey": "dinner",
+      "control": "toggle",
+      "source": "manual",
+      "modes": [
+        "full_day",
+        "multi_day"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "day.meals"
+    },
+    {
+      "path": "days[].meals.lunch",
+      "labelKey": "lunch",
+      "control": "toggle",
+      "source": "manual",
+      "modes": [
+        "full_day",
+        "multi_day"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "day.meals"
+    },
+    {
+      "path": "days[].photo.assetId",
+      "labelKey": "heroPhoto",
+      "control": "assetPicker",
+      "source": "manual",
+      "modes": "scheduled",
+      "requiredOnPublish": false,
+      "renderTarget": "day.photo"
+    },
+    {
+      "path": "days[].photo.credit.photographer",
+      "labelKey": "photographer",
+      "control": "text",
+      "source": "manual",
+      "modes": "scheduled",
+      "requiredOnPublish": false,
+      "renderTarget": "closing.photoCredits"
+    },
+    {
+      "path": "days[].photo.credit.source",
+      "labelKey": "photoSource",
+      "control": "text",
+      "source": "manual",
+      "modes": "scheduled",
+      "requiredOnPublish": false,
+      "renderTarget": "closing.photoCredits"
+    },
+    {
+      "path": "days[].photo.credit.url",
+      "labelKey": "photographerLink",
+      "control": "url",
+      "source": "manual",
+      "modes": "scheduled",
+      "requiredOnPublish": false,
+      "renderTarget": "closing.photoCredits"
+    },
+    {
+      "path": "days[].title",
+      "labelKey": "dayTitle",
+      "control": "text",
+      "source": "manual",
+      "modes": "scheduled",
+      "requiredOnPublish": true,
+      "requiredModes": [
+        "multi_day"
+      ],
+      "renderTarget": "day.title"
+    },
+    {
+      "path": "days[].transferNote",
+      "labelKey": "transferNote",
+      "control": "textarea",
+      "source": "manual",
+      "modes": [
+        "multi_day"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "day.transfer"
+    },
+    {
+      "path": "disclaimer",
+      "labelKey": "disclaimer",
+      "control": "textarea",
+      "source": "manual",
+      "modes": "all",
+      "requiredOnPublish": false,
+      "renderTarget": "closing.disclaimer"
+    },
+    {
+      "path": "emergencyContacts[].label",
+      "labelKey": "emergencyContact",
+      "control": "text",
+      "source": "manual",
+      "modes": "all",
+      "requiredOnPublish": false,
+      "renderTarget": "practical.emergencyContacts"
+    },
+    {
+      "path": "emergencyContacts[].value",
+      "labelKey": "contactValue",
+      "control": "text",
+      "source": "manual",
+      "modes": "all",
+      "requiredOnPublish": false,
+      "renderTarget": "practical.emergencyContacts"
+    },
+    {
+      "path": "guide.name",
+      "labelKey": "guideName",
+      "control": "text",
+      "source": "manual",
+      "modes": "all",
+      "requiredOnPublish": false,
+      "renderTarget": "info.guide"
+    },
+    {
+      "path": "guide.phone",
+      "labelKey": "guidePhone",
+      "control": "text",
+      "source": "manual",
+      "modes": "all",
+      "requiredOnPublish": false,
+      "renderTarget": "info.guide"
+    },
+    {
+      "path": "healthSafety[]",
+      "labelKey": "healthSafety",
+      "control": "repeater",
+      "source": "manual",
+      "modes": "all",
+      "requiredOnPublish": false,
+      "renderTarget": "practical.healthSafety"
+    },
+    {
+      "path": "included[]",
+      "labelKey": "included",
+      "control": "repeater",
+      "source": "manual",
+      "modes": "all",
+      "requiredOnPublish": false,
+      "renderTarget": "practical.included"
+    },
+    {
+      "path": "localTips[]",
+      "labelKey": "localTip",
+      "control": "repeater",
+      "source": "manual",
+      "modes": "all",
+      "requiredOnPublish": false,
+      "renderTarget": "practical.localTips"
+    },
+    {
+      "path": "meeting.mapsUrl",
+      "labelKey": "mapsLink",
+      "control": "url",
+      "source": "manual",
+      "modes": "scheduled",
+      "requiredOnPublish": false,
+      "renderTarget": "info.meeting"
+    },
+    {
+      "path": "meeting.note",
+      "labelKey": "meetingNote",
+      "control": "textarea",
+      "source": "manual",
+      "modes": "scheduled",
+      "requiredOnPublish": false,
+      "renderTarget": "info.meeting"
+    },
+    {
+      "path": "meeting.place",
+      "labelKey": "meetingPoint",
+      "control": "text",
+      "source": "manual",
+      "modes": "scheduled",
+      "requiredOnPublish": false,
+      "renderTarget": "info.meeting"
+    },
+    {
+      "path": "meeting.time",
+      "labelKey": "meetingTime",
+      "control": "time",
+      "source": "manual",
+      "modes": "scheduled",
+      "requiredOnPublish": false,
+      "renderTarget": "info.meeting"
+    },
+    {
+      "path": "notIncluded[]",
+      "labelKey": "notIncluded",
+      "control": "repeater",
+      "source": "manual",
+      "modes": "all",
+      "requiredOnPublish": false,
+      "renderTarget": "practical.notIncluded"
+    },
+    {
+      "path": "pickup.area",
+      "labelKey": "pickupArea",
+      "control": "text",
+      "source": "manual",
+      "modes": "scheduled",
+      "requiredOnPublish": false,
+      "renderTarget": "info.pickup"
+    },
+    {
+      "path": "pickup.dropoffNote",
+      "labelKey": "dropoffNote",
+      "control": "textarea",
+      "source": "manual",
+      "modes": "scheduled",
+      "requiredOnPublish": false,
+      "renderTarget": "info.pickup"
+    },
+    {
+      "path": "pickup.offered",
+      "labelKey": "pickup",
+      "control": "toggle",
+      "source": "manual",
+      "modes": "scheduled",
+      "requiredOnPublish": false,
+      "renderTarget": "info.pickup"
+    },
+    {
+      "path": "pickup.time",
+      "labelKey": "pickupTime",
+      "control": "time",
+      "source": "manual",
+      "modes": "scheduled",
+      "requiredOnPublish": false,
+      "renderTarget": "info.pickup"
+    },
+    {
+      "path": "places[].area",
+      "labelKey": "area",
+      "control": "text",
+      "source": "manual",
+      "modes": [
+        "destination_guide"
+      ],
+      "requiredOnPublish": true,
+      "renderTarget": "place.area"
+    },
+    {
+      "path": "places[].bestTime",
+      "labelKey": "bestTime",
+      "control": "text",
+      "source": "manual",
+      "modes": [
+        "destination_guide"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "place.bestTime"
+    },
+    {
+      "path": "places[].description",
+      "labelKey": "description",
+      "control": "textarea",
+      "source": "ai-assisted",
+      "modes": [
+        "destination_guide"
+      ],
+      "requiredOnPublish": true,
+      "renderTarget": "place.description"
+    },
+    {
+      "path": "places[].gettingThere",
+      "labelKey": "gettingThere",
+      "control": "textarea",
+      "source": "manual",
+      "modes": [
+        "destination_guide"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "place.gettingThere"
+    },
+    {
+      "path": "places[].group",
+      "labelKey": "placeGroup",
+      "control": "text",
+      "source": "manual",
+      "modes": [
+        "destination_guide"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "place.group"
+    },
+    {
+      "path": "places[].id",
+      "labelKey": "stableId",
+      "control": "hidden",
+      "source": "derived",
+      "modes": [
+        "destination_guide"
+      ],
+      "requiredOnPublish": true,
+      "notRenderedReason": "Stable identity for edit/reorder/AI targeting."
+    },
+    {
+      "path": "places[].name",
+      "labelKey": "placeName",
+      "control": "text",
+      "source": "manual",
+      "modes": [
+        "destination_guide"
+      ],
+      "requiredOnPublish": true,
+      "renderTarget": "place.name"
+    },
+    {
+      "path": "places[].nearby",
+      "labelKey": "nearby",
+      "control": "text",
+      "source": "manual",
+      "modes": [
+        "destination_guide"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "place.nearby"
+    },
+    {
+      "path": "places[].photo.assetId",
+      "labelKey": "heroPhoto",
+      "control": "assetPicker",
+      "source": "manual",
+      "modes": [
+        "destination_guide"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "place.photo"
+    },
+    {
+      "path": "places[].photo.credit.photographer",
+      "labelKey": "photographer",
+      "control": "text",
+      "source": "manual",
+      "modes": [
+        "destination_guide"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "closing.photoCredits"
+    },
+    {
+      "path": "places[].photo.credit.source",
+      "labelKey": "photoSource",
+      "control": "text",
+      "source": "manual",
+      "modes": [
+        "destination_guide"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "closing.photoCredits"
+    },
+    {
+      "path": "places[].photo.credit.url",
+      "labelKey": "photographerLink",
+      "control": "url",
+      "source": "manual",
+      "modes": [
+        "destination_guide"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "closing.photoCredits"
+    },
+    {
+      "path": "places[].suggestedDuration",
+      "labelKey": "suggestedDuration",
+      "control": "text",
+      "source": "manual",
+      "modes": [
+        "destination_guide"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "place.duration"
+    },
+    {
+      "path": "places[].tips[]",
+      "labelKey": "localTip",
+      "control": "repeater",
+      "source": "manual",
+      "modes": [
+        "destination_guide"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "place.tips"
+    },
+    {
+      "path": "policies",
+      "labelKey": "policies",
+      "control": "textarea",
+      "source": "manual",
+      "modes": "all",
+      "requiredOnPublish": false,
+      "renderTarget": "closing.policies"
+    },
+    {
+      "path": "schemaVersion",
+      "labelKey": "schemaVersion",
+      "control": "hidden",
+      "source": "derived",
+      "modes": "all",
+      "requiredOnPublish": false,
+      "notRenderedReason": "Schema compatibility metadata."
+    },
+    {
+      "path": "summary",
+      "labelKey": "overviewSummary",
+      "control": "textarea",
+      "source": "ai-assisted",
+      "modes": "all",
+      "requiredOnPublish": true,
+      "renderTarget": "summary"
+    },
+    {
+      "path": "trip.colorTheme",
+      "labelKey": "colorTheme",
+      "control": "select",
+      "source": "manual",
+      "modes": "all",
+      "requiredOnPublish": false,
+      "notRenderedReason": "Selects the deterministic palette; the palette itself is rendered."
+    },
+    {
+      "path": "trip.country",
+      "labelKey": "country",
+      "control": "text",
+      "source": "manual",
+      "modes": "all",
+      "requiredOnPublish": true,
+      "renderTarget": "hero.destination"
+    },
+    {
+      "path": "trip.destination",
+      "labelKey": "destination",
+      "control": "text",
+      "source": "manual",
+      "modes": "all",
+      "requiredOnPublish": true,
+      "renderTarget": "hero.destination"
+    },
+    {
+      "path": "trip.endTime",
+      "labelKey": "endTime",
+      "control": "time",
+      "source": "manual",
+      "modes": [
+        "half_day",
+        "full_day"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "info.times"
+    },
+    {
+      "path": "trip.language",
+      "labelKey": "outputLanguage",
+      "control": "localeSelect",
+      "source": "derived",
+      "overrideAllowed": true,
+      "modes": "all",
+      "requiredOnPublish": true,
+      "renderTarget": "html.lang"
+    },
+    {
+      "path": "trip.mode",
+      "labelKey": "itineraryMode",
+      "control": "select",
+      "source": "manual",
+      "modes": "all",
+      "requiredOnPublish": true,
+      "renderTarget": "layout.mode"
+    },
+    {
+      "path": "trip.region",
+      "labelKey": "region",
+      "control": "text",
+      "source": "manual",
+      "modes": "all",
+      "requiredOnPublish": false,
+      "renderTarget": "hero.destination"
+    },
+    {
+      "path": "trip.startDate",
+      "labelKey": "startDate",
+      "control": "date",
+      "source": "manual",
+      "modes": "scheduled",
+      "requiredOnPublish": false,
+      "renderTarget": "info.dates"
+    },
+    {
+      "path": "trip.startTime",
+      "labelKey": "startTime",
+      "control": "time",
+      "source": "manual",
+      "modes": [
+        "half_day",
+        "full_day"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "info.times"
+    },
+    {
+      "path": "trip.title",
+      "labelKey": "tripTitle",
+      "control": "text",
+      "source": "manual",
+      "modes": "all",
+      "requiredOnPublish": true,
+      "renderTarget": "hero.title"
+    },
+    {
+      "path": "whatToBring[]",
+      "labelKey": "whatToBring",
+      "control": "repeater",
+      "source": "manual",
+      "modes": "all",
+      "requiredOnPublish": false,
+      "renderTarget": "practical.whatToBring"
+    }
   ]
 }

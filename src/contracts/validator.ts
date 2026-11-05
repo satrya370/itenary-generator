@@ -2,7 +2,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import schema from '../../config/web/itinerary.schema.json' with { type: 'json' };
 import registry from '../../config/web/field-registry.json' with { type: 'json' };
-import type { ContractDiagnostic, ContractResult, ItineraryMode, WebItineraryContent } from './types.js';
+import type { ContractDiagnostic, ContractResult, Mode, WebItineraryContent } from './types.js';
 import { assertFieldRegistryCoverage } from './field-coverage.js';
 import { getLocaleCatalog } from './locale-catalogs.js';
 
@@ -13,8 +13,17 @@ const ajv = new Ajv2020Constructor({ allErrors: true, strict: false });
 addFormatsPlugin(ajv);
 const validateSchema = ajv.compile(schema);
 
+type Rec = Record<string, any>;
+type RegistryField = (typeof registry.fields)[number];
+
+export const SPAN_CAP_MINUTES: Record<Mode, number | null> = { half_day: 360, full_day: 720, multi_day: 960, destination_guide: null };
+
 function clone<T>(value: T): T {
   return structuredClone(value);
+}
+
+function isRecord(value: unknown): value is Rec {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function isLocaleTag(value: unknown): value is string {
@@ -26,16 +35,48 @@ function isLocaleTag(value: unknown): value is string {
   }
 }
 
-function isRecord(value: unknown): value is Record<string, any> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+function isBlank(value: unknown): boolean {
+  return value === null || value === undefined || (typeof value === 'string' && !value.trim());
 }
 
-function sameTextList(left: unknown, right: unknown): boolean {
-  return Array.isArray(left) && Array.isArray(right) && left.length === right.length && left.every((entry, index) => entry === right[index]);
+function isFilled(value: unknown): boolean {
+  if (value === true) return true;
+  if (typeof value === 'number') return true;
+  if (typeof value === 'string') return value.trim().length > 0;
+  return false;
 }
 
-function warnDerived(warnings: ContractDiagnostic[], path: string) {
-  warnings.push({ code: 'DERIVED_FIELD_UPDATED', path, message: `${path} is derived from its authoritative source and was updated.` });
+function minutes(time: string): number {
+  const [hours, mins] = time.split(':').map(Number);
+  return hours * 60 + mins;
+}
+
+function modeApplies(field: RegistryField, mode: Mode): boolean {
+  if (field.modes === 'all') return true;
+  if (field.modes === 'scheduled') return mode !== 'destination_guide';
+  return Array.isArray(field.modes) && (field.modes as string[]).includes(mode);
+}
+
+interface Located { path: string; value: unknown }
+
+function collectValues(root: unknown, registryPath: string): Located[] {
+  const segments = registryPath.split('.');
+  const out: Located[] = [];
+  const visit = (value: any, index: number, trail: string) => {
+    if (index === segments.length) { out.push({ path: trail, value }); return; }
+    const segment = segments[index];
+    const join = (name: string) => (trail ? `${trail}.${name}` : name);
+    if (segment.endsWith('[]')) {
+      const name = segment.slice(0, -2);
+      const collection = value?.[name];
+      if (!Array.isArray(collection)) return;
+      collection.forEach((entry, i) => visit(entry, index + 1, `${join(name)}[${i}]`));
+      return;
+    }
+    visit(value?.[segment], index + 1, join(segment));
+  };
+  visit(root, 0, '');
+  return out;
 }
 
 export function normalizeCanonicalContent(input: unknown): ContractResult<unknown> {
@@ -47,66 +88,31 @@ export function normalizeCanonicalContent(input: unknown): ContractResult<unknow
     return { ok: false, value, errors, warnings };
   }
 
-  const document = value as { brochure?: unknown; schedule?: unknown; overview?: { quickFacts?: unknown }; closing?: unknown };
-  const brochure = isRecord(document.brochure) ? document.brochure : null;
-  if (brochure && brochure.outputLanguage !== null && brochure.outputLanguage !== undefined) {
-    if (isLocaleTag(brochure.outputLanguage)) {
-      brochure.outputLanguage = Intl.getCanonicalLocales(brochure.outputLanguage)[0];
-    } else {
-      errors.push({ code: 'INVALID_LOCALE_TAG', path: 'brochure.outputLanguage', message: 'Use a valid BCP 47 locale tag or leave the language unresolved.' });
-    }
-  }
-
-  const scheduleBlocks = Array.isArray(document.schedule) ? document.schedule : [];
-  const quickFacts = isRecord(document.overview) && isRecord(document.overview.quickFacts)
-    ? document.overview.quickFacts
-    : null;
-  const closing = isRecord(document.closing) ? document.closing : null;
-  if (brochure) {
-    const mode = brochure.itineraryMode;
-    if (mode === 'multi_day') {
-      const dayEnds = scheduleBlocks.map((block) => (isRecord(block) ? block.dayEnd : undefined)).filter((day) => Number.isInteger(day) && (day as number) >= 1 && (day as number) <= 14) as number[];
-      const derivedDays = dayEnds.length ? Math.max(...dayEnds) : null;
-      if (brochure.durationDays !== null && brochure.durationDays !== derivedDays) {
-        warnings.push({ code: 'DURATION_DERIVED_MISMATCH', path: 'brochure.durationDays', message: 'durationDays was recalculated from numeric schedule day ranges.' });
+  const document = value as Rec;
+  const trip = isRecord(document.trip) ? document.trip : null;
+  if (trip && trip.language !== null && trip.language !== undefined) {
+    if (isLocaleTag(trip.language)) {
+      trip.language = Intl.getCanonicalLocales(trip.language)[0];
+      if (!getLocaleCatalog(trip.language)) {
+        warnings.push({ code: 'LOCALE_CATALOG_UNAVAILABLE', path: 'trip.language', message: 'No matching label catalog is installed. Keep the locale extensible and resolve render capability before publish.' });
       }
-      brochure.durationDays = derivedDays;
-    } else if (mode && brochure.durationDays !== null) {
-      warnings.push({ code: 'DURATION_DERIVED_CLEARED', path: 'brochure.durationDays', message: 'durationDays is derived only for multi_day mode and was cleared.' });
-      brochure.durationDays = null;
-    }
-
-    const catalog = getLocaleCatalog(brochure.outputLanguage);
-    const modeLabelKey: Record<string, string> = {
-      half_day: 'scopeHalfDay', full_day: 'scopeFullDay', multi_day: 'scopeMultiDay', destination_guide: 'scopeDestinationGuide'
-    };
-    const labelTemplate = catalog && modeLabelKey[mode] ? catalog.labels[modeLabelKey[mode]] : null;
-    const days = brochure.durationDays;
-    if (labelTemplate && (mode !== 'multi_day' || days !== null)) {
-      const scopeLabel = labelTemplate.replace('{count}', String(days ?? ''));
-      brochure.scopeLabel = scopeLabel;
-      if (quickFacts) quickFacts.scope = scopeLabel;
-    } else if (brochure.outputLanguage && !catalog) {
-      warnings.push({ code: 'LOCALE_CATALOG_UNAVAILABLE', path: 'brochure.outputLanguage', message: 'No matching label catalog is installed. Keep the locale extensible and resolve render capability before publish.' });
-    }
-
-    if (typeof brochure.agencyContact === 'string' && closing && typeof closing.agencyContact === 'string') {
-      if (closing.agencyContact !== brochure.agencyContact) warnDerived(warnings, 'closing.agencyContact');
-      closing.agencyContact = brochure.agencyContact;
-    }
-    if (quickFacts && typeof brochure.paceLevel === 'string' && typeof quickFacts.pace === 'string') {
-      if (quickFacts.pace !== brochure.paceLevel) warnDerived(warnings, 'overview.quickFacts.pace');
-      quickFacts.pace = brochure.paceLevel;
-    }
-    if (quickFacts && Array.isArray(brochure.themes) && Array.isArray(quickFacts.themes)) {
-      if (!sameTextList(quickFacts.themes, brochure.themes)) warnDerived(warnings, 'overview.quickFacts.themes');
-      quickFacts.themes = [...brochure.themes];
+    } else {
+      errors.push({ code: 'INVALID_LOCALE_TAG', path: 'trip.language', message: 'Use a valid BCP 47 locale tag or leave the language unresolved.' });
     }
   }
 
-  const ids = collectStableIds(value as Record<string, any>);
+  if (Array.isArray(document.days)) {
+    document.days.forEach((day: unknown, index: number) => {
+      if (!isRecord(day)) return;
+      if (Number.isInteger(day.dayNumber) && day.dayNumber !== index + 1) {
+        warnings.push({ code: 'DERIVED_FIELD_UPDATED', path: `days[${index}].dayNumber`, message: 'dayNumber is derived from the day order and was updated.' });
+      }
+      day.dayNumber = index + 1;
+    });
+  }
+
   const seen = new Set<string>();
-  for (const { path, id } of ids) {
+  for (const { path, id } of collectStableIds(document)) {
     if (seen.has(id)) errors.push({ code: 'DUPLICATE_STABLE_ID', path, message: 'Stable IDs must be unique within the itinerary.' });
     seen.add(id);
   }
@@ -114,20 +120,20 @@ export function normalizeCanonicalContent(input: unknown): ContractResult<unknow
   return { ok: errors.length === 0, value, errors, warnings };
 }
 
-function collectStableIds(content: Record<string, any>) {
+function collectStableIds(content: Rec) {
   const entries: Array<{ path: string; id: string }> = [];
-  const schedule = Array.isArray(content.schedule) ? content.schedule : [];
-  schedule.forEach((block: any, bi: number) => {
-    if (!isRecord(block)) return;
-    if (typeof block.id === 'string') entries.push({ path: `schedule[${bi}].id`, id: block.id });
-    const activities = Array.isArray(block.activities) ? block.activities : [];
-    activities.forEach((activity: any, ai: number) => {
-      if (isRecord(activity) && typeof activity.id === 'string') entries.push({ path: `schedule[${bi}].activities[${ai}].id`, id: activity.id });
+  const days = Array.isArray(content.days) ? content.days : [];
+  days.forEach((day: unknown, di: number) => {
+    if (!isRecord(day)) return;
+    if (typeof day.id === 'string') entries.push({ path: `days[${di}].id`, id: day.id });
+    const activities = Array.isArray(day.activities) ? day.activities : [];
+    activities.forEach((activity: unknown, ai: number) => {
+      if (isRecord(activity) && typeof activity.id === 'string') entries.push({ path: `days[${di}].activities[${ai}].id`, id: activity.id });
     });
   });
-  const spots = Array.isArray(content.spots) ? content.spots : [];
-  spots.forEach((spot: any, index: number) => {
-    if (isRecord(spot) && typeof spot.id === 'string') entries.push({ path: `spots[${index}].id`, id: spot.id });
+  const places = Array.isArray(content.places) ? content.places : [];
+  places.forEach((place: unknown, index: number) => {
+    if (isRecord(place) && typeof place.id === 'string') entries.push({ path: `places[${index}].id`, id: place.id });
   });
   return entries;
 }
@@ -141,119 +147,147 @@ function schemaErrors(value: unknown): ContractDiagnostic[] {
   }));
 }
 
+function applicabilityErrors(content: Rec): ContractDiagnostic[] {
+  const errors: ContractDiagnostic[] = [];
+  const mode = content.trip.mode as Mode;
+  const notApplicable = (path: string) => errors.push({ code: 'FIELD_NOT_APPLICABLE', path, message: `${path} does not apply to ${mode} itineraries and must stay empty.` });
+
+  if (mode === 'destination_guide' && content.days.length) notApplicable('days');
+  if (mode !== 'destination_guide' && content.places.length) notApplicable('places');
+
+  for (const field of registry.fields) {
+    if (modeApplies(field, mode)) continue;
+    if (field.path.startsWith('days[]') && mode === 'destination_guide') continue;
+    if (field.path.startsWith('places[]') && mode !== 'destination_guide') continue;
+    for (const located of collectValues(content, field.path)) {
+      if (isFilled(located.value)) notApplicable(located.path);
+    }
+  }
+
+  content.days.forEach((day: Rec, index: number) => {
+    if (mode !== 'multi_day' && day.hotel !== null) notApplicable(`days[${index}].hotel`);
+    if (mode === 'half_day' && day.meals !== null) notApplicable(`days[${index}].meals`);
+  });
+
+  if (!content.pickup.offered) {
+    for (const key of ['area', 'time', 'dropoffNote']) {
+      if (isFilled(content.pickup[key])) errors.push({ code: 'FIELD_NOT_APPLICABLE', path: `pickup.${key}`, message: `pickup.${key} must stay empty when no pickup is offered.` });
+    }
+  }
+  return errors;
+}
+
 export function validateDraft(input: unknown): ContractResult<WebItineraryContent> {
   const normalized = normalizeCanonicalContent(input);
   const errors = [...normalized.errors, ...schemaErrors(normalized.value)];
+  if (errors.length === 0) errors.push(...applicabilityErrors(normalized.value as Rec));
   return { ...normalized, value: normalized.value as WebItineraryContent, ok: errors.length === 0, errors };
 }
 
-function valuesAtPath(root: any, path: string): any[] {
-  const segments = path.split('.');
-  const visit = (value: any, index: number): any[] => {
-    if (index === segments.length) return [value];
-    const segment = segments[index];
-    if (segment.endsWith('[]')) {
-      const collection = value?.[segment.slice(0, -2)];
-      if (!Array.isArray(collection)) return [];
-      return collection.flatMap((entry) => visit(entry, index + 1));
-    }
-    return visit(value?.[segment], index + 1);
-  };
-  return visit(root, 0);
-}
-
-function requiredFieldErrors(content: Record<string, any>): ContractDiagnostic[] {
+function requiredFieldErrors(content: Rec): ContractDiagnostic[] {
   const errors: ContractDiagnostic[] = [];
-  const mode = content.brochure.itineraryMode;
-  for (const field of registry.fields.filter((entry) => entry.requiredOnPublish)) {
-    if (field.modes === 'scheduled' && mode === 'destination_guide') continue;
-    if (Array.isArray(field.modes) && !field.modes.includes(mode)) continue;
-    const path = field.path;
-    if (path.endsWith('[]')) {
-      const parentPath = path.slice(0, -2);
-      const parentSegments = parentPath.split('.');
-      const arrayName = parentSegments.pop()!;
-      const owners = parentSegments.length ? valuesAtPath(content, parentSegments.join('.')) : [content];
-      owners.forEach((owner, index) => {
-        const collection = owner?.[arrayName];
-        if (!Array.isArray(collection) || collection.length === 0) {
-          errors.push({ code: 'PUBLISH_FIELD_REQUIRED', path: parentPath.replace('[]', `[${index}]`), message: `${field.labelKey} needs at least one entry.` });
-        } else {
-          collection.forEach((value: unknown, itemIndex: number) => {
-            if (value === null || value === undefined || (typeof value === 'string' && !value.trim())) errors.push({ code: 'PUBLISH_FIELD_REQUIRED', path: `${parentPath.replace('[]', `[${index}]`)}[${itemIndex}]`, message: `${field.labelKey} cannot be blank.` });
-          });
-        }
-      });
-      continue;
-    }
-    const values = valuesAtPath(content, path);
-    if (!values.length || values.some((value) => value === null || value === undefined || (typeof value === 'string' && !value.trim()))) {
-      errors.push({ code: 'PUBLISH_FIELD_REQUIRED', path, message: `${field.labelKey} is required before publishing.` });
+  const mode = content.trip.mode as Mode;
+  for (const field of registry.fields) {
+    if (!field.requiredOnPublish || !modeApplies(field, mode)) continue;
+    const requiredModes = (field as { requiredModes?: string[] }).requiredModes;
+    if (requiredModes && !requiredModes.includes(mode)) continue;
+    for (const located of collectValues(content, field.path)) {
+      if (isBlank(located.value)) errors.push({ code: 'PUBLISH_FIELD_REQUIRED', path: located.path, message: `${field.labelKey} is required before publishing.` });
     }
   }
   return errors;
 }
 
-function structureErrors(content: Record<string, any>): ContractDiagnostic[] {
+function daySpanErrors(day: Rec, index: number, cap: number): ContractDiagnostic[] {
   const errors: ContractDiagnostic[] = [];
-  const mode = content.brochure.itineraryMode as ItineraryMode;
-  const schedule = content.schedule;
-  const spots = content.spots;
-  if (mode === 'destination_guide') {
-    if (schedule.length || !spots.length) errors.push({ code: 'MODE_SHAPE_INVALID', path: 'schedule/spots', message: 'A destination guide needs spots and must not contain a schedule.' });
-  } else if (spots.length || !schedule.length) {
-    errors.push({ code: 'MODE_SHAPE_INVALID', path: 'schedule/spots', message: 'Scheduled modes need schedule blocks and must not contain guide spots.' });
+  const activities: Rec[] = day.activities;
+  const knownDuration = activities.reduce((sum, activity) => sum + (activity.durationMinutes ?? 0), 0);
+  if (knownDuration > cap) {
+    errors.push({ code: 'DURATION_CAP_EXCEEDED', path: `days[${index}]`, message: `Known activity durations add up to ${knownDuration} minutes, above the ${cap}-minute limit for this itinerary type.` });
+    return errors;
+  }
+  const timed = activities.filter((activity) => activity.time);
+  if (timed.length) {
+    const start = Math.min(...timed.map((activity) => minutes(activity.time)));
+    const end = Math.max(...timed.map((activity) => minutes(activity.time) + (activity.durationMinutes ?? 0)));
+    if (end - start > cap) errors.push({ code: 'DURATION_CAP_EXCEEDED', path: `days[${index}]`, message: `Timed activities span ${end - start} minutes, above the ${cap}-minute limit for this itinerary type.` });
+  }
+  return errors;
+}
+
+function structureDiagnostics(content: Rec): { errors: ContractDiagnostic[]; warnings: ContractDiagnostic[] } {
+  const errors: ContractDiagnostic[] = [];
+  const warnings: ContractDiagnostic[] = [];
+  const mode = content.trip.mode as Mode;
+  const days: Rec[] = content.days;
+  const places: Rec[] = content.places;
+  const cap = SPAN_CAP_MINUTES[mode];
+
+  if ((mode === 'half_day' || mode === 'full_day') && days.length !== 1) {
+    errors.push({ code: 'SINGLE_DAY_REQUIRED', path: 'days', message: `${mode} requires exactly one day.` });
+  }
+  if (mode === 'multi_day' && (days.length < 2 || days.length > 14)) {
+    errors.push({ code: 'MULTI_DAY_COUNT_INVALID', path: 'days', message: 'A multi-day itinerary needs between 2 and 14 days.' });
+  }
+  if (mode === 'destination_guide' && places.length === 0) {
+    errors.push({ code: 'PLACES_REQUIRED', path: 'places', message: 'A destination guide needs at least one place.' });
   }
 
-  if ((mode === 'half_day' || mode === 'full_day') && schedule.length !== 1) {
-    errors.push({ code: 'SINGLE_BLOCK_REQUIRED', path: 'schedule', message: `${mode} requires exactly one schedule block.` });
-  }
-  if (mode === 'half_day' || mode === 'full_day') {
-    if (schedule.some((block: any) => block.dayStart !== 1 || block.dayEnd !== 1 || block.accommodation !== null)) {
-      errors.push({ code: 'SINGLE_DAY_RANGE_INVALID', path: 'schedule', message: 'Half-day and full-day blocks use day 1 only and do not include overnight accommodation.' });
-    }
-  }
-  if (mode === 'multi_day') {
-    const expectedDays = content.brochure.durationDays;
-    let nextDay = 1;
-    for (const [index, block] of schedule.entries()) {
-      if (block.dayStart !== nextDay || block.dayEnd < block.dayStart || block.dayEnd > expectedDays) {
-        errors.push({ code: 'MULTI_DAY_RANGE_INVALID', path: `schedule[${index}]`, message: 'Numeric day ranges must cover the itinerary once, in order, from day 1.' });
+  days.forEach((day, index) => {
+    if (!day.activities.length) errors.push({ code: 'EMPTY_DAY', path: `days[${index}].activities`, message: 'Every day needs at least one activity.' });
+    let previous: number | null = null;
+    day.activities.forEach((activity: Rec, activityIndex: number) => {
+      if (!activity.time) return;
+      const current = minutes(activity.time);
+      if (previous !== null && current < previous) {
+        errors.push({ code: 'ACTIVITY_ORDER', path: `days[${index}].activities[${activityIndex}].time`, message: 'Activity times must not go backwards within a day.' });
       }
-      const spans = block.dayEnd > block.dayStart;
-      if (Boolean(block.isCondensed) !== spans) errors.push({ code: 'CONDENSED_RANGE_MISMATCH', path: `schedule[${index}].isCondensed`, message: 'isCondensed must match the numeric day range.' });
-      if (!block.accommodation) errors.push({ code: 'ACCOMMODATION_REQUIRED', path: `schedule[${index}].accommodation`, message: 'Each multi-day block needs accommodation guidance.' });
-      nextDay = block.dayEnd + 1;
+      previous = current;
+    });
+    if (cap !== null) errors.push(...daySpanErrors(day, index, cap));
+    if (day.activities.some((activity: Rec) => !activity.time)) {
+      warnings.push({ code: 'SCHEDULE_TIME_UNKNOWN', path: `days[${index}]`, message: 'Some activity times are missing, so this schedule is not fully verified.' });
     }
-    if (!Number.isInteger(expectedDays) || expectedDays < 2 || expectedDays > 14 || nextDay !== expectedDays + 1) {
-      errors.push({ code: 'MULTI_DAY_COVERAGE_MISMATCH', path: 'brochure.durationDays', message: 'Schedule day ranges must cover durationDays from day 1 through the final day.' });
+  });
+
+  const { startTime, endTime } = content.trip;
+  if (startTime && endTime) {
+    if (minutes(endTime) <= minutes(startTime)) {
+      errors.push({ code: 'TIME_RANGE_INVALID', path: 'trip.endTime', message: 'The end time must be after the start time.' });
+    } else if (cap !== null && minutes(endTime) - minutes(startTime) > cap) {
+      errors.push({ code: 'DURATION_CAP_EXCEEDED', path: 'trip.endTime', message: `The tour spans ${minutes(endTime) - minutes(startTime)} minutes, above the ${cap}-minute limit for this itinerary type.` });
     }
   }
 
-  for (const [index, block] of schedule.entries()) {
-    if (!block.activities.length) errors.push({ code: 'EMPTY_ACTIVITY_BLOCK', path: `schedule[${index}].activities`, message: 'Every scheduled block needs at least one activity.' });
+  const photoRows: Array<[string, Rec | null]> = [
+    ['cover', content.cover],
+    ...days.map((day, index): [string, Rec | null] => [`days[${index}].photo`, day.photo]),
+    ...places.map((place, index): [string, Rec | null] => [`places[${index}].photo`, place.photo])
+  ];
+  for (const [path, photo] of photoRows) {
+    if (photo && (!photo.credit || isBlank(photo.credit.photographer))) {
+      errors.push({ code: 'PHOTO_ATTRIBUTION_REQUIRED', path: `${path}.credit`, message: 'A used photo needs attribution.' });
+    }
   }
-  const assetRows = [
-    ['hero', content.hero],
-    ...schedule.map((item: any, index: number) => [`schedule[${index}]`, item]),
-    ...spots.map((item: any, index: number) => [`spots[${index}]`, item])
-  ] as Array<[string, any]>;
-  for (const [path, asset] of assetRows) {
-    if (asset.assetId && !asset.photoAttribution) errors.push({ code: 'PHOTO_ATTRIBUTION_REQUIRED', path: `${path}.photoAttribution`, message: 'A used photo needs attribution.' });
-    if (!asset.assetId && path === 'hero' && !asset.gradientOnly) errors.push({ code: 'HERO_FALLBACK_INVALID', path: 'hero.gradientOnly', message: 'A hero without an asset must use the gradient fallback.' });
+
+  if (mode !== 'destination_guide' && isBlank(content.meeting.place) && !content.pickup.offered) {
+    warnings.push({ code: 'MEETING_POINT_MISSING', path: 'meeting.place', message: 'No meeting point or pickup is set; travellers will not know where to start.' });
   }
-  return errors;
+  return { errors, warnings };
 }
 
 export function validateForPublish(input: unknown): ContractResult<WebItineraryContent> {
   const draft = validateDraft(input);
   const content = draft.value as WebItineraryContent;
   const errors = [...draft.errors];
+  const warnings = [...draft.warnings];
   if (draft.errors.length === 0) {
-    errors.push(...requiredFieldErrors(content as Record<string, any>));
-    errors.push(...structureErrors(content as Record<string, any>));
+    errors.push(...requiredFieldErrors(content as Rec));
+    const structure = structureDiagnostics(content as Rec);
+    errors.push(...structure.errors);
+    warnings.push(...structure.warnings);
   }
-  return { ok: errors.length === 0, value: content, errors, warnings: draft.warnings };
+  return { ok: errors.length === 0, value: content, errors, warnings };
 }
 
 assertFieldRegistryCoverage();

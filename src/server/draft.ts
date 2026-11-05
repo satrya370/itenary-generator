@@ -1,24 +1,30 @@
 import { randomUUID } from 'node:crypto';
-import type { ItineraryMode, WebItineraryContent } from '../contracts/types.js';
+import type { Activity, Day, ItineraryMode, WebItineraryContent } from '../contracts/types.js';
 
-export function createBlankDraft(mode: ItineraryMode, profile: Record<string, unknown>, today = new Date().toISOString().slice(0, 10)): WebItineraryContent {
-  const activity = { id: randomUUID(), timeLabel: '', type: 'sightseeing' as const, title: '', description: '', durationLabel: null, area: null, category: null, tip: null };
-  const brochure = {
-    agencyName: typeof profile.agencyName === 'string' ? profile.agencyName : '',
-    agencyContact: typeof profile.agencyContact === 'string' ? profile.agencyContact : '',
-    agencyLogoAssetId: typeof profile.agencyLogoAssetId === 'string' ? profile.agencyLogoAssetId : null,
-    tripTitle: '', destination: '', region: null, country: '', itineraryMode: mode,
-    durationDays: null, scopeLabel: '', startDate: null, endDate: null, travelerCount: null,
-    travelerType: null, paceLevel: 'Balanced' as const, themes: [], destinationType: 'mixed' as const,
-    generatedDate: today, outputLanguage: null
-  };
+function blankActivity(): Activity {
+  return { id: randomUUID(), time: null, durationMinutes: null, kind: 'sightseeing', title: '', place: null, description: '', tip: null };
+}
+
+function blankDay(mode: ItineraryMode, dayNumber: number): Day {
   return {
-    schemaVersion: 'web-1.0.0', brochure,
-    hero: { assetId: null, photoAttribution: null, gradientOnly: true },
-    overview: { summary: '', quickFacts: { scope: '', bestSeason: '', pace: 'Balanced', themes: [] }, routeSummary: [], highlights: [] },
-    schedule: mode === 'half_day' || mode === 'full_day' ? [{ id: randomUUID(), dayStart: 1, dayEnd: 1, date: null, title: '', location: '', isCondensed: false, assetId: null, photoAttribution: null, activities: [activity], accommodation: null, mealsIncluded: [], transportNote: null, blockTip: null }] : [],
-    spots: [],
-    practical: { included: [], notIncluded: [], whatToBring: [], localTips: [], healthSafety: [], emergencyContacts: [] },
-    closing: { closingNote: '', agencyContact: brochure.agencyContact, disclaimer: '', photoCredits: [] }
-  } as unknown as WebItineraryContent;
+    id: randomUUID(), dayNumber, title: '', location: null, photo: null, activities: [blankActivity()], hotel: null,
+    meals: mode === 'half_day' ? null : { breakfast: false, lunch: false, dinner: false }, transferNote: null
+  };
+}
+
+export function createBlankDraft(mode: ItineraryMode, _profile?: Record<string, unknown>): WebItineraryContent {
+  const days = mode === 'half_day' || mode === 'full_day' ? [blankDay(mode, 1)] : mode === 'multi_day' ? [blankDay(mode, 1), blankDay(mode, 2)] : [];
+  return {
+    schemaVersion: 'web-2.0.0',
+    trip: { mode, title: '', destination: '', country: '', region: null, language: null, colorTheme: 'mixed', startDate: null, startTime: null, endTime: null },
+    guide: { name: null, phone: null },
+    meeting: { place: null, mapsUrl: null, time: null, note: null },
+    pickup: { offered: false, area: null, time: null, dropoffNote: null },
+    cover: null,
+    summary: '',
+    days,
+    places: [],
+    included: [], notIncluded: [], whatToBring: [], localTips: [], healthSafety: [], emergencyContacts: [],
+    policies: null, closingNote: null, disclaimer: null
+  };
 }

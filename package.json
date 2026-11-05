@@ -12,6 +12,7 @@
     "test": "node --test tests/*.test.mjs",
     "check:web-types": "node scripts/web/generate-types.mjs --check",
     "typecheck:web-contracts": "tsc --noEmit -p tsconfig.web.json",
+    "typecheck:web-contracts-v2": "tsc --noEmit -p tsconfig.contracts.json",
     "typecheck:web-app": "tsc --noEmit -p tsconfig.app.json",
     "test:web-contracts": "tsx --test tests/web/contracts.test.ts",
     "test:web-api": "tsx --test tests/web/api.test.ts",

@@ -55,3 +55,51 @@
 2. Stop the running dev servers (ports 3000 and 5173).
 3. The executor redoes R1 per the amended plan, writing files with the Write tool (not bash heredocs), then runs the amended gate and records the output.
 4. Return to the reviewer (Opus) with the gate output before CP019 is marked completed.
+
+---
+
+## Executor re-submission 2026-11-05 (Claude Sonnet 5.5) — R1 redone per the amendment, awaiting re-review
+
+### Gate output (amended gate, run after the final edit)
+
+| Command | Result |
+|---|---|
+| `npm run check:web-types` | "Generated TypeScript declaration matches the canonical JSON Schema." |
+| `npm run typecheck:web-contracts-v2` | exit 0, no diagnostics |
+| `npm run test:web-contracts` | 37 tests, 37 pass, 0 fail |
+
+Not a gate (expected until later stages): `tsc -p tsconfig.web.json` reports 77 errors in `src/render/render.ts`, 62 in `src/server/preview.ts`, 28 in `scripts/web/verify-editor.ts`, 14 in `scripts/web/verify-ai.ts`, 10 each in `tests/web/editor.test.ts` and `src/editor/model.ts`, 5 in `tests/web/ai-api.test.ts`, 4 in `src/server/app.ts` (+79 in `src/editor/main.tsx` via `tsconfig.app.json`). No errors appeared in any file not scheduled for R2–R6.
+
+### Files
+
+Added: `config/web/itinerary.schema.v1.json` (frozen v1, byte-identical to the committed v1), `src/contracts/itinerary-v1.generated.d.ts` (frozen), `src/contracts/upgrade-v1.ts`, `tests/web/fixtures-v2.ts`, `tsconfig.contracts.json`.
+Rewritten: `config/web/itinerary.schema.json` (web-2.0.0), `config/web/field-registry.json` (73 paths + `legacyLabelKeys` 31), `src/contracts/validator.ts`, `src/contracts/types.ts`, `src/server/draft.ts`, `tests/web/contracts.test.ts`, `src/contracts/itinerary.generated.d.ts` (regenerated, no `&` intersections).
+Edited: `src/contracts/field-coverage.ts` (anyOf-aware), `config/web/locales/*.json` (25 keys added per catalog, none removed), `package.json` (+`typecheck:web-contracts-v2`).
+Not touched: renderer, preview, publication, store, AI service, editor, v1 legacy adapter, v1 fixtures.
+
+### Deviations from the plan/amendment (each needs the reviewer's decision)
+
+| ID | Deviation | Reason |
+|---|---|---|
+| D1 | v2 size limits are **not** the plan's smaller numbers where v1 allowed more: lists 50 items × 500 chars (plan 40 × 300), `localTips` 50 × 1200, `emergencyContacts` 30 with value 240 (plan 10), place description 6000 (plan 4000), place tips 20 × 1000 (plan 10 × 600), `suggestedDuration` 120, `bestTime` 240, `nearby` 500, activity `tip` 4000, `transferNote` 2100. | Migration 3 is all-or-nothing. A valid v1 draft above the plan's limits would make the app refuse to start. A test (`v1 maximum field sizes carry over…`) pins this. |
+| D2 | `places` has **no** `maxItems` (plan: 1–60). Publish still requires ≥ 1 for a guide. | v1 had no cap and a test asserted 120 spots valid ("not silently capped"). A cap would also fail migration of any larger draft. Request size is already bounded by the 2 MB JSON limit. |
+| D3 | A v1 block whose accommodation has no name but has area/note upgrades to `hotel: { name: '', area, note }` + warning `HOTEL_NAME_EMPTY` (plan: `null`). | The standard v1 multi-day fixture has `name: null, area: 'Ubud'`; `null` would silently lose area and note. |
+| D4 | Nullable objects are a plain object def + `anyOf: [{$ref}, {type: "null"}]` at the six use sites; `collectSchemaLeafPaths` now follows `anyOf`. | Amendment items 2 and 3 conflict: `type: ["object","null"]` defs made the generator emit `{…} & ({…} | null)`, which silently drops `null` from the TypeScript type. |
+| D5 | New optional registry key `requiredModes`; `days[].title` applies to all scheduled modes and is publish-required for `multi_day` only. | The plan says "publish-required for multi_day only", but a single `modes` array cannot express "optional elsewhere"; v1 fixtures fill the title in every mode. |
+| D6 | 25 new locale keys (plan: 24): extra `meetingNote`. `hotel` and `meals` are in `displayLabelKeys` (section headings), not field keys. | `meeting.note` needs its own label. |
+| D7 | Registry introduces control types `time` and `toggle`. | `HH:MM` fields and boolean flags needed a control. R5's editor must render both. |
+| D8 | Photo `assetId` has `minLength: 1`. At publish a used photo needs a non-blank **photographer** in its credit (`PHOTO_ATTRIBUTION_REQUIRED`). | Mirrors v1's "used photo needs attribution" rule and RULES §11b. |
+| D9 | `trip.startTime`/`endTime` ordering is a **publish** error (`TIME_RANGE_INVALID`), not a draft error. | Drafts stay saveable (W12). |
+
+### Behaviour worth a second look
+
+- Span cap: error if the sum of known `durationMinutes` in a day exceeds the cap (provable even with unknown start times), or if the span from the first timed activity to the end of the last timed one exceeds it, or if `startTime→endTime` exceeds it. Unknown times only produce `SCHEDULE_TIME_UNKNOWN` warnings. Overlap between activities is **not** checked in R1 (v1 did that in `preview.ts`; left for R4).
+- `FIELD_NOT_APPLICABLE` is registry-driven (non-empty value at a path whose `modes` exclude the current mode) plus explicit object rules for `hotel`/`meals`, `pickup` details without an offer, and `days`/`places` in the wrong mode.
+- `upgradeV1ToV2` never throws (tested on garbage input) and preserves every stable ID. It truncates only as a last resort (`VALUE_TRUNCATED`), which no test case triggers.
+- Scratch generators `D:\Temp\build-registry-v2.mjs` and `D:\Temp\add-locale-keys.mjs` produced the registry and catalog additions. They are not committed; the JSON files are now the source of truth.
+
+### Requested from the reviewer
+
+1. Accept or reject D1–D9. D2 (no place cap) and D3 (hotel name) change what the plan fixed.
+2. Confirm the Indonesian prefix `Hari {a}–{b}: ` for collapsed day ranges and the `Waktu:`/`Durasi:`/`Kategori:` tip prefixes (hard-coded Indonesian per the plan mapping; they appear in published text unless the guide edits them).
+3. If accepted: append the CP019 revision section to `logs/cp019_completion-log_canonical-schema-and-field-registry.md`, set CP019 back to `completed`, and release R2.
