@@ -229,7 +229,7 @@ test('migration notes are appended after existing notes and the result still sat
   store.close();
 });
 
-test('too many notes collapse into one itinerary note that keeps existing and migration text', async (t) => {
+test('too many notes collapse into one itinerary note while existing notes stay untouched', async (t) => {
   const dataDir = await tempDir(t);
   const db = openLegacy(dataDir);
   const v1: any = createContentV1('multi_day', 'en');
@@ -244,9 +244,10 @@ test('too many notes collapse into one itinerary note that keeps existing and mi
   const store = openStore({ dataDir });
   const writing = JSON.parse((store.db.prepare('SELECT writing_json FROM itineraries').get() as any).writing_json);
   assert.equal(validWritingShape(writing), true);
-  assert.equal(writing.notes.length, 1);
-  assert.equal(writing.notes[0].targetId, 'itinerary');
-  assert.ok(writing.notes[0].text.includes('existing 0') && writing.notes[0].text.includes('category: Category 0-0'));
+  assert.deepEqual(writing.notes.slice(0, 60), existing.notes, 'existing notes are kept untouched and in order');
+  assert.equal(writing.notes.length, 61);
+  assert.equal(writing.notes[60].targetId, 'itinerary');
+  assert.ok(writing.notes[60].text.includes('category: Category 0-0') && writing.notes[60].text.includes('category: Category 1-24'));
   store.close();
 });
 

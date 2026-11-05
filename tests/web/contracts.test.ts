@@ -486,6 +486,7 @@ test('label parsing is exact-match: a label is mapped whole or kept as a private
     ['', '2 hours 15 minutes', null, 135, false],
     ['', '90m', null, 90, false],
     ['10:00 - 12:00', '', '10:00', 120, false],
+    ['10:00 - 12:00', '2-3 hours', '10:00', 120, true],
     ['9.00 to 10.30', '', '09:00', 90, false],
     ['09:00 s.d. 11:00', '', '09:00', 120, false],
     ['09:00 sampai 10:00', '', '09:00', 60, false],

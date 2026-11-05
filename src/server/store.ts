@@ -94,16 +94,20 @@ function upgradeDraftsToV2(db: DatabaseSync) {
     }
     let existingWriting: any;
     try { existingWriting = JSON.parse(row.writing_json); } catch { existingWriting = { brief: '', notes: [] }; }
-    const mergedNotes = [...(existingWriting.notes || []), ...upgraded.notes];
-    let finalNotes = mergedNotes.slice(0, 100);
-    if (mergedNotes.length > 100) {
-      const collapsed = mergedNotes.map((n: any) => `[${n.targetId}] ${n.text}`).join('\n').slice(0, 4000);
-      finalNotes = [{ targetId: 'itinerary', text: collapsed }];
-      db.prepare('INSERT OR REPLACE INTO app_meta(key,value) VALUES(?,?)').run(`migration3_notes_collapsed_${row.id}`, 'NOTES_TRUNCATED');
+    const keptNotes: Array<{ targetId: string; text: string }> = Array.isArray(existingWriting.notes) ? existingWriting.notes : [];
+    let addedNotes = upgraded.notes;
+    const codes = new Set(upgraded.warnings.map((warning) => warning.code));
+    if (keptNotes.length + addedNotes.length > 100) {
+      if (keptNotes.length >= 100) { addedNotes = []; codes.add('NOTES_TRUNCATED'); }
+      else {
+        const collapsed = addedNotes.map((n) => `[${n.targetId}] ${n.text}`).join('\n');
+        if (collapsed.length > 4000) codes.add('NOTES_TRUNCATED');
+        addedNotes = [{ targetId: 'itinerary', text: collapsed.slice(0, 4000) }];
+      }
     }
-    const updatedWriting = { brief: existingWriting.brief || '', notes: finalNotes };
+    const updatedWriting = { brief: existingWriting.brief || '', notes: [...keptNotes, ...addedNotes] };
     updateDraft.run(JSON.stringify(checked.value), JSON.stringify(updatedWriting), SCHEMA_VERSION, row.id);
-    warningCodes[row.id] = [...new Set(upgraded.warnings.map((warning) => warning.code))].sort();
+    warningCodes[row.id] = [...codes].sort();
   }
   db.prepare('INSERT OR REPLACE INTO app_meta(key,value) VALUES(?,?)').run('migration3_warnings', JSON.stringify(warningCodes));
 }

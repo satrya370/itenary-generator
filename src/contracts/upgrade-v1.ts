@@ -72,11 +72,10 @@ export function upgradeV1ToV2(input: unknown, profile: AgencyProfile = {}): Upgr
     const key = `${targetId}`;
     const existing = notes.find(n => n.targetId === key);
     const line = `${field}: ${text}`;
-    if (existing) {
-      existing.text = (existing.text + '\n' + line).slice(0, 4000);
-    } else {
-      notes.push({ targetId: key, text: line.slice(0, 4000) });
-    }
+    const full = existing ? `${existing.text}\n${line}` : line;
+    if (full.length > 4000) warn('NOTES_TRUNCATED', `notes.${key}`, 'Private note text for one item exceeded 4000 characters and was shortened.');
+    if (existing) existing.text = full.slice(0, 4000);
+    else notes.push({ targetId: key, text: full.slice(0, 4000) });
   };
   const fit = (text: string | null, max: number, path: string): string | null => {
     if (text === null || text.length <= max) return text;
@@ -160,14 +159,15 @@ export function upgradeV1ToV2(input: unknown, profile: AgencyProfile = {}): Upgr
         const time = timeObj?.start ?? null;
         if (timeLabel && !timeObj) { warn('TIME_UNPARSED', `${activityPath}.time`, 'The time could not be parsed as HH:MM or HH:MM-HH:MM.'); addNote(activityId, 'timeLabel', timeLabel); }
         const durationLabel = clean(activity.durationLabel);
-        let durationMinutes = durationLabel ? parseDuration(durationLabel) : null;
+        const labelMinutes = durationLabel ? parseDuration(durationLabel) : null;
+        let durationMinutes = labelMinutes;
         if (timeObj?.end && time) {
           const [endH, endM] = timeObj.end.split(':').map(Number);
           const [startH, startM] = time.split(':').map(Number);
           const span = (endH - startH) * 60 + (endM - startM);
           if (span >= 1 && span <= 1440) {
-            if (durationMinutes === null && !durationLabel) durationMinutes = span;
-            else if (durationMinutes !== null && durationMinutes !== span) {
+            if (labelMinutes === null) durationMinutes = span;
+            else if (labelMinutes !== span) {
               warn('TIME_RANGE_CONFLICT', `${activityPath}.durationMinutes`, 'The time range and the duration text disagree; the duration text was kept.');
               addNote(activityId, 'timeLabel', timeLabel);
             }
@@ -176,7 +176,7 @@ export function upgradeV1ToV2(input: unknown, profile: AgencyProfile = {}): Upgr
             addNote(activityId, 'timeLabel', timeLabel);
           }
         }
-        if (durationLabel && durationMinutes === null) { warn('DURATION_UNPARSED', `${activityPath}.durationMinutes`, 'The duration text could not be parsed.'); addNote(activityId, 'durationLabel', durationLabel); }
+        if (durationLabel && labelMinutes === null) { warn('DURATION_UNPARSED', `${activityPath}.durationMinutes`, 'The duration text could not be parsed.'); addNote(activityId, 'durationLabel', durationLabel); }
         if (orNull(activity.category)) { warn('CATEGORY_DROPPED', `${activityPath}.category`, 'Activity categories are no longer stored and were removed.'); addNote(activityId, 'category', clean(activity.category)); }
         const kind = (KINDS as readonly string[]).includes(activity.type) ? activity.type : activity.type === 'rest' || activity.type === 'accommodation' ? 'free' : 'activity';
         return {
