@@ -406,6 +406,261 @@ Source: joint review in `logs/cp019_review-log_r1-guide-centric-schema.md` (find
 
 **Gate R4:** `npm run test:web-preview && npm run test:web-publication && npm run verify:web-preview && npm run verify:web-publication`.
 
+### R3/R4 execution plan (planner, 2026-11-05) — overrides R3 and R4 above where they differ
+
+Written for Claude Haiku to execute. R1/R2 round 1 is accepted (commits `ee2462c`, `65ff9df`, `ee10278`, `e260e92`). Run R3 first. Start R4 only when the R3 gate is fully green and R3 is committed. Then stop and hand R3+R4 back for **one joint review**. Do not start R5.
+
+#### Ground rules for both stages
+
+- Write files with the Write/Edit tools, never bash heredocs. Keep the existing line endings.
+- Do **not** change: `config/web/itinerary.schema.json`, `field-registry.json`, the locale catalogs, `src/contracts/*`, `src/server/store.ts`, migrations, `tests/web/test-renderer.ts`, or anything under `src/editor/` (R5).
+- Every label the renderer needs already exists in the catalogs (see the key list in R3.2). If you think a new key is needed, **stop and record it** under "Open questions" in the stage log. Do not add it.
+- Do not weaken or delete assertions in suites outside the ones this plan rewrites (contracts, store, api, ai, publication). Those must stay green after every step.
+- If the same gate step fails three times for the same reason, stop. Write down what you tried in the stage log and hand back.
+- Commit locally only. Never push.
+
+#### R3 — Renderer (CP020)
+
+**R3.1 `src/render/resources.ts`.** Rename the second parameter of `loadInlineRenderResources` from `destinationType` to `colorTheme`. It still selects the palette from `config/palettes.json` (fallback `mixed`). No other change.
+
+**R3.2 `src/render/render.ts`: rewrite to render `ItineraryV2` only.** Remove every v1 type, path and input (`brochure`, `hero`, `overview`, `schedule`, `spots`, `closing.*`, quickFacts, highlights, pace, themes, travelers, `timeLabel`, `durationLabel`, `category`, `gradientOnly`). Keep these helpers and their behaviour unchanged: `esc`, `safeColor`, `icon` + `ICONS`, `safeCreditUrl`, `hasUnsafeCss`, `formatDate`, `resolvedImage`, the asset size checks in `assetErrors`, the 64 MiB HTML limit, and the CSS/font safety errors.
+
+New options:
+```ts
+export interface RenderAgency { name: string; contact: string; logoAssetId: string | null }
+export interface RenderOptions {
+  stylesheet: string; fontCss: string; catalog: LocaleCatalog; palette: RenderPalette;
+  assets?: Record<string, RenderAsset>;
+  agency: RenderAgency;      // resolved by the caller from the workspace profile
+  generatedDate: string;     // YYYY-MM-DD, supplied by the caller (never read the clock in render.ts)
+}
+export function renderItineraryHtml(content: ItineraryV2, options: RenderOptions): RenderResult
+```
+
+Locale and catalog: the locale is `content.trip.language`. `catalogCapabilityError` keeps its logic, but every diagnostic path becomes `trip.language`.
+
+Photo credit (v2 `PhotoCredit = { photographer, url, source }`). A credit is complete when:
+- `photographer.trim()` is non-empty;
+- `url`, if set, is https;
+- when `source` matches `/unsplash|pexels/i`, `url` is set and https.
+
+`source` may be empty. A used photo (one that resolves to an image) without a complete credit pushes `PHOTO_ATTRIBUTION_REQUIRED` with path `cover.credit`, `days[i].photo.credit` or `places[i].photo.credit`. Credits for the closing are collected **only** from used photos and de-duplicated by `photographer|url|source`.
+
+`assetErrors` checks `options.agency.logoAssetId`, `cover.assetId`, `days[].photo.assetId` and `places[].photo.assetId`.
+
+Section order. Each top-level block gets a `data-section` attribute with the value in brackets.
+1. **Hero** [`hero`].
+   - `cover` resolves to an image → render the image. Otherwise render the gradient (the palette from `trip.colorTheme`).
+   - Top row: agency logo (when `agency.logoAssetId` resolves) and `agency.name`. Omit the element entirely when both are empty. Next to it, a scope pill: `scopeHalfDay` / `scopeFullDay` / `scopeMultiDay` (replace `{count}` with `days.length`) / `scopeDestinationGuide`.
+   - Eyebrow: `modeHalfDay` / `modeFullDay` / `modeMultiDay` / `modeDestinationGuide`. This fixes the old bug where the guide showed the full-day label.
+   - `<h1>`: `trip.title || trip.destination`. Sub-line: `destination · region · country`, skipping empty values.
+2. **Trip info strip** [`trip-info`]. A `<dl>` grid. Render an item only when it has a value, and omit the whole strip when it would be empty.
+   - Dates. Half/full: `startDate` formatted, label `startDate`. Multi: `startDate` and `endDate`, where end = `startDate + days.length − 1`.
+   - Time window (half/full): label `startTime`, value `HH:MM–HH:MM`, or just the start when there is no end.
+   - Meeting: label `meetingPoint`, value `meeting.place`. Add a link labelled `mapsLink` only when `meeting.mapsUrl` is https, with `target="_blank" rel="noopener noreferrer"`. Label `meetingTime` for `meeting.time`, label `meetingNote` for `meeting.note`.
+   - Pickup, only when `pickup.offered`: label `pickup` with `pickup.area`, `pickupTime`, `dropoffNote`.
+   - Guide, in **all** modes: `guideName`, `guidePhone`.
+3. **Summary** [`summary`]: heading `tripOverview`, then `summary` as a paragraph. Omit when blank.
+4. **Route** [`route`], full_day and multi_day only. Show it only when there are ≥2 stops after removing consecutive duplicates. Label `routeSummary`, rendered as chips.
+   - full_day stops: `activity.place ?? activity.title`.
+   - multi_day stops: `day.location ?? day.title`.
+5. **Schedule** [`schedule`] for scheduled modes, heading `itinerary`.
+   - Activity row: keep the existing timeline markup. Add `data-activity-id`.
+     - Time column: `activity.time` or empty.
+     - Kind icon and the `activityType<Kind>` label.
+     - Duration from `durationMinutes` via `formatDuration(minutes, locale)`:
+       - use `Intl.NumberFormat(locale, { style: 'unit', unit: 'hour' | 'minute', unitDisplay: 'short' })`;
+       - < 60 → minutes; exact hours → hours; otherwise `"<hours> <minutes>"` joined by one space;
+       - when the formatter's resolved language differs from the requested language (as `formatDate` does), fall back to `<n> min`;
+       - expected `en` results: 45 → `45 min`, 120 → `2 hr`, 90 → `1 hr 30 min`.
+     - Then title, description, `activity.place` as a small line, and `tip` with the `localTip` label.
+   - half_day: one day. Show the day title/location only if non-empty. No meals, hotel or transfer markup ever.
+   - full_day: as half_day, plus a meals line when any meal is true: label `meals`, then the checked `breakfast`/`lunch`/`dinner` labels joined by ` · `.
+   - multi_day:
+     - A day index nav of chips `dayLabel N`.
+     - Then one card per day with `data-day-id`. Header: `dayLabel N`, plus ` · <date>` when `startDate` is set (`startDate + N − 1`). Then `title` and `location`.
+     - Card body: day photo, timeline, meals line.
+     - Hotel box: label `hotel`. Show the name only when non-empty — **never print an empty name or a dangling separator**. Then `area · note`, skipping empty values. Omit the box when all three are empty.
+     - Transfer note: label `transferNote`.
+6. **Guide** [`guide`] for destination_guide, heading `exploreDestinations`. Do **not** repeat the summary here.
+   - Keep the existing run-grouping by `group`: consecutive same-group places share a heading, and interleaved groups repeat their heading.
+   - Card with `data-place-id`: two-digit number, photo, name, area, description.
+   - Then a `<dl>` with only the present optional fields: `suggestedDuration`, `bestTime`, `gettingThere`, `nearby`.
+   - Then `tips` with the `localTip` label.
+7. **Practical** [`practical`], heading `practicalInfo`. Cards for each non-empty list:
+   - `included`, `notIncluded`, `whatToBring`, `healthSafety`;
+   - `localTips` with label `localTip`;
+   - `emergencyContacts` with label `emergencyContact`, as `label: value`.
+8. **Policies** [`policies`]: heading `policies`, text in an element with class `whitespace-pre-line`. Omit when null or blank.
+9. **Closing** [`closing`] (footer): heading `closingHeading`, `closingNote`, `agency.contact` (when non-empty), `disclaimer`, the photo credits, then a muted line `generatedDate: <formatted options.generatedDate>`.
+
+`<title>` = `trip.title || trip.destination`. `<html lang>` = `trip.language`. Keep `meta robots noindex`. No `<script>` or `<iframe>`, ever.
+
+**R3.3 `src/render/styles.css`.** Reuse the existing classes. Add CSS only for new needs: the `trip-info` grid, route chips, the hotel box, and the `whitespace-pre-line` utility if Tailwind does not already emit it. After editing render.ts, run `npm run build:brochure-css`, because Tailwind scans `render.ts` through `@source`.
+
+**R3.4 `tests/web/render.test.ts`: rewrite on `createContentV2` from `fixtures-v2.ts`.**
+
+Default options for every test:
+- the catalog for the locale;
+- `paletteConfig.palettes.cultural`;
+- `agency: { name: 'Sample Travel Studio', contact: 'guide@example.test', logoAssetId: null }`;
+- `generatedDate: '2026-11-05'`.
+
+Required tests:
+1. **Four modes** render with `errors: []` and the right `lang`. The title is present. There are no `undefined`, `[object Object]`, `{{…}}`, `<script` or `<iframe`. The guide eyebrow contains the catalog value of `modeDestinationGuide` and not `modeFullDay`.
+2. **Escaping.** HTML in title, activity description and place description is escaped. Emergency contacts render as `Guide: +62-000-0000`.
+3. **Mode sections.**
+   - half_day has no `breakfast`/`lunch`/`hotel`/`transferNote` labels.
+   - full_day shows the meals line with `Lunch`.
+   - multi_day shows `Ubud Garden Hotel`, the transfer note, the chips `Day 1`/`Day 2` and an end date.
+   - The guide has a `data-section="guide"` and no `data-section="schedule"`.
+   - `data-section="route"` appears only for full/multi, and only with ≥2 distinct stops.
+4. **Empty hotel name.** For a day with `hotel = { name: '', area: 'Ubud', note: 'Quiet' }`, the box shows `Ubud · Quiet`, and the hotel box markup has no empty name element and no leading ` · `.
+5. **Trip info strip.**
+   - The meeting place and an https maps link with `rel="noopener noreferrer"` render. An `http:` maps URL is not rendered as a link.
+   - Pickup renders only when offered.
+   - Guide name and phone render in all modes.
+   - destination_guide has no meeting or pickup items.
+6. **Agency comes from options.** Name, contact and logo are inlined when the asset is supplied. An empty name/contact leaves no empty element. Draft content cannot change the agency.
+7. **Optional place fields.** A place with `bestTime: null` has no `Best time` label. With a value, the label is shown.
+8. **Photo credits.**
+   - A cover with a credit is inlined and the credit is listed.
+   - A used day photo without a credit → `PHOTO_ATTRIBUTION_REQUIRED` at `days[0].photo.credit`.
+   - An Unsplash source without a url fails.
+   - A cover with an unresolvable asset → a `RENDER_ASSET_MISSING` warning plus the gradient.
+   - Unused credits are never listed.
+9. **Fail closed.** An unsupported locale, unsafe CSS (`@import`, external `url()`), and an incomplete or script-mismatched catalog all fail closed with `html: ''`. Port the existing tests to the `trip.language` path.
+10. **`la` dates.** Dates render as numeric ISO (port the existing test).
+11. **Interleaved guide groups** repeat their headings (port).
+12. **Scale and durations.**
+    - 14 days × 3 activities and 60 places render without errors.
+    - `formatDuration` gives `45 min`, `2 hr` and `1 hr 30 min` in `en`.
+    - A `ja` and a `zh-Hans` render contain no Latin fallback for the mode label.
+13. **Long copy.** A 4000-character Unicode description and multi-line policies render. Line breaks are kept through `whitespace-pre-line`.
+
+**R3.5 `scripts/web/render-fixture.ts` (`npm run verify:web-render`): port to v2.** Read the whole file first and keep its checks (no external requests, HTML size, fonts inlined, failure list, summary rows), but build the fixtures with `createContentV2`.
+
+Rows to render:
+- the six `language-samples.json` locales, as full_day, mapping the sample fields onto `trip`, `summary`, `days[0]` and `closingNote`/`disclaimer`;
+- one row per mode in `en`, with a cover photo, a day photo and credits;
+- 14-day multi_day;
+- 60-place guide.
+
+For each mode row, write the HTML plus Puppeteer screenshots at 390×844 and 1280×900 (full page) to `output/web-foundation/r3-<mode>-<width>.png`.
+
+**R3.6 Other callers.** `src/server/preview.ts` will not compile against the new signature until R4. That is expected and it stays outside `typecheck:web-server`. Do not touch it in R3.
+
+**Gate R3 (all must pass):**
+- `npm run build:brochure-css`
+- `npm run test:web-render`
+- `npm run verify:web-render`
+- `node scripts/web/typecheck-scope.mjs tsconfig.app.json src/render` → 0 errors
+- `npm run typecheck:web-server` and `npm run typecheck:web-contracts-v2` → 0 errors
+- `test:web-contracts`, `test:web-store`, `test:web-api`, `test:web-ai`, `test:web-publication` still all green
+- **Visual check:** open each of the 8 screenshots with the Read tool and look at them. Phone width: no horizontal overflow, the trip-info strip wraps, the timeline is readable. Desktop: the hero, the strip, and the day cards or place grid look intentional. The `ja`/`zh-Hans` rows show glyphs, not tofu. Fix what you see before committing.
+- Write `logs/cp020_stage-log_r3-renderer-v2.md`. It contains:
+  - the commands and their pass counts;
+  - the screenshot paths, with one sentence per screenshot on what you checked;
+  - deviations from this plan, with the reason;
+  - open questions.
+- Commit: `CP020 revision: R3 renderer for web-2.0.0 (pending joint review)`.
+
+#### R4 — Preview and publish checks (CP024, CP025)
+
+**R4.1 `src/server/preview.ts`.**
+- Types: `WebItineraryContent` is v2. `PreviewStore` becomes `{ getAsset(id: string): any | undefined; workspace(): { profile: unknown } }`. The real store already has `workspace()`.
+- Locale: `content.trip.language`.
+  - Unresolved when `languageContext.outputLanguage !== trip.language`, when `source === 'unresolved'`, or when the language is null → `LOCALE_UNRESOLVED` at `trip.language`.
+  - No catalog → `LOCALE_UNSUPPORTED` at `trip.language`.
+- **Delete** `scheduleDiagnostics`, the local `parseTime`/`parseDuration`, the `unquantifiedTime` filter and `expandRequiredDiagnostic`. Span caps, `ACTIVITY_ORDER`, `TIME_RANGE_INVALID`, `SCHEDULE_TIME_UNKNOWN` and `MEETING_POINT_MISSING` now come from `validateForPublish`. Do not duplicate them.
+- **Add `overlapDiagnostics(content)`.** Within each day, take the activities that have both `time` and `durationMinutes`, in array order. If an activity starts before the previous measured activity ends, push the error `SCHEDULE_OVERLAP` at `days[d].activities[j].time`. Only provable overlaps; missing values never produce an error.
+- **Add `hotelDiagnostics(content)`.** For multi_day, a day with `hotel !== null` and a blank `hotel.name` gives the **warning** `HOTEL_NAME_EMPTY` at `days[d].hotel.name`.
+- **Target IDs (overrides "stable-ID form" in R4 above).**
+  - Diagnostic `path` stays index-based, exactly as the validator emits it, so paths match between validator, preview and publish.
+  - Add `targetId` to every diagnostic whose path starts with `days[d]` or `places[p]`. Use the innermost ID: the activity ID when the path contains `activities[j]`, otherwise the day or place ID.
+  - Write one helper `withTargetIds(content, diagnostics)` and apply it to both errors and warnings.
+  - The R5 editor focuses by `targetId`.
+- `contentDiagnostics` scans exactly these v2 text fields:
+  - `trip.title`, `trip.destination`, `trip.region`, `summary`;
+  - `meeting.place`, `meeting.note`, `pickup.area`, `pickup.dropoffNote`, `guide.name`;
+  - per day: `days[d].title`, `days[d].location`, `days[d].transferNote`, and `days[d].hotel` as `[name, area, note]` joined;
+  - per activity: `days[d].activities[j].title`, `.description`, `.tip`, `.place`;
+  - per place: `places[p].name`, `places[p].description`, and `places[p].logistics` as `[area, group, gettingThere, ...tips, nearby, suggestedDuration, bestTime]` joined;
+  - per item: `included[i]`, `notIncluded[i]`, `whatToBring[i]`, `healthSafety[i]`, `localTips[i]`, `emergencyContacts[i]` as `[label, value]`;
+  - `policies`, `closingNote`, `disclaimer`.
+
+  Keep the four regexes (money, opening hours, promotional, placeholder) unchanged.
+- Assets: `assetReferences` covers `cover.assetId` (path `cover.assetId`), `days[d].photo.assetId`, `places[p].photo.assetId`, and the profile `agencyLogoAssetId` (path `profile.agencyLogoAssetId`). Keep the storage-key check, the sharp decode, the mime/byte match and the 20 MiB total exactly as they are.
+- Render call:
+  - `loadInlineRenderResources(trip.language, trip.colorTheme, stylesheetPath)`;
+  - `agency` from `store.workspace().profile`: `agencyName` → `name`, `agencyContact` → `contact`, `agencyLogoAssetId || null` → `logoAssetId`, with strings defaulting to `''`;
+  - `generatedDate: new Date().toISOString().slice(0, 10)`.
+- `scheduleVerification`: `'not_applicable'` for destination_guide, `'partial'` when any warning has code `SCHEDULE_TIME_UNKNOWN`, otherwise `'complete'`.
+- `editorMessages` (Indonesian). Remove the v1-only codes. The table must contain exactly:
+  - `PUBLISH_FIELD_REQUIRED`: Lengkapi field ini sebelum publish.
+  - `SCHEMA_VALIDATION_FAILED`: Perbaiki nilai field agar sesuai format yang diminta.
+  - `DUPLICATE_STABLE_ID`: Item memiliki ID yang sama; simpan ulang setelah memperbaiki data.
+  - `FIELD_NOT_APPLICABLE`: Field ini tidak berlaku untuk tipe itinerary ini; kosongkan dulu.
+  - `SINGLE_DAY_REQUIRED`: Tipe ini hanya memakai satu hari jadwal.
+  - `MULTI_DAY_COUNT_INVALID`: Itinerary multi-hari membutuhkan 2 sampai 14 hari.
+  - `PLACES_REQUIRED`: Tambahkan minimal satu tempat ke panduan destinasi.
+  - `EMPTY_DAY`: Tambahkan minimal satu aktivitas di hari ini.
+  - `DURATION_CAP_EXCEEDED`: Total waktu melebihi batas durasi tipe itinerary ini.
+  - `ACTIVITY_ORDER`: Urutkan aktivitas dari jam paling awal.
+  - `TIME_RANGE_INVALID`: Jam selesai harus setelah jam mulai.
+  - `SCHEDULE_OVERLAP`: Aktivitas ini dimulai sebelum aktivitas sebelumnya selesai.
+  - `SCHEDULE_TIME_UNKNOWN`: Sebagian jam atau durasi belum diisi; jadwal belum bisa dicek penuh.
+  - `MEETING_POINT_MISSING`: Belum ada titik kumpul atau penjemputan.
+  - `HOTEL_NAME_EMPTY`: Nama hotel belum diisi.
+  - `PHOTO_ATTRIBUTION_REQUIRED`: Lengkapi kredit untuk foto yang digunakan.
+  - `RENDER_ASSET_MISSING`: Aset foto tidak tersedia; preview menggunakan tampilan fallback.
+  - `LOCALE_UNSUPPORTED`: Katalog bahasa atau script ini belum didukung.
+  - `LOCALE_LABELS_INCOMPLETE`: Katalog label bahasa belum lengkap.
+  - `LOCALE_CATALOG_UNAVAILABLE`: Label untuk bahasa ini belum tersedia.
+  - `RENDER_STYLES_INVALID`: Stylesheet render tidak tersedia atau tidak aman.
+  - `RENDER_FONTS_EXTERNAL`: Font render tidak tersedia sebagai resource lokal.
+- Keep unchanged: the 422/503 status rules and the response shape (`ok`, `html`, `errors`, `warnings`, `publishReady`, `scheduleVerification`). `publishReady` = no errors.
+
+**R4.2 `src/server/publication.ts` (overrides "passes agency" in R4 above).** The agency is resolved inside `renderSavedDraftPreview`, which publication already calls, so do not change publication logic. Only adjust the `Store` type if the new `PreviewStore` requires it. The OG image and tags already read v2 fields; leave them as they are.
+
+**R4.3 `tests/web/preview.test.ts`: rewrite on `createContentV2`.** Keep the `setup()` shape: a real renderer, a temp stylesheet, `createApp`. Required tests:
+1. A saved incomplete draft (empty `trip.title`) previews with `ok: true`. Publish errors are separated (`publishReady: false`), and the stored draft is unchanged (deepEqual before/after GET).
+2. **Overlap and cap.**
+   - `08:00`+90 followed by `09:00` → error `SCHEDULE_OVERLAP` at `days[0].activities[1].time`, with `targetId` = that activity's ID.
+   - A half_day with `08:00`+60 and `14:30`+60 → `DURATION_CAP_EXCEEDED`.
+3. **Locale.** A stale `languageContext` and an unresolved one → 422 `LOCALE_UNRESOLVED`. Benign wording such as "price-conscious travellers" is still allowed.
+4. **Missing time.** An activity with `time: null` → a `SCHEDULE_TIME_UNKNOWN` warning, `publishReady: true`, `scheduleVerification: 'partial'`.
+5. **Pattern guards.** Each of `IDR 150.000` in an activity tip, `jam buka 08:00` in `meeting.note`, `book now` in `policies`, `営業時間` in a place description, and `{{name}}` in `closingNote` blocks with the right code and path. "Best visited in the morning" does not block.
+6. **Caps without start times.** full_day 2×400 minutes and multi_day 2×500 minutes in one day → `DURATION_CAP_EXCEEDED`. Exactly 720 / 960 → no error.
+7. Missing stylesheet → 503 `RENDER_RESOURCES_UNAVAILABLE`, draft preserved (port).
+8. A same-size, pixel-corrupt cover image → 422 `ASSET_INVALID` at `cover.assetId` (port).
+9. A missing activity title → `PUBLISH_FIELD_REQUIRED` at `days[0].activities[1].title`, with `targetId` = the activity ID. A missing place name → a `targetId` with the place ID.
+10. A multi_day hotel `{ name: '', area: 'Ubud', note: null }` → the warning `HOTEL_NAME_EMPTY` (not an error), and the HTML has no empty hotel name.
+11. **Agency from the profile.** PATCH the profile with `agencyName: 'Sample Travel Studio'` and an uploaded logo asset → the preview HTML contains the name and an inline `data:image/` logo. A profile with a corrupt logo → `ASSET_INVALID` at `profile.agencyLogoAssetId`.
+12. A full_day with `meeting.place = null` and no pickup → the `MEETING_POINT_MISSING` warning, still `publishReady: true`.
+
+**R4.4 `tests/web/publication.test.ts`: add one real-renderer test.** Keep every existing test on the stub. Add a test where `setup` is given an option that leaves out `renderPreview`, so the real `renderSavedDraftPreview` runs with the temp stylesheet. Publish → 200. The public page contains the trip title, the agency name from the profile, and the OG tags, and does not contain the private writing brief.
+
+**R4.5 `scripts/web/verify-preview.ts` and `scripts/web/verify-publication.ts`.** Swap the v1 `createContent` for `createContentV2` and update any v1 paths. They use `.runtime/web-render/brochure.css`, which the R3 gate already built. Keep their checks unchanged in intent.
+
+**Gate R4 (all must pass):**
+- `npm run test:web-preview` (all green)
+- `npm run test:web-publication` (existing tests plus the new real-renderer test)
+- `npm run verify:web-preview` and `npm run verify:web-publication`
+- `npm run typecheck:web-server` **with `src/server/preview.ts` included**: run `node scripts/web/typecheck-scope.mjs tsconfig.app.json src/server src/contracts src/api src/render` → 0 errors. Then remove `!src/server/preview.ts` from the `typecheck:web-server` script in `package.json`.
+- The R3 gate commands and the contracts/store/api/ai suites are still green.
+- `test:web-editor` is still expected to fail (R5). Record its count. Do not touch it.
+- Write `logs/cp024_stage-log_r4-preview-v2.md`, with the same structure as the R3 stage log.
+- Commit: `CP024/CP025 revision: R4 preview and publish checks for web-2.0.0 (pending joint review)`.
+
+#### Planner decisions in this section (the owner may override before execution)
+
+- **PR-1:** Duration display uses `Intl.NumberFormat` units ("1 hr 30 min"), not new catalog keys. The `la` fallback is `<n> min`.
+- **PR-2:** The route summary is shown only for full/multi, and only with ≥2 distinct stops.
+- **PR-3:** The content-policy scanner also covers `policies`. A cancellation fee written with a currency amount will block publish, because the existing no-prices rule is applied as-is.
+- **PR-4:** Diagnostics keep index paths, plus `targetId`, instead of the stable-ID path form.
+- **PR-5:** The overlap check lives in preview, not in `validateForPublish`. It therefore does not run in the stub renderer used by the publication state-machine tests.
+
 ### R5 — Editor (CP022)
 
 - Rewrite `src/editor/main.tsx` into smaller files (`src/editor/sections/*.tsx`: `TripInfo`, `TimeAndMeeting`, `TripGuide`, `Cover`, `Summary`, `DaySchedule`, `MultiDay`, `Places`, `Practical`, `Closing`, `AiAssist`, `ModePicker`, `DraftList`), using the Editor Behaviour spec above, the registry-driven `fieldMeta`, and the `data-field-path` attribute on every input. Keep the existing behaviour: manual Save, the 409 conflict panel, preview, publish/unpublish/copy link, AI Generate/Apply/Discard with staleness checks, keyboard reorder buttons, and the mode-change confirmation.
