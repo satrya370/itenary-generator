@@ -47,7 +47,7 @@ async function inlineFontStylesheet(packageName: string): Promise<{ css: string;
   return { css: `${css}\n/* Bundled font license: ${packageName}\n${licenseComment}\n*/`, bytes };
 }
 
-export async function loadInlineRenderResources(locale: string, destinationType: string, stylesheetPath: string) {
+export async function loadInlineRenderResources(locale: string, colorTheme: string, stylesheetPath: string) {
   const stylesheet = await fs.readFile(stylesheetPath, 'utf8');
   const bundles = await Promise.all(localeFontPackages(locale).map(inlineFontStylesheet));
   const fontCss = bundles.map((bundle) => bundle.css).join('\n');
@@ -55,7 +55,7 @@ export async function loadInlineRenderResources(locale: string, destinationType:
   const catalog = getLocaleCatalog(locale);
   if (!catalog) throw new Error(`No locale label catalog installed for ${locale}`);
   const palettes = (paletteConfig as any).palettes;
-  const palette = palettes[destinationType] || palettes.mixed;
+  const palette = palettes[colorTheme] || palettes.mixed;
   if (fontBytes > MAX_INLINE_FONT_BYTES) throw new Error('Combined locale font bundle exceeds 16 MiB.');
   if (/@import|<\/style/i.test(stylesheet) || /@import|<\/style/i.test(fontCss) || hasNonDataUrl(stylesheet) || hasNonDataUrl(fontCss)) {
     throw new Error('Render styles must be self-contained and safe to inline.');
