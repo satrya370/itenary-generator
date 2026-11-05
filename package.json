@@ -14,7 +14,7 @@
     "typecheck:web-contracts": "tsc --noEmit -p tsconfig.web.json",
     "typecheck:web-contracts-v2": "tsc --noEmit -p tsconfig.contracts.json",
     "typecheck:web-app": "tsc --noEmit -p tsconfig.app.json",
-    "typecheck:web-server": "node scripts/web/typecheck-scope.mjs tsconfig.app.json src/server src/contracts src/api !src/server/preview.ts",
+    "typecheck:web-server": "node scripts/web/typecheck-scope.mjs tsconfig.app.json src/server src/contracts src/api",
     "test:web-contracts": "tsx --test tests/web/contracts.test.ts",
     "test:web-api": "tsx --test tests/web/api.test.ts",
     "test:web-store": "tsx --test tests/web/store-migration.test.ts",

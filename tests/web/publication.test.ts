@@ -11,11 +11,11 @@ import { stubRenderPreview } from './test-renderer.js';
 
 const headers = { origin: 'http://127.0.0.1:3000', 'x-engine-request': '1', 'content-type': 'application/json' };
 
-async function setup(t: any, afterPublicArtifactRead?: () => Promise<void>) {
+async function setup(t: any, afterPublicArtifactRead?: () => Promise<void>, realRenderer = false) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), 'itinerary-cp025-'));
   const stylesheetPath = path.join(dataDir, 'brochure.css');
   await writeFile(stylesheetPath, 'body{font-family:sans-serif}.brochure{max-width:900px}');
-  let app = await createApp({ renderPreview: stubRenderPreview as any, dataDir, renderStylesheetPath: stylesheetPath, shareOrigin: 'https://share.example.test', afterPublicArtifactRead }); let open = true;
+  let app = await createApp({ ...(realRenderer ? {} : { renderPreview: stubRenderPreview as any }), dataDir, renderStylesheetPath: stylesheetPath, shareOrigin: 'https://share.example.test', afterPublicArtifactRead }); let open = true;
   const close = async () => { if (open) { await app.close(); open = false; } };
   t.after(async () => { await close(); await rm(dataDir, { recursive: true, force: true }); });
   const created = await app.inject({ method: 'POST', url: '/api/v1/itineraries', headers, payload: { mode: 'full_day' } });
@@ -23,7 +23,7 @@ async function setup(t: any, afterPublicArtifactRead?: () => Promise<void>) {
   const content = createContentV2('full_day', 'en');
   const record = await app.inject({ method: 'PATCH', url: `/api/v1/itineraries/${blank.id}`, headers, payload: { expectedRevision: blank.revision, draftContent: content, languageContext: { requestedLanguage: 'en', outputLanguage: 'en', source: 'explicit' }, writingContext: { brief: 'INTERNAL BRIEF MUST NOT PUBLISH', notes: [{ targetId: 'itinerary', text: 'Private source note.' }] } } });
   assert.equal(record.statusCode, 200, record.body);
-  return { get app() { return app; }, close, async restart() { await close(); app = await createApp({ renderPreview: stubRenderPreview as any, dataDir, renderStylesheetPath: stylesheetPath, shareOrigin: 'https://share.example.test', afterPublicArtifactRead }); open = true; }, id: blank.id, revision: record.json().revision, content, dataDir, stylesheetPath };
+  return { get app() { return app; }, close, async restart() { await close(); app = await createApp({ ...(realRenderer ? {} : { renderPreview: stubRenderPreview as any }), dataDir, renderStylesheetPath: stylesheetPath, shareOrigin: 'https://share.example.test', afterPublicArtifactRead }); open = true; }, id: blank.id, revision: record.json().revision, content, dataDir, stylesheetPath };
 }
 
 async function publish(app: any, id: string, expectedRevision: number, operationId = randomUUID()) {
@@ -290,4 +290,22 @@ test('Open Graph tags and the stored snapshot come from the v2 trip title, summa
   const version = (f.app as any).store.db.prepare('SELECT schema_version,snapshot_json FROM published_versions').get();
   assert.equal(version.schema_version, 'web-2.0.0');
   assert.equal(JSON.parse(version.snapshot_json).schemaVersion, 'web-2.0.0');
+});
+
+test('publishing through the real renderer uses the workspace profile and never leaks the private writing brief', async (t) => {
+  const f = await setup(t, undefined, true);
+  const profile = (await f.app.inject({ url: '/api/v1/itinerary-engine/profile' })).json();
+  const patched = await f.app.inject({ method: 'PATCH', url: '/api/v1/itinerary-engine/profile', headers, payload: { expectedRevision: profile.revision, profile: { agencyName: 'Sample Travel Studio', agencyContact: 'guide@example.test', agencyLogoAssetId: null } } });
+  assert.equal(patched.statusCode, 200, patched.body);
+  const published = await publish(f.app, f.id, f.revision);
+  assert.equal(published.statusCode, 200, published.body);
+  const token = published.json().shareUrl.split('/').at(-1);
+  const page = await f.app.inject({ url: `/i/${token}` });
+  assert.equal(page.statusCode, 200);
+  assert.match(page.body, /<title>Ubud in a day<\/title>/);
+  assert.match(page.body, /Sample Travel Studio/);
+  assert.match(page.body, /guide@example\.test/);
+  assert.match(page.body, /property="og:title" content="Ubud in a day"/);
+  assert.match(page.body, /property="og:image" content="https:\/\/share\.example\.test\/i\/.+\/og-image"/);
+  assert.doesNotMatch(page.body, /INTERNAL BRIEF MUST NOT PUBLISH|Private source note/);
 });

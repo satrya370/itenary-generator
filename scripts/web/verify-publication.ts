@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import puppeteer from 'puppeteer';
 import { createApp } from '../../src/server/app.js';
-import { createContent } from '../../tests/web/fixtures.js';
+import { createContentV2 } from '../../tests/web/fixtures-v2.js';
 
 const managementHeaders = { origin: 'http://127.0.0.1:3000', 'x-engine-request': '1', 'content-type': 'application/json' };
 async function availablePort() {
@@ -33,7 +33,7 @@ async function main() {
   }
   async function waitStatus(text: string) { await page.waitForFunction(expected => document.querySelector('[role="status"]')?.textContent?.includes(expected), {}, text); }
   async function readStatus() { return await page.evaluate(id => fetch(`/api/v1/itineraries/${id}/publication`).then(response => response.json()), itineraryId); }
-  const content = createContent('full_day', 'en'); content.brochure.tripTitle = 'CP025 OG Fixture';
+  const content = createContentV2('full_day', 'en'); content.trip.title = 'CP025 OG Fixture';
   const created = await app.inject({ method: 'POST', url: '/api/v1/itineraries', headers: { ...managementHeaders, origin }, payload: { mode: 'full_day' } });
   const blank = created.json();
   const saved = await app.inject({ method: 'PATCH', url: `/api/v1/itineraries/${blank.id}`, headers: { ...managementHeaders, origin }, payload: { expectedRevision: blank.revision, draftContent: content, languageContext: { requestedLanguage: 'en', outputLanguage: 'en', source: 'explicit' }, writingContext: { brief: 'Private verification brief.', notes: [] } } });

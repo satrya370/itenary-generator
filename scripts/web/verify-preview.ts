@@ -54,7 +54,7 @@ async function main() {
     await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Tersimpan · revisi'));
     await clickButton('Preview');
     await page.waitForFunction(() => document.querySelector('iframe[title="Preview itinerary tersimpan"]') !== null);
-    await page.waitForFunction(() => document.querySelector('[aria-label="Publish diagnostics"]')?.textContent?.includes('schedule[0].activities[0].title'));
+    await page.waitForFunction(() => document.querySelector('[aria-label="Publish diagnostics"]')?.textContent?.includes('days[0].activities[0].title'));
     const frame = page.frames().find(candidate => candidate.url() === 'about:srcdoc');
     assert.ok(frame, 'sandboxed srcdoc preview frame exists');
     await frame!.waitForFunction(() => Boolean(document.body?.innerText.trim()));
@@ -64,9 +64,9 @@ async function main() {
     await (await page.$('iframe[title="Preview itinerary tersimpan"]'))!.screenshot({ path: path.join(evidenceDir, 'cp024-preview-frame.png') });
     assert.equal(await page.$eval('iframe[title="Preview itinerary tersimpan"]', element => (element as HTMLIFrameElement).getAttribute('sandbox')), '');
     const diagnostics = await page.$eval('[aria-label="Publish diagnostics"]', element => element.textContent || '');
-    assert.match(diagnostics, /schedule\[0\]\.activities\[0\]\.title/);
+    assert.match(diagnostics, /days\[0\]\.activities\[0\]\.title/);
     const focusProbe = await page.evaluate(() => {
-      const button = [...document.querySelectorAll('[aria-label="Publish diagnostics"] button')].find(item => item.textContent?.startsWith('schedule[0].activities[0].title')) as HTMLButtonElement | undefined;
+      const button = [...document.querySelectorAll('[aria-label="Publish diagnostics"] button')].find(item => item.textContent?.startsWith('days[0].activities[0].title')) as HTMLButtonElement | undefined;
       button?.click(); return (document.activeElement as HTMLElement)?.id || '';
     });
     const exactActivityFocus = focusProbe === activityFieldIds[0];
