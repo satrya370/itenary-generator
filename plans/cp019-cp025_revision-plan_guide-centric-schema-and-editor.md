@@ -335,6 +335,49 @@ R2 deviations from the plan text:
 | E5 | New error code `INVALID_CURSOR` (422) for forged list cursors; `listItineraries` returns `{ items, nextCursor }` and fetches `limit + 1` rows so the last page has no cursor. | Opaque cursor needs a rejection path. |
 | E6 | The AI provider context payload changes shape (`themes` and `category` removed; activity target carries `activityKind`; place target uses `bestTime`/`nearby`). | Source fields no longer exist. No live provider call was made, so output quality on v2 context is unverified. |
 
+### R1/R2 revision round 1 (reviewer, 2026-11-05) — must pass before R3 starts
+
+Source: joint review in `logs/cp019_review-log_r1-guide-centric-schema.md` (findings F1–F6). Correction to "R1 amendment" item 2: nullable objects use **`anyOf: [{$ref}, {type: "null"}]`** at the use site (deviation D4 accepted); `collectSchemaLeafPaths` follows `anyOf`.
+
+**RV1 — exact-match label parsing (F1).** In `src/contracts/upgrade-v1.ts`, a label is mapped only when the **whole trimmed label** matches an accepted form; otherwise the field stays `null`, a warning is emitted, and the original text goes to a private note (RV3). Never pick a number out of a longer label.
+- Time label accepted forms: single time `H:MM | HH:MM | H.MM | HH.MM`; or a range `<time> <sep> <time>` with sep `-`, `–`, `—`, `to`, `s.d.`, `sampai` (spaces optional). A range sets `time` = start and, when the activity has no readable duration label and end > start, `durationMinutes` = end − start. If the duration label is also readable and disagrees with the range, keep the duration label's value and add a `TIME_RANGE_CONFLICT` warning + note.
+- Duration label accepted forms (case-insensitive, optional leading `±`/`~`/`about`/`sekitar`/`kurang lebih` is **not** accepted, because it is an estimate): `N (jam|hour|hours|hr|hrs|h)`, `N (menit|minute|minutes|min|mins|m)`, `N jam M menit`, `N hours M minutes`, `NhMm`, `NhM`, decimal hours `N.5 jam/hours` (comma allowed). Ranges (`2-3 hours`) and anything else → `null` + `DURATION_UNPARSED`.
+- Result must be 1–1440 minutes, else `null` + warning.
+- Tests (add to `tests/web/contracts.test.ts`): every probe case from F1 with its expected result: `1h30m`→90; `2-3 hours`→null + note; `1–2 jam`→null + note; `about 30 min + 15 min transfer`→null + note; `10:00 - 12:00`→10:00 and 120 when no duration label; `Pagi 8.30 - 11.00`→null time + note (extra word); `08:00`+`1.5 hours`→90. Add a test that a parsed value never coexists with discarded text.
+
+**RV2 — independent meal matching (F2).** Each meal entry is tested against breakfast, lunch and dinner **independently** (no `else`). An entry is `MEAL_UNMATCHED` (and goes to a private note) only when it matches none. Tests: `Breakfast & dinner` → breakfast + dinner; `Makan siang dan makan malam` → lunch + dinner; `Picnic` → note + warning.
+
+**RV3 — leftovers to private notes, not public text (F6, owner decision).**
+- `upgradeV1ToV2` returns `{ value, warnings, notes }`, where `notes: Array<{ targetId: string; text: string }>`.
+- Unreadable time label, unreadable duration label, range conflicts, unmatched meals, activity `category` and place `category` produce notes, **not** tip text. Remove every `Waktu:`/`Durasi:`/`Kategori:` append from public fields.
+- targetId is the activity id (time/duration/category), the day id (meals) or the place id (place category). Note text format: `<field>: <original text>`, using the v1 field names `timeLabel`, `durationLabel`, `mealsIncluded`, `category` (private, language-neutral).
+- Block `transportNote`/`blockTip` handling stays as R1 implemented it (they were public in v1).
+- Migration 3 merges notes into `writing_json.notes` (existing notes kept, in order; new notes appended).
+  - One note per targetId: concatenate that target's lines with `\n`, max 4000 characters.
+  - Never exceed 100 notes total. If the merged list would exceed 100, collapse **all** migration notes into a single note with targetId `itinerary` (still ≤ 4000 characters; if longer, truncate with warning `NOTES_TRUNCATED`).
+  - `writing_json` must still pass `validWriting` in `app.ts` (keys `brief`/`notes`, brief ≤ 20000, ≤ 100 notes, text ≤ 4000). Assert this in a test by re-reading the row.
+- Update the store migration tests: `writing_json` is unchanged when the upgrade yields no notes, and gains the expected notes otherwise. Add a test with existing notes plus migration notes that would exceed 100.
+
+**RV4 — localized day-range title (F6, owner decision).**
+- Add catalog key `dayRange` to all six catalogs: en `Days {start}–{end}`, id `Hari {start}–{end}`, fr `Jours {start}–{end}`, ja `{start}–{end}日目`, la `Dies {start}–{end}`, zh-Hans `第{start}–{end}天`. Add it to `displayLabelKeys`.
+- The upgrade looks up the catalog for `brochure.outputLanguage` through `getLocaleCatalog`. Title = `<template filled>: <old title>` (or the template alone if the old title is empty). With no language or no catalog: `<start>–<end>: <old title>`.
+- Test: `en` → `Days 2–3: Ubud`, `ja` → `2–3日目: Ubud`, `null` language → `2–3: Ubud`.
+
+**RV5 — ensure AI tables on every start (F3).**
+- After migrations, `openStore` executes `AI_SCHEMA_DDL` (idempotent `CREATE … IF NOT EXISTS` / `INSERT OR IGNORE`) every time, so a root recorded at version 2 without AI tables recovers. Do not add a migration version for this.
+- Test: build a root with core DDL and versions (1),(2) but no AI tables. `createApp` starts, the AI tables exist, and the ledger row is `(1, 2, 0)`.
+
+**RV6 — close the store on failed startup (F4).** Wrap everything in `createApp` after `openStore` so any thrown error closes the store before rethrowing. Test: inject a failing `aiProvider` construction path or `recoverPublication` failure, assert the error propagates and the data directory can be deleted (or the SQLite file reopened exclusively).
+
+**RV7 — narrow the conflict catch (F5).**
+- In `publication.ts`, only treat SQLite constraint failures (`error.code === 'ERR_SQLITE_ERROR'` with `errcode` 19 / message containing `UNIQUE constraint failed`) as an operation-ID conflict. Check what `node:sqlite` actually reports and assert on that.
+- Rethrow anything else: before the pending row exists it surfaces as a 500 with no row left behind; inside `execute` the existing terminalization applies.
+- Test with a `BEFORE INSERT` trigger raising `ABORT` (not a constraint): publish must not answer 409, and no `pending` row may remain.
+
+**Gate for this round:** the amended R2 gate, plus all new tests, plus a re-run of the real-data **copy** check (`.runtime/` copied to a temp folder; original untouched): 6/6 drafts valid, IDs/revisions/timestamps unchanged; `b25d1f08` title uses the `en` template if its language is `en`; its category/label leftovers, if any, appear only in `writing_json.notes`; AI ledger identical. Commit as `CP019/CP021 revision: R1/R2 round 1 fixes`. Hand back to the reviewer.
+
+**Carried into later stages (do not do now):** R3 must not print an empty hotel name. R4 adds the `HOTEL_NAME_EMPTY` publish warning, restores v1 preview overlap checks against v2 times, and re-runs the publication suite with the real renderer. R5 renders the `time`/`toggle` controls, honours `requiredModes`, and clears pickup details/mode-specific fields before save.
+
 ### R3 — Renderer (CP020)
 
 - `src/render/render.ts`: render from v2. `RenderOptions` gains `agency: { name, contact, logo }` (resolved by the caller from the profile). Sections:

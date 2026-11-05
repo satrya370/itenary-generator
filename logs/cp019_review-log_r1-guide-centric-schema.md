@@ -153,3 +153,63 @@ E1 operation-ID finding re-diagnosed; E2 `VACUUM INTO` backup; E3 AI schema spli
 1. Accept or reject R1 D1-D9 and R2 E1-E6.
 2. Confirm that the amended R2 gate (renderer double, scoped typecheck) is an acceptable substitute, and that R4 must re-run publication with the real renderer.
 3. Decide whether the user-facing Indonesian migration prefixes (R1 question 2) stay.
+
+---
+
+## Joint review R1 + R2 — 2026-11-05 (Claude Opus 5.5, reviewer)
+
+**Verdict: REVISE (round 1).** The structure, persistence and API work is sound and the gates reproduce. However, the v1→v2 upgrade still loses or corrupts data silently, which breaks acceptance criterion 6 ("no data silently lost"). R2 also introduced a startup regression. Neither is caught by the executor's tests.
+
+### Independently reproduced
+
+Commits `9e14312` (R1) and `86ad1f4` (R2); clean working tree apart from untracked baseline artifacts. Re-ran every gate:
+
+| Gate | Result |
+|---|---|
+| `check:web-types` | matches |
+| `typecheck:web-contracts-v2` | exit 0 |
+| `typecheck:web-server` | 0 in scope, 273 outside ignored |
+| `test:web-contracts` | 37/37 |
+| `test:web-store` | 6/6 |
+| `test:web-api` | 12/12 |
+| `test:web-publication` | 10/10 |
+| `test:web-ai` | 28/28 |
+
+### Findings (verified by probe scripts, not by reading the executor summary)
+
+| ID | Severity | Finding | Evidence |
+|---|---|---|---|
+| F1 | **High** | The upgrade's time/duration parsing picks the first or last number it finds and **discards the original text without a warning**. `"1h30m"` → **30** (wrong value: `\b` blocks the hour match); `"2-3 hours"` → 180; `"1–2 jam"` → 120; `"about 30 min + 15 min transfer"` → 30; `"10:00 - 12:00"` → 10:00 with the end time lost; `"Pagi 8.30 - 11.00"` → 08:30, end lost. No `*_UNPARSED` warning is emitted and the tip stays `null`. | probe on `upgradeV1ToV2` |
+| F2 | **High** | Meal mapping uses an `else if` chain, so one entry naming two meals keeps only the first, silently: `"Breakfast & dinner"` → breakfast only; `"Makan siang dan makan malam"` → lunch only. | same probe |
+| F3 | Medium (regression) | A data root whose `migrations` table holds version 2 without AI tables fails to start: `no such table: ai_operations`. The baseline core DDL recorded `(1),(2)` itself, and the AI tables were created lazily by `AiService`, so every root opened by `openStore` without the AI service is in this state. The old code recovered; the new runner skips migration 2. | probe: core tables + versions 1,2 → `createApp` throws |
+| F4 | Low | `createApp` leaves the SQLite handle open when initialization fails after `openStore` (the F3 probe could not delete its temp directory: `EPERM`). | same probe |
+| F5 | Low | `publication.ts` treats **any** error from the pending insert or the reuse transaction as an operation-ID conflict (409). A busy/locked database would be misreported as a conflict instead of a server failure. | code reading, `resolveInsertConflict` call sites |
+| F6 | Product (decided by the owner) | Migration writes Indonesian-prefixed text (`Waktu:`, `Durasi:`, `Kategori:`, `Hari a–b:`) into public fields regardless of the draft's language. | owner decision 2026-11-05, below |
+
+Real data impact: the 6 drafts in `.runtime/` use simple labels (`""`, `"10:00"`, `"08:30"`) and no meals, so F1/F2 would not change them. Only `b25d1f08` has a day range (2–3), which F6 affects. The original `.runtime/` is still untouched (versions 1, 2), so fixing this before the next start loses nothing.
+
+### Owner decisions (structured question, 2026-11-05)
+
+- **Migration leftovers go to private notes, not public tips.** Unreadable time/duration text and the old activity/place category are stored as private writing notes for that item (`writingContext.notes`, targetId = the activity/place id) with a warning. They never render publicly. Block `transportNote`/`blockTip` were public in v1 and stay where R1 put them (multi-day `transferNote`; last-activity tip for half/full day).
+- **Collapsed day-range titles use the draft's language.** Use a new catalog template `dayRange`; with no resolved language or catalog, use digits only (`2–3: Ubud`).
+
+### Deviation rulings
+
+| Item | Ruling |
+|---|---|
+| R1 D1 (limits ≥ v1) | Accept. |
+| R1 D2 (no place cap) | Accept. Keep the 60-place stress test in R5 as stress, not a cap. |
+| R1 D3 (hotel kept with empty name) | Accept. R4 adds a publish warning `HOTEL_NAME_EMPTY`; R3 must not render an empty hotel name. |
+| R1 D4 (`anyOf` nullable) | Accept. The amendment's item 2 was wrong; corrected in the plan. |
+| R1 D5 (`requiredModes`) | Accept. R5's `fieldMeta` must read it. |
+| R1 D6, D8, D9 | Accept. |
+| R1 D7 (`time`, `toggle` controls) | Accept. R5 must render both. |
+| R2 E1 (operation-ID re-diagnosis) | Accept. Good diagnosis; see F5 for narrowing the catch. |
+| R2 E2 (`VACUUM INTO`), E4 (legacy `spot` rows), E5 (`INVALID_CURSOR`) | Accept. |
+| R2 E3 (AI DDL split) | Accept, with the F3 fix. |
+| R2 E6 (AI context shape, no live call) | Accept as a known risk. R6 stays deterministic-double only (no paid inference); a live check needs a separate owner request. |
+| Amended R2 gate (scoped typecheck + renderer double) | Accept. R4 **must** re-run the full publication suite with the real renderer, and R6 restores `typecheck:web-app`. |
+
+### Process
+
+Running R2 before R1 acceptance was owner-authorized. CP019, CP021 and CP023 stay `in_progress` until this round passes re-review. Revision instructions for the executor are in the plan under "R1/R2 revision round 1".
