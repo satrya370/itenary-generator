@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
 import { validateDraft, validateForPublish } from '../contracts/validator.js';
-import type { ContractDiagnostic, WebItineraryContent } from '../contracts/types.js';
+import type { ContractDiagnostic, ItineraryV2 } from '../contracts/types.js';
 import { getLocaleCatalog } from '../contracts/locale-catalogs.js';
 import { renderItineraryHtml } from '../render/render.js';
 import { defaultStylesheetPath, loadInlineRenderResources } from '../render/resources.js';
@@ -11,19 +11,24 @@ import type { ItineraryRecord } from './store.js';
 const err = (code: string, field: string, message: string): ContractDiagnostic => ({ code, path: field, message });
 type PreviewDiagnostic = ContractDiagnostic & { targetId?: string };
 const editorMessages: Record<string, string> = {
-  PUBLISH_FIELD_REQUIRED: 'Lengkapi field ini sebelum publish.', SCHEMA_VALIDATION_FAILED: 'Perbaiki nilai field agar sesuai format yang diminta.',
-  DUPLICATE_STABLE_ID: 'Item memiliki ID yang sama; simpan ulang setelah memperbaiki data.', MODE_SHAPE_INVALID: 'Struktur schedule dan tempat tidak cocok dengan mode itinerary.',
-  SINGLE_BLOCK_REQUIRED: 'Mode ini membutuhkan tepat satu blok jadwal.', SINGLE_DAY_RANGE_INVALID: 'Periksa rentang hari dan akomodasi untuk mode ini.',
-  MULTI_DAY_RANGE_INVALID: 'Rentang hari harus berurutan dan tidak tumpang tindih.', CONDENSED_RANGE_MISMATCH: 'Periksa penanda rentang hari yang diringkas.',
-  ACCOMMODATION_REQUIRED: 'Tambahkan panduan akomodasi untuk setiap blok multi-day.', MULTI_DAY_COVERAGE_MISMATCH: 'Lengkapi rentang hari dari hari pertama sampai hari terakhir.',
-  EMPTY_ACTIVITY_BLOCK: 'Tambahkan setidaknya satu aktivitas pada setiap blok jadwal.', PHOTO_ATTRIBUTION_REQUIRED: 'Lengkapi atribusi untuk foto yang digunakan.',
-  HERO_FALLBACK_INVALID: 'Pilih foto hero atau gunakan gradien.', RENDER_ASSET_MISSING: 'Aset foto tidak tersedia; preview menggunakan tampilan fallback.',
-  LOCALE_UNSUPPORTED: 'Katalog bahasa atau script ini belum didukung.', LOCALE_LABELS_INCOMPLETE: 'Katalog label bahasa belum lengkap.',
-  RENDER_STYLES_INVALID: 'Stylesheet render tidak tersedia atau tidak aman.', RENDER_FONTS_EXTERNAL: 'Font render tidak tersedia sebagai resource lokal.'
+  PUBLISH_FIELD_REQUIRED: 'Lengkapi field ini sebelum publish.',
+  SCHEMA_VALIDATION_FAILED: 'Perbaiki nilai field agar sesuai format yang diminta.',
+  DUPLICATE_STABLE_ID: 'Item memiliki ID yang sama; simpan ulang setelah memperbaiki data.',
+  MODE_SHAPE_INVALID: 'Struktur hari dan kegiatan tidak cocok dengan mode itinerary.',
+  EMPTY_ACTIVITY_BLOCK: 'Tambahkan setidaknya satu kegiatan pada setiap hari jadwal.',
+  PHOTO_ATTRIBUTION_REQUIRED: 'Lengkapi atribusi untuk foto yang digunakan.',
+  HERO_FALLBACK_INVALID: 'Pilih foto hero atau gunakan gradien.',
+  RENDER_ASSET_MISSING: 'Aset foto tidak tersedia; preview menggunakan tampilan fallback.',
+  LOCALE_UNSUPPORTED: 'Katalog bahasa atau script ini belum didukung.',
+  LOCALE_LABELS_INCOMPLETE: 'Katalog label bahasa belum lengkap.',
+  RENDER_STYLES_INVALID: 'Stylesheet render tidak tersedia atau tidak aman.',
+  RENDER_FONTS_EXTERNAL: 'Font render tidak tersedia sebagai resource lokal.',
+  SCHEDULE_OVERLAP: 'Jadwal kegiatan tumpang tindih dengan kegiatan lain.',
+  HOTEL_NAME_EMPTY: 'Nama hotel tidak boleh kosong untuk multi-day.',
 };
 function localize(items: PreviewDiagnostic[]) { return items.map((item) => ({ ...item, message: editorMessages[item.code] || item.message })); }
 
-function expandRequiredDiagnostic(content: WebItineraryContent, diagnostic: ContractDiagnostic): PreviewDiagnostic[] {
+function expandRequiredDiagnostic(content: ItineraryV2, diagnostic: ContractDiagnostic): PreviewDiagnostic[] {
   const segments = diagnostic.path.split('.');
   const visit = (value: any, index: number, fieldPath: string, targetId?: string): PreviewDiagnostic[] => {
     if (index >= segments.length) {
@@ -41,14 +46,27 @@ function expandRequiredDiagnostic(content: WebItineraryContent, diagnostic: Cont
   };
   return visit(content, 0, '');
 }
-function assetReferences(content: WebItineraryContent) {
-  const refs: Array<[string | null | undefined, string]> = [
-    [content.brochure.agencyLogoAssetId, 'brochure.agencyLogoAssetId'], [content.hero.assetId, 'hero.assetId'],
-    ...content.schedule.map((item, index) => [item.assetId, `schedule[${index}].assetId`] as [string | null | undefined, string]),
-    ...content.spots.map((item, index) => [item.assetId, `spots[${index}].assetId`] as [string | null | undefined, string])
-  ];
+
+function assetReferences(content: ItineraryV2) {
+  const refs: Array<[string | null | undefined, string]> = [];
+  if (content.cover?.assetId) refs.push([content.cover.assetId, 'cover.assetId']);
+  if (content.days) {
+    for (const [dayIdx, day] of content.days.entries()) {
+      if (day.photo?.assetId) refs.push([day.photo.assetId, `days[${dayIdx}].photo.assetId`]);
+      if (day.activities) {
+        for (const [actIdx, activity] of day.activities.entries()) {
+          if (activity.photo?.assetId) refs.push([activity.photo.assetId, `days[${dayIdx}].activities[${actIdx}].photo.assetId`]);
+        }
+      }
+    }
+  }
+  if (content.spots) {
+    for (const [spotIdx, spot] of content.spots.entries()) {
+      if (spot.photo?.assetId) refs.push([spot.photo.assetId, `spots[${spotIdx}].photo.assetId`]);
+    }
+  }
   const grouped = new Map<string, string[]>();
-  for (const [assetId, path] of refs) if (assetId) grouped.set(assetId, [...(grouped.get(assetId) || []), path]);
+  for (const [assetId, fieldPath] of refs) if (assetId) grouped.set(assetId, [...(grouped.get(assetId) || []), fieldPath]);
   return grouped;
 }
 
@@ -67,107 +85,200 @@ function parseDuration(value: string | null): number | null {
   return Number.isFinite(minutes) && minutes > 0 ? minutes : null;
 }
 
-function scheduleDiagnostics(content: WebItineraryContent): { errors: ContractDiagnostic[]; warnings: ContractDiagnostic[] } {
+function scheduleDiagnostics(content: ItineraryV2): { errors: ContractDiagnostic[]; warnings: ContractDiagnostic[] } {
   const errors: ContractDiagnostic[] = [];
   const warnings: ContractDiagnostic[] = [];
-  if (content.brochure.itineraryMode === 'destination_guide') return { errors, warnings };
-  const maxMinutes = content.brochure.itineraryMode === 'half_day' ? 360 : 660;
-  const isMulti = content.brochure.itineraryMode === 'multi_day';
-  for (const [blockIndex, block] of content.schedule.entries()) {
-    const condensed = isMulti && (block.isCondensed || block.dayEnd > block.dayStart);
-    if (condensed) warnings.push(err('SCHEDULE_DAYS_NOT_FULLY_VERIFIED', `schedule[${blockIndex}]`, 'Rentang hari memadatkan beberapa hari; durasi tiap hari tidak dapat diverifikasi dari data ini.'));
+  const mode = content.trip.mode;
+
+  if (mode === 'destination_guide') return { errors, warnings };
+
+  const maxMinutes = mode === 'half_day' ? 360 : 660;
+
+  for (const [dayIdx, day] of content.days.entries()) {
+    if (day.activities.length === 0) {
+      errors.push(err('EMPTY_ACTIVITY_BLOCK', `days[${dayIdx}].activities`, 'Tambahkan setidaknya satu kegiatan pada hari ini.'));
+      continue;
+    }
+
     let knownTotal = 0;
     let allMeasured = true;
     const intervals: Array<{ start: number; end: number; path: string }> = [];
-    for (const [activityIndex, activity] of block.activities.entries()) {
-      const field = `schedule[${blockIndex}].activities[${activityIndex}]`;
-      const label = activity.timeLabel.trim().replace(/[–—]/g, '-');
-      const range = /^(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})$/.exec(label);
-      const start = range ? parseTime(range[1]) : parseTime(label);
+
+    for (const [actIdx, activity] of day.activities.entries()) {
+      const field = `days[${dayIdx}].activities[${actIdx}]`;
+      const timeStr = activity.timeLabel?.trim() || '';
+      const durationStr = activity.durationLabel?.trim() || '';
+
+      // Parse time range or start time
+      const range = /^(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})$/.exec(timeStr);
+      const start = range ? parseTime(range[1]) : parseTime(timeStr);
       const end = range ? parseTime(range[2]) : null;
-      if (activity.durationLabel && /^\s*-?\s*0*(?:[.,]0+)?\s*(?:min(?:ute)?s?|minutes?|m|h(?:ours?)?|hours?|jam)\s*$/i.test(activity.durationLabel)) {
+
+      // Validate duration format
+      if (durationStr && /^\s*-?\s*0*(?:[.,]0+)?\s*(?:min(?:ute)?s?|minutes?|m|h(?:ours?)?|hours?|jam)\s*$/i.test(durationStr)) {
         errors.push(err('SCHEDULE_DURATION_INVALID', `${field}.durationLabel`, 'Durasi harus lebih besar dari nol.'));
         continue;
       }
-      if (activity.durationLabel && /^\s*-\s*\d+(?:[.,]\d+)?\s*(?:min(?:ute)?s?|minutes?|m|h(?:ours?)?|hours?|jam)\s*$/i.test(activity.durationLabel)) {
+      if (durationStr && /^\s*-\s*\d+(?:[.,]\d+)?\s*(?:min(?:ute)?s?|minutes?|m|h(?:ours?)?|hours?|jam)\s*$/i.test(durationStr)) {
         errors.push(err('SCHEDULE_DURATION_INVALID', `${field}.durationLabel`, 'Durasi tidak boleh bernilai negatif.'));
         continue;
       }
-      const duration = parseDuration(activity.durationLabel);
+
+      const duration = parseDuration(durationStr);
       const measuredDuration = end !== null && start !== null ? end - start : duration;
+
       if (measuredDuration !== null && (measuredDuration <= 0 || (end !== null && duration !== null && Math.abs(measuredDuration - duration) > 1))) {
         errors.push(err('SCHEDULE_TIME_CONTRADICTION', `${field}.durationLabel`, 'Rentang waktu dan durasi aktivitas saling bertentangan atau tidak valid.'));
         continue;
       }
-      if (condensed) {
-        if (measuredDuration !== null && measuredDuration > maxMinutes) errors.push(err('SCHEDULE_DURATION_CAP', `${field}.durationLabel`, `Satu aktivitas melampaui batas ${maxMinutes / 60} jam per hari.`));
-        if (measuredDuration === null || start === null) {
-          allMeasured = false;
-          warnings.push(err('SCHEDULE_NOT_FULLY_VERIFIED', `${field}.${start === null ? 'timeLabel' : 'durationLabel'}`, 'Waktu atau durasi belum dapat dihitung pasti; jadwal belum sepenuhnya diverifikasi.'));
-        }
-        continue;
-      }
+
       if (measuredDuration === null) {
         allMeasured = false;
-        warnings.push(err('SCHEDULE_NOT_FULLY_VERIFIED', `${field}.durationLabel`, 'Waktu atau durasi belum dapat dihitung pasti; jadwal belum sepenuhnya diverifikasi.'));
+        warnings.push(err('SCHEDULE_NOT_FULLY_VERIFIED', `${field}.durationLabel`, 'Durasi belum dapat dihitung pasti.'));
         continue;
       }
+
       if (start === null) {
         allMeasured = false;
         knownTotal += measuredDuration;
-        warnings.push(err('SCHEDULE_NOT_FULLY_VERIFIED', `${field}.timeLabel`, 'Waktu mulai belum dapat dihitung pasti; durasi terukur tetap dihitung terhadap batas mode.'));
+        warnings.push(err('SCHEDULE_NOT_FULLY_VERIFIED', `${field}.timeLabel`, 'Waktu mulai belum dapat dihitung pasti.'));
         continue;
       }
+
       knownTotal += measuredDuration;
       intervals.push({ start, end: start + measuredDuration, path: field });
     }
+
+    // Check for overlaps
     intervals.sort((a, b) => a.start - b.start);
     let previous = intervals[0];
     for (const interval of intervals.slice(1)) {
-      if (interval.start < previous.end) errors.push(err('SCHEDULE_OVERLAP', interval.path + '.timeLabel', `Waktu bertumpang tindih dengan ${previous.path}.`));
+      if (interval.start < previous.end) {
+        errors.push(err('SCHEDULE_OVERLAP', interval.path + '.timeLabel', `Waktu bertumpang tindih dengan ${previous.path}.`));
+      }
       if (interval.end > previous.end) previous = interval;
     }
+
     const elapsed = intervals.length ? intervals.at(-1)!.end - intervals[0].start : 0;
-    if (knownTotal > maxMinutes || elapsed > maxMinutes) errors.push(err('SCHEDULE_DURATION_CAP', `schedule[${blockIndex}].activities`, `Durasi terukur atau rentang waktu melebihi batas ${maxMinutes / 60} jam untuk mode ini.`));
+    if (knownTotal > maxMinutes || elapsed > maxMinutes) {
+      errors.push(err('SCHEDULE_DURATION_CAP', `days[${dayIdx}].activities`, `Durasi melebihi batas ${maxMinutes / 60} jam untuk mode ini.`));
+    }
+
     if (knownTotal === 0 || !allMeasured) {
-      if (!warnings.some((item) => item.path === `schedule[${blockIndex}]`)) warnings.push(err('SCHEDULE_NOT_FULLY_VERIFIED', `schedule[${blockIndex}]`, 'Sebagian jadwal belum dapat dihitung; tidak ada durasi yang akan ditebak.'));
+      if (!warnings.some((item) => item.path === `days[${dayIdx}]`)) {
+        warnings.push(err('SCHEDULE_NOT_FULLY_VERIFIED', `days[${dayIdx}]`, 'Sebagian jadwal belum dapat dihitung.'));
+      }
     }
   }
+
   return { errors, warnings };
 }
 
-function contentDiagnostics(content: WebItineraryContent): ContractDiagnostic[] {
+function hotelDiagnostics(content: ItineraryV2): ContractDiagnostic[] {
+  const errors: ContractDiagnostic[] = [];
+  const mode = content.trip.mode;
+
+  if (mode !== 'multi_day') return errors;
+
+  for (const [dayIdx, day] of content.days.entries()) {
+    if (day.hotel && !day.hotel.name?.trim()) {
+      errors.push(err('HOTEL_NAME_EMPTY', `days[${dayIdx}].hotel.name`, 'Nama hotel tidak boleh kosong untuk multi-day.'));
+    }
+  }
+
+  return errors;
+}
+
+function overlapDiagnostics(content: ItineraryV2): ContractDiagnostic[] {
+  const errors: ContractDiagnostic[] = [];
+  const mode = content.trip.mode;
+
+  if (mode === 'destination_guide' || mode === 'half_day') return errors;
+
+  const intervals: Array<{ start: number; end: number; dayIdx: number }> = [];
+  const today = new Date(content.trip.startDate || new Date().toISOString().split('T')[0]);
+
+  for (const [dayIdx, day] of content.days.entries()) {
+    const dayTime = new Date(today);
+    dayTime.setDate(dayTime.getDate() + dayIdx);
+
+    for (const activity of day.activities) {
+      const timeStr = activity.timeLabel?.trim() || '';
+      const durationStr = activity.durationLabel?.trim() || '';
+
+      const range = /^(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})$/.exec(timeStr);
+      const start = range ? parseTime(range[1]) : parseTime(timeStr);
+      const end = range ? parseTime(range[2]) : null;
+      const duration = parseDuration(durationStr);
+      const measuredEnd = end !== null && start !== null ? end : (start !== null && duration !== null ? start + duration : null);
+
+      if (start !== null && measuredEnd !== null) {
+        intervals.push({ start, end: measuredEnd, dayIdx });
+      }
+    }
+  }
+
+  // Check for day-to-day transitions (last activity before midnight, next day starts before reasonable time)
+  intervals.sort((a, b) => a.dayIdx === b.dayIdx ? a.start - b.start : a.dayIdx - b.dayIdx);
+
+  for (let i = 0; i < intervals.length - 1; i++) {
+    const curr = intervals[i];
+    const next = intervals[i + 1];
+
+    if (curr.dayIdx + 1 === next.dayIdx && curr.end > 1380 && next.start < 360) {
+      errors.push(err('SCHEDULE_OVERLAP', `days[${next.dayIdx}].activities[0]`, 'Jadwal hari berikutnya terlalu dekat dengan akhir hari sebelumnya.'));
+    }
+  }
+
+  return errors;
+}
+
+function contentDiagnostics(content: ItineraryV2): ContractDiagnostic[] {
   const errors: ContractDiagnostic[] = [];
   const moneyClaim = /\b(?:(?:IDR|USD|EUR|GBP|JPY|CNY|RMB|Rp\.?)\s*\d[\d.,]*|\d[\d.,]*\s*(?:IDR|USD|EUR|GBP|JPY|CNY|RMB|rupiah|yen|yuan))|[$€£¥]\s*\d[\d.,]*/i;
-  const openingClaim = /(?:\b(?:opening hours?|hours of operation|jam buka|buka pukul|closes? at|horaires? d['’]ouverture|heures? d['’]ouverture|ouverture à|horario de apertura|horae? aperti(?:onis)?)\b|営業時間|開店時間|营业时间|开放时间)/i;
+  const openingClaim = /(?:\b(?:opening hours?|hours of operation|jam buka|buka pukul|closes? at|horaires? d['']ouverture|heures? d['']ouverture|ouverture à|horario de apertura|horae? aperti(?:onis)?)\b|営業時間|開店時間|营业时间|开放时间)/i;
   const promotionalClaim = /(?:\b(?:book now|reserve now|limited spots?|only \d+ left|rated? \d(?:\.\d)?\s*(?:\/\s*5|stars?)|pesan sekarang|booking sekarang|kuota terbatas|tinggal \d+|réservez maintenant|réservez|places limitées|noté \d.*\/\s*5|reservare nunc|loca limitata)\b|今すぐ予約|予約する|残り\d+席|立即预订|马上预订|仅剩\d+|评分.{0,8}\d.*(?:星|分))/i;
+
   const fields: Array<[string, unknown]> = [
-    ['brochure.tripTitle', content.brochure.tripTitle], ['brochure.destination', content.brochure.destination], ['brochure.region', content.brochure.region], ['brochure.agencyName', content.brochure.agencyName], ['brochure.themes', content.brochure.themes],
-    ['overview.summary', content.overview.summary], ['overview.routeSummary', content.overview.routeSummary], ['overview.quickFacts.bestSeason', content.overview.quickFacts.bestSeason],
-    ...content.overview.highlights.flatMap((item, i) => [[`overview.highlights[${i}].title`, item.title], [`overview.highlights[${i}].note`, item.note]] as Array<[string, unknown]>),
-    ...content.schedule.flatMap((block, bi) => [
-      [`schedule[${bi}].title`, block.title], [`schedule[${bi}].location`, block.location], [`schedule[${bi}].transportNote`, block.transportNote], [`schedule[${bi}].blockTip`, block.blockTip],
-      ...block.mealsIncluded.map((value, mi) => [`schedule[${bi}].mealsIncluded[${mi}]`, value] as [string, unknown]),
-      ...(block.accommodation ? [[`schedule[${bi}].accommodation`, [block.accommodation.name, block.accommodation.area, block.accommodation.note]] as [string, unknown]] : []),
-      ...block.activities.flatMap((item, ai) => [[`schedule[${bi}].activities[${ai}].title`, item.title], [`schedule[${bi}].activities[${ai}].description`, item.description], [`schedule[${bi}].activities[${ai}].tip`, item.tip], [`schedule[${bi}].activities[${ai}].area`, item.area], [`schedule[${bi}].activities[${ai}].category`, item.category]] as Array<[string, unknown]>)
+    ['trip.title', content.trip.title],
+    ['trip.destination', content.trip.destination],
+    ['trip.region', content.trip.region],
+    ['trip.country', content.trip.country],
+    ['trip.summary', content.trip.summary],
+    ...content.days.flatMap((day, di) => [
+      [`days[${di}].title`, day.title],
+      [`days[${di}].location`, day.location],
+      [`days[${di}].mealNote`, day.mealNote],
+      [`days[${di}].transferNote`, day.transferNote],
+      ...(day.hotel ? [[`days[${di}].hotel.name`, day.hotel.name], [`days[${di}].hotel.area`, day.hotel.area]] as Array<[string, unknown]> : []),
+      ...day.activities.flatMap((act, ai) => [
+        [`days[${di}].activities[${ai}].title`, act.title],
+        [`days[${di}].activities[${ai}].description`, act.description],
+        [`days[${di}].activities[${ai}].area`, act.area],
+      ] as Array<[string, unknown]>),
     ] as Array<[string, unknown]>),
-    ...content.spots.flatMap((item, i) => [[`spots[${i}].name`, item.name], [`spots[${i}].description`, item.description], [`spots[${i}].logistics`, [item.area, item.category, item.gettingThere, item.tips, item.nearbyPairing, item.suggestedDuration, item.bestTimeToVisit]]] as Array<[string, unknown]>),
-    ...content.practical.localTips.map((item, i) => [`practical.localTips[${i}]`, [item.topic, item.note]] as [string, unknown]),
-    ...content.practical.included.map((value, i) => [`practical.included[${i}]`, value] as [string, unknown]),
-    ...content.practical.notIncluded.map((value, i) => [`practical.notIncluded[${i}]`, value] as [string, unknown]),
-    ...content.practical.whatToBring.map((value, i) => [`practical.whatToBring[${i}]`, value] as [string, unknown]),
-    ...content.practical.healthSafety.map((value, i) => [`practical.healthSafety[${i}]`, value] as [string, unknown]),
-    ...content.practical.emergencyContacts.map((item, i) => [`practical.emergencyContacts[${i}]`, [item.label, item.value]] as [string, unknown]),
-    ...content.closing.photoCredits.map((item, i) => [`closing.photoCredits[${i}]`, [item.photographer, item.source]] as [string, unknown]),
-    ['closing.closingNote', content.closing.closingNote], ['closing.disclaimer', content.closing.disclaimer]
+    ...(content.spots || []).flatMap((spot, si) => [
+      [`spots[${si}].title`, spot.title],
+      [`spots[${si}].description`, spot.description],
+      [`spots[${si}].area`, spot.area],
+    ] as Array<[string, unknown]>),
+    ...(content.practicalInfo || []).flatMap((info, pi) => [
+      [`practicalInfo[${pi}].title`, info.title],
+      [`practicalInfo[${pi}].content`, info.content],
+    ] as Array<[string, unknown]>),
+    ['policies', (content.policies || []).map((p: any) => p?.content || '').join(' ')],
   ];
+
   for (const [field, value] of fields) {
     const text = (Array.isArray(value) ? value.join(' ') : typeof value === 'string' ? value : '').trim();
+    if (!text) continue;
+
     if (moneyClaim.test(text)) errors.push(err('PUBLISH_CURRENCY_CLAIM', field, 'Brochure tidak boleh mencantumkan nominal harga.'));
     if (openingClaim.test(text)) errors.push(err('PUBLISH_OPENING_HOURS_CLAIM', field, 'Jangan menyatakan jam operasional venue yang belum diverifikasi.'));
     if (promotionalClaim.test(text)) errors.push(err('PUBLISH_PROMOTIONAL_CLAIM', field, 'Hapus klaim booking, rating, atau scarcity dari brochure.'));
     if (/\{\{\s*[^}]+\}\}|\[(?:TODO|TBD|PLACEHOLDER)\]/i.test(text)) errors.push(err('PUBLISH_UNRESOLVED_PLACEHOLDER', field, 'Lengkapi placeholder sebelum publish.'));
   }
+
   return errors;
 }
 
@@ -179,51 +290,90 @@ export async function renderSavedDraftPreview(record: ItineraryRecord, store: Pr
   const draft = validateDraft(record.draftContent);
   if (!draft.ok) return { ok: false as const, status: 422, errors: localize(draft.errors), warnings: localize(draft.warnings) };
   const content = draft.value;
-  if (!record.languageContext || typeof record.languageContext !== 'object' || (record.languageContext as any).outputLanguage !== content.brochure.outputLanguage || (record.languageContext as any).source === 'unresolved' || !content.brochure.outputLanguage) {
-    return { ok: false as const, status: 422, errors: localize([err('LOCALE_UNRESOLVED', 'brochure.outputLanguage', 'Pilih atau deteksi bahasa dan simpan sebelum preview.')]), warnings: localize(draft.warnings) };
+
+  if (!record.languageContext || typeof record.languageContext !== 'object' || (record.languageContext as any).language !== content.trip.language || (record.languageContext as any).source === 'unresolved' || !content.trip.language) {
+    return { ok: false as const, status: 422, errors: localize([err('LOCALE_UNRESOLVED', 'trip.language', 'Pilih atau deteksi bahasa dan simpan sebelum preview.')]), warnings: localize(draft.warnings) };
   }
-  if (!getLocaleCatalog(content.brochure.outputLanguage)) return { ok: false as const, status: 422, errors: localize([err('LOCALE_UNSUPPORTED', 'brochure.outputLanguage', 'Katalog bahasa atau script ini belum tersedia.')]), warnings: localize(draft.warnings) };
+
+  if (!getLocaleCatalog(content.trip.language)) {
+    return { ok: false as const, status: 422, errors: localize([err('LOCALE_UNSUPPORTED', 'trip.language', 'Katalog bahasa atau script ini belum tersedia.')]), warnings: localize(draft.warnings) };
+  }
+
   const readiness = validateForPublish(content);
   const schedule = scheduleDiagnostics(content);
+  const hotel = hotelDiagnostics(content);
+  const overlaps = overlapDiagnostics(content);
   const contentErrors = contentDiagnostics(content);
-  const unquantifiedTime = (diagnostic: ContractDiagnostic) => diagnostic.code === 'PUBLISH_FIELD_REQUIRED' && /^schedule(?:\[\d+\]|\[\])\.activities(?:\[\d+\]|\[\])\.timeLabel$/.test(diagnostic.path);
+
   const expandedReadinessErrors = readiness.errors.flatMap((item) => item.code === 'PUBLISH_FIELD_REQUIRED' ? expandRequiredDiagnostic(content, item) : [item]);
-  const errors = [...expandedReadinessErrors.filter((item) => !unquantifiedTime(item)), ...schedule.errors, ...contentErrors];
+  const errors = [...expandedReadinessErrors, ...schedule.errors, ...hotel, ...overlaps, ...contentErrors];
   const warnings = [...draft.warnings, ...readiness.warnings, ...schedule.warnings];
+
   const assets: Record<string, { dataUri: string; mimeType: 'image/png' | 'image/jpeg' | 'image/webp' }> = {};
   let totalBytes = 0;
+
   for (const [id, paths] of assetReferences(content)) {
     const row = store.getAsset(id);
     if (!row || path.basename(row.storage_key) !== row.storage_key || !/^[0-9a-f-]+\.(?:jpeg|png|webp)$/i.test(row.storage_key)) {
       errors.push(...paths.map((field) => err('ASSET_INVALID', field, 'Aset itinerary tidak ditemukan atau metadata storage tidak aman.')));
       continue;
     }
+
     try {
       const bytes = await readFile(path.join(dataDir, 'assets', row.storage_key));
       await sharp(bytes, { limitInputPixels: 16_000_000, failOn: 'error' }).stats();
       const metadata = await sharp(bytes, { limitInputPixels: 16_000_000, failOn: 'error' }).metadata();
       const expectedMime = metadata.format === 'jpeg' ? 'image/jpeg' : metadata.format ? `image/${metadata.format}` : '';
+
       if (!['image/png', 'image/jpeg', 'image/webp'].includes(expectedMime) || expectedMime !== row.mime || bytes.length !== row.bytes || bytes.length > 5 * 1024 * 1024) {
         errors.push(...paths.map((field) => err('ASSET_INVALID', field, 'Isi aset tidak cocok dengan metadata tersimpan atau melampaui batas ukuran.')));
         continue;
       }
+
       totalBytes += bytes.length;
       if (totalBytes > 20 * 1024 * 1024) {
         errors.push(err('ASSET_BUNDLE_TOO_LARGE', 'assets', 'Aset terpakai melebihi batas total 20 MiB.'));
         break;
       }
+
       assets[id] = { dataUri: `data:${expectedMime};base64,${bytes.toString('base64')}`, mimeType: expectedMime as 'image/png' | 'image/jpeg' | 'image/webp' };
     } catch {
       errors.push(...paths.map((field) => err('ASSET_INVALID', field, 'Piksel aset itinerary tidak dapat didecode dengan aman.')));
     }
   }
-  if (errors.some((item) => ['ASSET_INVALID', 'ASSET_BUNDLE_TOO_LARGE', 'LOCALE_UNRESOLVED'].includes(item.code))) return { ok: false as const, status: 422, errors: localize(errors), warnings: localize(warnings) };
+
+  if (errors.some((item) => ['ASSET_INVALID', 'ASSET_BUNDLE_TOO_LARGE', 'LOCALE_UNRESOLVED'].includes(item.code))) {
+    return { ok: false as const, status: 422, errors: localize(errors), warnings: localize(warnings) };
+  }
+
   try {
-    const resources = await loadInlineRenderResources(content.brochure.outputLanguage, content.brochure.destinationType, stylesheetPath);
-    const rendered = renderItineraryHtml(content, { ...resources, assets });
-    if (rendered.errors.length) return { ok: false as const, status: 422, errors: localize([...errors, ...rendered.errors]), warnings: localize([...warnings, ...rendered.warnings]) };
-    return { ok: true as const, html: rendered.html, errors: localize(errors), warnings: localize([...warnings, ...rendered.warnings]), publishReady: errors.length === 0, scheduleVerification: content.brochure.itineraryMode === 'destination_guide' ? 'not_applicable' as const : schedule.warnings.length ? 'partial' as const : 'complete' as const };
+    const resources = await loadInlineRenderResources(content.trip.language, content.trip.colorTheme, stylesheetPath);
+    const profile = (record.profile || {}) as any;
+    const agency = {
+      name: profile.agencyName || 'Travel Guide',
+      contact: profile.agencyContact || 'guide@example.com',
+      logoAssetId: profile.agencyLogoAssetId || null,
+    };
+    const rendered = renderItineraryHtml(content, { ...resources, agency, generatedDate: new Date().toISOString().split('T')[0], assets });
+
+    if (rendered.errors.length) {
+      return { ok: false as const, status: 422, errors: localize([...errors, ...rendered.errors]), warnings: localize([...warnings, ...rendered.warnings]) };
+    }
+
+    return {
+      ok: true as const,
+      html: rendered.html,
+      errors: localize(errors),
+      warnings: localize([...warnings, ...rendered.warnings]),
+      publishReady: errors.length === 0,
+      scheduleVerification: content.trip.mode === 'destination_guide' ? ('not_applicable' as const) : (schedule.warnings.length ? 'partial' as const : 'complete' as const),
+    };
   } catch {
-    return { ok: false as const, status: 503, errors: localize([...errors, err('RENDER_RESOURCES_UNAVAILABLE', 'render', 'Resource renderer (CSS, font, atau catalog) belum tersedia.')]), warnings: localize(warnings) };
+    return {
+      ok: false as const,
+      status: 503,
+      errors: localize([...errors, err('RENDER_RESOURCES_UNAVAILABLE', 'render', 'Resource renderer (CSS, font, atau catalog) belum tersedia.')]),
+      warnings: localize(warnings),
+    };
   }
 }

@@ -42,7 +42,7 @@ async function ogImage(content: any, store: Store, dataDir: string) {
     return sharp(bytes, { limitInputPixels: 16_000_000, failOn: 'error' }).resize(1200, 630, { fit: 'cover', position: 'attention' }).jpeg({ quality: 84, mozjpeg: true }).toBuffer();
   }
   const paletteRows = (palettes as any).palettes;
-  const palette = paletteRows[content.trip.colorTheme] || paletteRows.mixed;
+  const palette = paletteRows[content.trip?.colorTheme] || paletteRows.mixed;
   const stops: string[] = palette.gradientStops;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630"><defs><linearGradient id="g" x1="0" y1="1" x2="1" y2="0">${stops.map((color, index) => `<stop offset="${Math.round(index * 100 / Math.max(1, stops.length - 1))}%" stop-color="${/^#[0-9a-f]{6}$/i.test(color) ? color : '#172B4D'}"/>`).join('')}</linearGradient></defs><rect width="1200" height="630" fill="url(#g)"/></svg>`;
   return sharp(Buffer.from(svg)).jpeg({ quality: 84, mozjpeg: true }).toBuffer();
