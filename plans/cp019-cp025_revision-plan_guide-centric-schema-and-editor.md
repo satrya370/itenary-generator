@@ -661,6 +661,21 @@ For each mode row, write the HTML plus Puppeteer screenshots at 390×844 and 128
 - **PR-4:** Diagnostics keep index paths, plus `targetId`, instead of the stable-ID path form.
 - **PR-5:** The overlap check lives in preview, not in `validateForPublish`. It therefore does not run in the stub renderer used by the publication state-machine tests.
 
+### R4 amendment 2026-11-05 (recorded by the executor after the R3/R4 audit; the reviewer confirms or rejects) — overrides the R4 gate above where it differs
+
+`npm run verify:web-preview` and `npm run verify:web-publication` drive the **editor UI** in a browser (create a draft, open it, press Preview/Publish, focus a diagnostic). The editor stays v1 until R5, so both scripts stop waiting for an editor status before any server logic runs. The amended R4 gate drops them. They move to the R5 gate, and R6 already runs every `verify:web-*` script.
+
+Amended R4 gate: `test:web-preview`, `test:web-publication` (including the real-renderer test), `test:web-render`, `verify:web-render`, `typecheck:web-server` with `preview.ts` included, and the contracts/store/api/ai suites. The server behaviour the two scripts would check (diagnostics, `targetId`, publish with the real renderer, immutable public page) is covered at API level by those tests.
+
+R4 executor changes recorded here:
+
+| ID | Change | Reason |
+|---|---|---|
+| E1 | `overlapDiagnostics` compares each activity with the latest end so far, not only the previous measured activity. | `ACTIVITY_ORDER` keeps starts non-decreasing, so comparing only with the previous one misses an overlap with an earlier long activity (08:00+180, 09:00+30, 09:30). Still only provable overlaps. |
+| E2 | Only `loadInlineRenderResources` maps to 503; an exception inside `renderItineraryHtml` is a server error. | A render bug must not be reported as "resources unavailable". |
+| E3 | Diagnostics are de-duplicated by code and path. | Validator and renderer both report `PHOTO_ATTRIBUTION_REQUIRED`. |
+| E4 | An uncredited used photo still returns 422 without HTML. | The plan says to keep the 422/503 status rules; behaviour is unchanged from v1. |
+
 ### R5 — Editor (CP022)
 
 - Rewrite `src/editor/main.tsx` into smaller files (`src/editor/sections/*.tsx`: `TripInfo`, `TimeAndMeeting`, `TripGuide`, `Cover`, `Summary`, `DaySchedule`, `MultiDay`, `Places`, `Practical`, `Closing`, `AiAssist`, `ModePicker`, `DraftList`), using the Editor Behaviour spec above, the registry-driven `fieldMeta`, and the `data-field-path` attribute on every input. Keep the existing behaviour: manual Save, the 409 conflict panel, preview, publish/unpublish/copy link, AI Generate/Apply/Discard with staleness checks, keyboard reorder buttons, and the mode-change confirmation.
@@ -670,6 +685,7 @@ For each mode row, write the HTML plus Puppeteer screenshots at 390×844 and 128
 
 **Gate R5:**
 - `npm run typecheck:web-app && npm run test:web-editor && npm run verify:web-editor`, with `verify-editor.ts` updated to: four mode cards create four drafts; each mode shows only its sections; mode change clears fields after confirmation; 14 days; 60 places; save/reopen identical.
+- `npm run verify:web-preview && npm run verify:web-publication` (moved here from the R4 gate; see the R4 amendment). `verify-preview.ts` expects the diagnostic path `days[0].activities[0].title` and the focus on the exact activity after a reorder; `verify-publication.ts` already seeds with `createContentV2`.
 - Phone (390 px) and desktop (1280 px) screenshots for each mode's editor, opened and inspected.
 
 ### R6 — Regression, E2E and logs
