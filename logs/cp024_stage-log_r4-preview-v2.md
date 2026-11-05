@@ -61,4 +61,4 @@ Both scripts drive the **editor UI** in a browser. The editor is still the v1 ed
 ## Open questions
 
 - `RENDER_RESOURCES_UNAVAILABLE`, `LOCALE_UNRESOLVED`, `ASSET_INVALID` and the `PUBLISH_*_CLAIM` codes are not in the plan's message table, so they keep their inline Indonesian messages. Say if they should join the table.
-- When the render fails with errors (for example an uncredited photo), preview returns 422 and no HTML, as before. The validator already reports the same issue in the 200 path only when the photo does not resolve. Reviewer may want the 200 path with HTML instead.
+- An uncredited used photo is flagged by both the validator and the renderer. Because the renderer treats it as a render error, preview returns 422 with no HTML, while every other publish error returns 200 with HTML. This is unchanged from v1. A reviewer may prefer the 200 path with the diagnostic.
