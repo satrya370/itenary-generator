@@ -70,17 +70,23 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
   const trustedShareOrigin = shareUrl.origin;
   const allowedOrigins = new Set(options.allowedOrigins || [origin, 'http://127.0.0.1:5173']);
   const store = openStore({ dataDir });
-  await cleanUploadOrphans(dataDir, store.storageKeys());
-  await recoverPublication(store, dataDir);
-  const provider = options.aiProvider || new OpenRouterProvider(await loadOpenRouterCredential());
-  const aiLimits = options.aiLimits || {
-    dailyOperations: envLimit('OPENROUTER_DAILY_LIMIT', 30, 1, 30),
-    operationsPerMinute: envLimit('OPENROUTER_RATE_PER_MINUTE', 2, 1, 2),
-    maxInFlight: envLimit('OPENROUTER_MAX_IN_FLIGHT', 1, 1, 1),
-    contextBytes: envLimit('OPENROUTER_CONTEXT_BYTES', 16 * 1024, 1024, 16 * 1024),
-    timeoutMs: envLimit('OPENROUTER_TIMEOUT_MS', 45_000, 5000, 45_000)
-  };
-  const ai = new AiService(store, provider, options.liveAiTest ?? process.env.OPENROUTER_LIVE_TEST === '1', aiLimits);
+  let ai: AiService;
+  try {
+    await cleanUploadOrphans(dataDir, store.storageKeys());
+    await recoverPublication(store, dataDir);
+    const provider = options.aiProvider || new OpenRouterProvider(await loadOpenRouterCredential());
+    const aiLimits = options.aiLimits || {
+      dailyOperations: envLimit('OPENROUTER_DAILY_LIMIT', 30, 1, 30),
+      operationsPerMinute: envLimit('OPENROUTER_RATE_PER_MINUTE', 2, 1, 2),
+      maxInFlight: envLimit('OPENROUTER_MAX_IN_FLIGHT', 1, 1, 1),
+      contextBytes: envLimit('OPENROUTER_CONTEXT_BYTES', 16 * 1024, 1024, 16 * 1024),
+      timeoutMs: envLimit('OPENROUTER_TIMEOUT_MS', 45_000, 5000, 45_000)
+    };
+    ai = new AiService(store, provider, options.liveAiTest ?? process.env.OPENROUTER_LIVE_TEST === '1', aiLimits);
+  } catch (cause) {
+    store.close();
+    throw cause;
+  }
   const app = Fastify({ logger: false, bodyLimit: 2 * 1024 * 1024, genReqId: () => randomUUID() });
   app.decorate('store', store);
   await app.register(multipart, { limits: { files: 1, fileSize: 5 * 1024 * 1024, fields: 0, parts: 1 } });

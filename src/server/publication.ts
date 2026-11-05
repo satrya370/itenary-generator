@@ -139,7 +139,11 @@ export async function publishSavedRevision(input: {
         store.db.prepare(`INSERT INTO publish_operations(id,workspace_id,itinerary_id,fingerprint,status,version_id,token_id,error_code,created_at,updated_at)
           VALUES(?,?,?,?,?,?,?,?,?,?)`).run(operationId, store.workspaceId, itineraryId, fingerprint, reused ? 'completed' : 'failed', current.id, activeTokenId, reused ? null : 'PUBLICATION_CONFLICT', timestamp, timestamp);
       });
-      } catch { return resolveInsertConflict(); }
+      } catch (cause) {
+        const err = cause as any;
+        if (err.code === 'SQLITE_CONSTRAINT' && err.message?.includes('UNIQUE')) return resolveInsertConflict();
+        throw cause;
+      }
       if (!reused) return { kind: 'failed' as const, code: 'PUBLICATION_CONFLICT' };
       return { kind: 'published' as const, versionId: current.id, sourceRevision: Number(current.source_revision), createdAt: current.created_at, shareUrl: activeLink(store, itineraryId, shareOrigin), replayed: false };
     }
@@ -147,7 +151,11 @@ export async function publishSavedRevision(input: {
   const operationTime = now();
   try {
     store.db.prepare("INSERT INTO publish_operations(id,workspace_id,itinerary_id,fingerprint,status,created_at,updated_at) VALUES(?,?,?,?,'pending',?,?)").run(operationId, store.workspaceId, itineraryId, fingerprint, operationTime, operationTime);
-  } catch { return resolveInsertConflict(); }
+  } catch (cause) {
+    const err = cause as any;
+    if (err.code === 'SQLITE_CONSTRAINT' && err.message?.includes('UNIQUE')) return resolveInsertConflict();
+    throw cause;
+  }
   // From here the operation row is 'pending'; any unexpected failure must terminalize it instead of leaving it stuck.
   const execute = async () => {
   const tokenId = activeTokenId || randomUUID();

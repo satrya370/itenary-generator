@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { AI_SCHEMA_DDL } from './ai/schema.js';
+import { AI_SCHEMA_DDL, recoverInterruptedAiOperations } from './ai/schema.js';
 import { LEGACY_SCHEMA_VERSION, SCHEMA_VERSION } from '../contracts/types.js';
 import { upgradeV1ToV2 } from '../contracts/upgrade-v1.js';
 import { validateDraft } from '../contracts/validator.js';
@@ -74,11 +74,11 @@ function backupBeforeV2Upgrade(db: DatabaseSync, { dataDir }: MigrationContext) 
 }
 
 function upgradeDraftsToV2(db: DatabaseSync) {
-  const rows = db.prepare('SELECT id,workspace_id,draft_json FROM itineraries WHERE schema_version=?').all(LEGACY_SCHEMA_VERSION) as Array<{ id: string; workspace_id: string; draft_json: string }>;
+  const rows = db.prepare('SELECT id,workspace_id,draft_json,writing_json FROM itineraries WHERE schema_version=?').all(LEGACY_SCHEMA_VERSION) as Array<{ id: string; workspace_id: string; draft_json: string; writing_json: string }>;
   if (!rows.length) return;
   const profiles = new Map<string, unknown>();
   const warningCodes: Record<string, string[]> = {};
-  const update = db.prepare('UPDATE itineraries SET draft_json=?,schema_version=? WHERE id=?');
+  const updateDraft = db.prepare('UPDATE itineraries SET draft_json=?,writing_json=?,schema_version=? WHERE id=?');
   for (const row of rows) {
     let draft: unknown;
     try { draft = JSON.parse(String(row.draft_json)); } catch { throw new Error(`itinerary ${row.id} holds unreadable draft JSON`); }
@@ -92,7 +92,17 @@ function upgradeDraftsToV2(db: DatabaseSync) {
       const reasons = [...new Set(checked.errors.map((error) => `${error.code}@${error.path}`))].slice(0, 5).join(', ');
       throw new Error(`itinerary ${row.id} cannot be upgraded to ${SCHEMA_VERSION}: ${reasons}`);
     }
-    update.run(JSON.stringify(checked.value), SCHEMA_VERSION, row.id);
+    let existingWriting: any;
+    try { existingWriting = JSON.parse(row.writing_json); } catch { existingWriting = { brief: '', notes: [] }; }
+    const mergedNotes = [...(existingWriting.notes || []), ...upgraded.notes];
+    let finalNotes = mergedNotes.slice(0, 100);
+    if (mergedNotes.length > 100) {
+      const collapsed = mergedNotes.map((n: any) => `[${n.targetId}] ${n.text}`).join('\n').slice(0, 4000);
+      finalNotes = [{ targetId: 'itinerary', text: collapsed }];
+      db.prepare('INSERT OR REPLACE INTO app_meta(key,value) VALUES(?,?)').run(`migration3_notes_collapsed_${row.id}`, 'NOTES_TRUNCATED');
+    }
+    const updatedWriting = { brief: existingWriting.brief || '', notes: finalNotes };
+    updateDraft.run(JSON.stringify(checked.value), JSON.stringify(updatedWriting), SCHEMA_VERSION, row.id);
     warningCodes[row.id] = [...new Set(upgraded.warnings.map((warning) => warning.code))].sort();
   }
   db.prepare('INSERT OR REPLACE INTO app_meta(key,value) VALUES(?,?)').run('migration3_warnings', JSON.stringify(warningCodes));
@@ -139,7 +149,11 @@ export function openStore({ dataDir }: StoreOptions) {
   mkdirSync(dataDir, { recursive: true });
   const db = new DatabaseSync(path.join(dataDir, 'engine.sqlite'));
   db.exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=3000;');
-  try { runMigrations(db, { dataDir }); } catch (cause) { db.close(); throw cause; }
+  try {
+    runMigrations(db, { dataDir });
+    db.exec(AI_SCHEMA_DDL);
+    recoverInterruptedAiOperations(db);
+  } catch (cause) { db.close(); throw cause; }
   const now = new Date().toISOString();
   const savedWorkspaceId = db.prepare('SELECT value FROM app_meta WHERE key=?').get('workspace_id')?.value;
   const existingWorkspace = db.prepare('SELECT id FROM workspaces ORDER BY created_at LIMIT 1').get()?.id;

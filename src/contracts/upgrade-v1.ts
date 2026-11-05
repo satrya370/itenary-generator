@@ -12,6 +12,7 @@ export interface AgencyProfile {
 export interface UpgradeResult {
   value: ItineraryV2;
   warnings: ContractDiagnostic[];
+  notes: Array<{ targetId: string; text: string }>;
 }
 
 const MODES: readonly Mode[] = ['half_day', 'full_day', 'multi_day', 'destination_guide'];
@@ -27,20 +28,40 @@ function clean(value: unknown): string { return typeof value === 'string' ? valu
 function orNull(value: unknown): string | null { const text = clean(value); return text ? text : null; }
 function strings(value: unknown): string[] { return list(value).map(clean).filter(Boolean); }
 
-function parseTime(label: string): string | null {
-  const match = /(?<!\d)([01]?\d|2[0-3])[:.]([0-5]\d)(?!\d)/.exec(label);
-  return match ? `${match[1].padStart(2, '0')}:${match[2]}` : null;
+function parseTime(label: string): { start: string; end?: string } | null {
+  const text = label.trim();
+  const timeRe = /^([01]?\d|2[0-3])[:.]([0-5]\d)$/;
+  const sepRe = /^([01]?\d|2[0-3])[:.]([0-5]\d)\s*[-–—]\s*([01]?\d|2[0-3])[:.]([0-5]\d)$/;
+  const sep = sepRe.exec(text);
+  if (sep) {
+    const start = `${sep[1].padStart(2, '0')}:${sep[2]}`;
+    const end = `${sep[3].padStart(2, '0')}:${sep[4]}`;
+    return { start, end };
+  }
+  const single = timeRe.exec(text);
+  return single ? { start: `${single[1].padStart(2, '0')}:${single[2]}` } : null;
 }
 
 function parseDuration(label: string): number | null {
-  const text = label.toLowerCase();
-  let total = 0;
-  let found = false;
-  const hours = /(\d+(?:[.,]\d+)?)\s*(?:jam|hours?|hrs?|h)\b/.exec(text);
-  if (hours) { total += Math.round(parseFloat(hours[1].replace(',', '.')) * 60); found = true; }
-  const mins = /(\d+)\s*(?:menit|minutes?|mins?|min|m)\b/.exec(text);
-  if (mins) { total += parseInt(mins[1], 10); found = true; }
-  return found && total >= 1 && total <= 1440 ? total : null;
+  const text = label.trim().toLowerCase();
+  if (!text) return null;
+  const decimal = /^([0-9]+(?:[.,][0-9]+)?)\s*(?:jam|hours?|hrs?|h)(?:\s+([0-9]+)\s*(?:menit|minutes?|mins?|min|m))?$/.exec(text);
+  if (decimal) {
+    let total = Math.round(parseFloat(decimal[1].replace(',', '.')) * 60);
+    if (decimal[2]) total += parseInt(decimal[2], 10);
+    return total >= 1 && total <= 1440 ? total : null;
+  }
+  const minsOnly = /^([0-9]+)\s*(?:menit|minutes?|mins?|min|m)$/.exec(text);
+  if (minsOnly) {
+    const total = parseInt(minsOnly[1], 10);
+    return total >= 1 && total <= 1440 ? total : null;
+  }
+  const compound = /^([0-9]+)h([0-9]+)m?$/.exec(text);
+  if (compound) {
+    const total = parseInt(compound[1], 10) * 60 + parseInt(compound[2], 10);
+    return total >= 1 && total <= 1440 ? total : null;
+  }
+  return null;
 }
 
 function addDays(date: string, offset: number): string {
@@ -50,6 +71,17 @@ function addDays(date: string, offset: number): string {
 export function upgradeV1ToV2(input: unknown, profile: AgencyProfile = {}): UpgradeResult {
   const warnings: ContractDiagnostic[] = [];
   const warn = (code: string, path: string, message: string) => warnings.push({ code, path, message });
+  const notes: Array<{ targetId: string; text: string }> = [];
+  const addNote = (targetId: string, field: string, text: string) => {
+    const key = `${targetId}`;
+    const existing = notes.find(n => n.targetId === key);
+    const line = `${field}: ${text}`;
+    if (existing) {
+      existing.text = (existing.text + '\n' + line).slice(0, 4000);
+    } else {
+      notes.push({ targetId: key, text: line.slice(0, 4000) });
+    }
+  };
   const fit = (text: string | null, max: number, path: string): string | null => {
     if (text === null || text.length <= max) return text;
     warn('VALUE_TRUNCATED', path, `The value was longer than ${max} characters and was shortened.`);
@@ -86,15 +118,18 @@ export function upgradeV1ToV2(input: unknown, profile: AgencyProfile = {}): Upgr
     return { assetId: id, credit: photographer || source ? { photographer, url, source } : null };
   };
 
-  const meals = (items: unknown, path: string) => {
+  const meals = (items: unknown, dayId: string, path: string) => {
     const result = { breakfast: false, lunch: false, dinner: false };
+    const unmatched: string[] = [];
     for (const item of strings(items)) {
       const text = item.toLowerCase();
-      if (/(breakfast|sarapan|petit[- ]d|makan pagi|\bpagi\b)/.test(text)) result.breakfast = true;
-      else if (/(lunch|makan siang|d[eé]jeuner|midday)/.test(text)) result.lunch = true;
-      else if (/(dinner|makan malam|d[iî]ner|supper)/.test(text)) result.dinner = true;
-      else warn('MEAL_UNMATCHED', path, 'A meal entry did not match breakfast, lunch or dinner and was dropped.');
+      let matched = false;
+      if (/(breakfast|sarapan|petit[- ]d|makan pagi|\bpagi\b)/.test(text)) { result.breakfast = true; matched = true; }
+      if (/(lunch|makan siang|d[eé]jeuner|midday)/.test(text)) { result.lunch = true; matched = true; }
+      if (/(dinner|makan malam|d[iî]ner|supper)/.test(text)) { result.dinner = true; matched = true; }
+      if (!matched) { warn('MEAL_UNMATCHED', path, 'A meal entry did not match breakfast, lunch or dinner and was dropped.'); unmatched.push(item); }
     }
+    if (unmatched.length) addNote(dayId, 'mealsIncluded', unmatched.join(', '));
     return result;
   };
 
@@ -107,9 +142,10 @@ export function upgradeV1ToV2(input: unknown, profile: AgencyProfile = {}): Upgr
       const path = `days[${index}]`;
       const dayStart = Number(block.dayStart) || index + 1;
       const dayEnd = Number(block.dayEnd) || dayStart;
+      const dayId = clean(block.id) || randomUUID();
       let title = clean(block.title);
       if (dayEnd > dayStart) {
-        title = `Hari ${dayStart}–${dayEnd}: ${title}`.trim();
+        title = `${dayStart}–${dayEnd}: ${title}`.trim();
         warn('DAY_RANGE_COLLAPSED', path, `Days ${dayStart}–${dayEnd} were collapsed into one day; the itinerary now has ${schedule.length} days instead of ${maxDayEnd}.`);
       }
       const date = orNull(block.date);
@@ -117,19 +153,26 @@ export function upgradeV1ToV2(input: unknown, profile: AgencyProfile = {}): Upgr
 
       const activities: Activity[] = list(block.activities).map((rawActivity, activityIndex) => {
         const activity = rec(rawActivity);
+        const activityId = clean(activity.id) || randomUUID();
         const activityPath = `${path}.activities[${activityIndex}]`;
         const tipParts: string[] = [];
         if (orNull(activity.tip)) tipParts.push(clean(activity.tip));
         const timeLabel = clean(activity.timeLabel);
-        const time = timeLabel ? parseTime(timeLabel) : null;
-        if (timeLabel && !time) { warn('TIME_UNPARSED', `${activityPath}.time`, 'The time text could not be read as HH:MM; the original text was added to the tip.'); tipParts.push(`Waktu: ${timeLabel}`); }
+        const timeObj = timeLabel ? parseTime(timeLabel) : null;
+        const time = timeObj?.start ?? null;
+        if (timeLabel && !timeObj) { warn('TIME_UNPARSED', `${activityPath}.time`, 'The time could not be parsed as HH:MM or HH:MM-HH:MM.'); addNote(activityId, 'timeLabel', timeLabel); }
         const durationLabel = clean(activity.durationLabel);
-        const durationMinutes = durationLabel ? parseDuration(durationLabel) : null;
-        if (durationLabel && durationMinutes === null) { warn('DURATION_UNPARSED', `${activityPath}.durationMinutes`, 'The duration text could not be read; the original text was added to the tip.'); tipParts.push(`Durasi: ${durationLabel}`); }
-        if (orNull(activity.category)) tipParts.push(`Kategori: ${clean(activity.category)}`);
+        let durationMinutes = durationLabel ? parseDuration(durationLabel) : null;
+        if (timeObj?.end && !durationMinutes && time) {
+          const [endH, endM] = timeObj.end.split(':').map(Number);
+          const [startH, startM] = time.split(':').map(Number);
+          durationMinutes = (endH - startH) * 60 + (endM - startM);
+        }
+        if (durationLabel && durationMinutes === null) { warn('DURATION_UNPARSED', `${activityPath}.durationMinutes`, 'The duration text could not be parsed.'); addNote(activityId, 'durationLabel', durationLabel); }
+        if (orNull(activity.category)) { warn('CATEGORY_DROPPED', `${activityPath}.category`, 'Activity categories are no longer stored and were removed.'); addNote(activityId, 'category', clean(activity.category)); }
         const kind = (KINDS as readonly string[]).includes(activity.type) ? activity.type : activity.type === 'rest' || activity.type === 'accommodation' ? 'free' : 'activity';
         return {
-          id: clean(activity.id) || randomUUID(), time, durationMinutes, kind, title: clean(activity.title), place: orNull(activity.area),
+          id: activityId, time, durationMinutes, kind, title: clean(activity.title), place: orNull(activity.area),
           description: typeof activity.description === 'string' ? activity.description : '',
           tip: tipParts.length ? tipParts.join('\n') : null
         } as Activity;
@@ -165,11 +208,11 @@ export function upgradeV1ToV2(input: unknown, profile: AgencyProfile = {}): Upgr
       if (mode === 'half_day') {
         if (strings(block.mealsIncluded).length) warn('MEALS_DROPPED_HALF_DAY', `${path}.meals`, 'Half-day itineraries have no meals section; the meals were removed.');
       } else {
-        dayMeals = meals(block.mealsIncluded, `${path}.meals`);
+        dayMeals = meals(block.mealsIncluded, dayId, `${path}.meals`);
       }
 
       days.push({
-        id: clean(block.id) || randomUUID(), dayNumber: index + 1, title: fit(title, 200, `${path}.title`) ?? '', location: orNull(block.location),
+        id: dayId, dayNumber: index + 1, title: fit(title, 200, `${path}.title`) ?? '', location: orNull(block.location),
         photo: toPhoto(block.assetId, block.photoAttribution, `${path}.photo`), activities, hotel, meals: dayMeals, transferNote
       });
     });
@@ -178,10 +221,11 @@ export function upgradeV1ToV2(input: unknown, profile: AgencyProfile = {}): Upgr
   if (scheduled && spots.length) warn('SPOTS_DROPPED_FOR_MODE', 'spots', 'Only destination guides have places; the places were removed.');
   const places: Place[] = scheduled ? [] : spots.map((rawSpot, index) => {
     const spot = rec(rawSpot);
+    const placeId = clean(spot.id) || randomUUID();
     const path = `places[${index}]`;
-    if (orNull(spot.category)) warn('PLACE_CATEGORY_DROPPED', `${path}.category`, 'The place category is no longer a field and was removed.');
+    if (orNull(spot.category)) { warn('PLACE_CATEGORY_DROPPED', `${path}.category`, 'The place category is no longer a field and was removed.'); addNote(placeId, 'category', clean(spot.category)); }
     return {
-      id: clean(spot.id) || randomUUID(), group: orNull(spot.groupLabel), name: clean(spot.name), area: clean(spot.area),
+      id: placeId, group: orNull(spot.groupLabel), name: clean(spot.name), area: clean(spot.area),
       description: typeof spot.description === 'string' ? spot.description : '', tips: strings(spot.tips),
       gettingThere: orNull(spot.gettingThere), suggestedDuration: orNull(spot.suggestedDuration), bestTime: orNull(spot.bestTimeToVisit),
       nearby: orNull(spot.nearbyPairing), photo: toPhoto(spot.assetId, spot.photoAttribution, `${path}.photo`)
@@ -232,5 +276,5 @@ export function upgradeV1ToV2(input: unknown, profile: AgencyProfile = {}): Upgr
     disclaimer: orNull(closing.disclaimer)
   } as ItineraryV2;
 
-  return { value, warnings };
+  return { value, warnings, notes };
 }

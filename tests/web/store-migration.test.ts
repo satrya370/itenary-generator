@@ -97,7 +97,19 @@ test('migration 3 upgrades v1 drafts in place, keeps revisions/timestamps/IDs, s
     assert.equal(draft.schemaVersion, 'web-2.0.0');
     assert.equal(validateDraft(draft).ok, true, `${row.id}: ${JSON.stringify(validateDraft(draft).errors)}`);
   }
-  assert.deepEqual(upgraded.map((row) => ({ id: row.id, revision: row.revision, created_at: row.created_at, updated_at: row.updated_at, language_json: row.language_json, writing_json: row.writing_json })), beforeRows);
+  for (const [idx, row] of upgraded.entries()) {
+    const before = beforeRows[idx];
+    assert.equal(row.id, before.id);
+    assert.equal(row.revision, before.revision);
+    assert.equal(row.created_at, before.created_at);
+    assert.equal(row.updated_at, before.updated_at);
+    assert.equal(row.language_json, before.language_json);
+    const writing = JSON.parse(row.writing_json);
+    const beforeWriting = JSON.parse(before.writing_json);
+    assert.equal(writing.brief, beforeWriting.brief, `${row.id}: brief mismatch`);
+    assert.ok(Array.isArray(writing.notes), `${row.id}: notes must be array`);
+    assert.ok(writing.notes.length >= beforeWriting.notes.length, `${row.id}: notes must not lose existing entries`);
+  }
   const byId = Object.fromEntries(upgraded.map((row) => [row.id, JSON.parse(row.draft_json)]));
   assert.equal(byId['it-full'].trip.title, 'Ubud in a day');
   assert.equal(byId['it-full'].days[0].id, idsV1.block1);
