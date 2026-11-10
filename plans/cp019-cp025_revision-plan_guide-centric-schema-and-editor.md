@@ -859,6 +859,253 @@ Set CP022 in `TODOS.md` to `in_progress (R5 — editor v2)` before you start.
 - **PR-10:** Colour theme names are colour names (`themeNames` above), not destination types.
 - **PR-11:** `changeMode` to multi_day from a single-day mode adds one blank day so the draft has the minimum two days.
 
+### R5 completion and R6 plan (planner review 2026-11-10, executor: Claude Haiku) — overrides the "R5/R6 execution plan" above where they differ
+
+Written for Claude Haiku running in Claude Code. OpenCode started R5 but stopped part-way and committed nothing. The review of what it left is `logs/cp022_review-log_r5-editor-wip.md`; the finding IDs there (S1, L1, M1–M6, F1–F8) are the fix IDs below. Everything in "R5/R6 execution plan" above still applies unless this section says otherwise. Work through H1 → H9, **stop for review**, and only then do H10 (R6) when the owner says "lanjut R6".
+
+#### H0. Rules for this section
+
+- **Repo root is `D:\.agents\Micro Saas\itinerary-engine`.** Every path below is relative to it. Before every Write, check that the absolute path starts with that root. (An earlier Haiku run wrote a log to `D:\Micro Saas\…` by mistake.)
+- Write source files with the Write/Edit tools, not with shell heredocs. Read a file before you edit it.
+- **Off-limits** (same as above): `config/web/**`, `config/palettes.json`, `src/contracts/**`, `src/server/**`, `src/render/**`, `src/api/client.ts`, `package.json`, the server-side test files. The only config file you may change in R5 is `tsconfig.web.json` (H6).
+- **Forbidden in `src/editor/**` and `tests/web/editor.test.ts`:** `@ts-ignore`, `@ts-expect-error`, `@ts-nocheck`, `as any`, `: any`, `<any>`. Do not add `!`-exclusions to any typecheck command. Do not delete or loosen assertions in existing scripts to make them pass; adapt selectors only.
+- Every step ends with a check command. Run it, read the result, fix within the step. Same failure three times → stop, write what you tried in the stage log, and report.
+- Never write "pass" without having run the command in this session. Paste command + counts into the stage log.
+- Stage files by name only (`git add <path> …`). Never `git add -A` or `git add .`: the tree holds untracked screenshots, `dist/`, `.playwright-mcp/`, `e2e-pdf-results/`, `.codebase-memory/`, `.claude/` and `AGENTS.md`, none of which may be committed. (Commit `23d88e9` did exactly that with `git add -A`; commit "Untrack files committed by mistake in 23d88e9" undid it.) Before every commit run `git diff --cached --stat` and check the file list.
+
+#### H1. Snapshot the WIP (no code changes)
+
+```bash
+git add TODOS.md src/editor/labels.ts src/editor/model.ts src/editor/schema-meta.ts src/editor/fields.tsx src/editor/sections/TripInfo.tsx logs/cp022_stage-log_r5-editor-v2.md
+git diff --cached --stat
+git commit -m "CP022 revision: R5 WIP snapshot from OpenCode (unreviewed)"
+```
+
+Check: `git status --short src/editor` shows only `?? ` lines for files you have not created yet, nothing modified.
+
+#### H2. `src/editor/schema-meta.ts`
+
+- **S1:** replace the `$defs` lookup inside `deref` with:
+  ```ts
+  const defs = (schema as unknown as { $defs: Record<string, unknown> }).$defs;
+  current = defs[name as string];
+  ```
+- Add one line above `extractLimits`: `// maxItems is the limit of the nearest enclosing array (e.g. activities for days[].activities[].title).` Keep that behaviour; the add buttons use it.
+- **PR-15:** export `export const MAX_PLACES = 60;` and use it for the "Tambah tempat" limit, because the schema has no `places.maxItems` yet (finding R1-S1). Do not edit the schema.
+
+Check: `node scripts/web/typecheck-scope.mjs tsconfig.app.json src/editor/schema-meta.ts` → `0 error(s)`.
+
+#### H3. `src/editor/labels.ts` and `src/editor/model.ts`
+
+- **L1:** `statusCopy.languageUnresolved` must be exactly: `Bahasa belum dipilih. Pilih bahasa atau klik 'Deteksi otomatis'. Teks Anda tidak akan diterjemahkan.` (straight `'`). Add `noPhoto: 'Belum ada foto.'` to `statusCopy`.
+- **M1:** remove the `validateDraft` import and call from `model.ts`; `changeMode` returns `next` after `renumberDays`. The test (H7) checks validity.
+- **M2 (PR-12):** meals rule: `half_day` → `meals: null`; `full_day` and `multi_day` → always an object (all three `false` is valid). Delete `normalizeMeals`. Add `ensureMeals(day)` that sets `{ breakfast: false, lunch: false, dinner: false }` when `meals` is `null`. `changeMode` to full/multi calls it on every kept or new day; to half sets `meals = null`.
+- **M3 (PR-13):** `setPhotoCredit(null, …)` returns `null` (credit fields are only shown when a photo exists).
+- **M5:** in `hasModeLoss` change the condition to `if (content.trip.mode === 'destination_guide') {`.
+- **M4:** rewrite `hasModeLoss` with a helper `hasContent(value)` that walks strings (non-blank), `true` booleans, arrays and objects, and **skips the keys `id`, `dayNumber` and `kind`**. Return strings in exactly this order: days, `tanggal mulai`, `jam mulai/selesai`, `titik kumpul`, `penjemputan`, hotel, transfer, meals. Count only items with content. Expected results for sources built with `createContentV2(mode)` (these are test 4's expectations):
+
+  | From → to | `hasModeLoss` result |
+  |---|---|
+  | half_day → full_day | `[]` |
+  | half_day → multi_day | `['jam mulai/selesai']` |
+  | half_day → destination_guide | `['1 hari beserta aktivitasnya', 'tanggal mulai', 'jam mulai/selesai', 'titik kumpul']` |
+  | full_day → half_day | `['pilihan makan']` |
+  | full_day → multi_day | `['jam mulai/selesai']` |
+  | full_day → destination_guide | `['1 hari beserta aktivitasnya', 'tanggal mulai', 'jam mulai/selesai', 'titik kumpul']` |
+  | multi_day → half_day | `['1 hari selain hari pertama', 'info hotel', 'catatan perpindahan', 'pilihan makan']` |
+  | multi_day → full_day | `['1 hari selain hari pertama', 'info hotel', 'catatan perpindahan']` |
+  | multi_day → destination_guide | `['2 hari beserta aktivitasnya', 'tanggal mulai', 'titik kumpul']` |
+  | destination_guide → half_day / full_day / multi_day | `['2 tempat']` |
+
+  `penjemputan` appears only when `pickup.offered` is true; `createContentV2` has it off, so it is not in the table. Add one extra test case with pickup on.
+- **M6 (PR-14):** add `normalizeBlanks(content): WebItineraryContent` that returns a clone where every nullable string listed in R5.3 ("Blank-to-null rule") that is `''` or whitespace becomes `null`, and every `durationMinutes` that is not an integer 1–1440 becomes `null`. `main.tsx` calls it in `save()` on the content it sends.
+- Day counts after `changeMode`: to guide 0 days / places kept only if already a guide; guide → half/full 1 day; guide → multi 2 days; half/full → multi 2 days (first kept + one new); multi → half/full 1 day.
+
+Check: `node scripts/web/typecheck-scope.mjs tsconfig.app.json src/editor/model.ts src/editor/labels.ts` → `0 error(s)`.
+
+#### H4. Split `src/editor/sections/TripInfo.tsx` (move first, then fix)
+
+Move the code, do not rewrite it. After the move, `TripInfo.tsx` contains only the trip-info section.
+
+| New file | Takes from the current `TripInfo.tsx` |
+|---|---|
+| `src/editor/EditorForm.tsx` | `Patch`, `AiAction`, `MetaFn`, `EditorProps` types and `EditorForm`, which now only composes the section components in the order of "Editor behaviour" |
+| `src/editor/fields.tsx` | add `PhotoField`, `LocaleField` (moved); delete `ObjectList` |
+| `sections/TripInfo.tsx` | the `trip-info` section (incl. mode select and "Dari profil agensi" line) |
+| `sections/TimeAndMeeting.tsx` | `time-meeting` section |
+| `sections/TripGuide.tsx` | `trip-guide` section |
+| `sections/Cover.tsx` | `cover` section |
+| `sections/Summary.tsx` | `summary` section |
+| `sections/DayCard.tsx` | `DayCard` and `ActivityList` |
+| `sections/DaySchedule.tsx` | `schedule` section (half/full) |
+| `sections/MultiDay.tsx` | `days` section (multi) |
+| `sections/Places.tsx` | `places` section |
+| `sections/Practical.tsx` | `practical` section |
+| `sections/Closing.tsx` | `closing` section |
+| `sections/AiAssist.tsx` | `ai-assist` section |
+| `sections/ModePicker.tsx` | `ModePicker` |
+| `sections/DraftList.tsx` | `DraftList` |
+
+Section components take `props: EditorProps` (simplest; no prop drilling redesign). Every `.tsx` keeps `import React from 'react'` as its first import.
+
+Then fix:
+- **F1 `PhotoField`:** change its props to `{ id, basePath, mode, meta, photo, assets, emptyText, onAsset, onCredit }`, where `basePath` is e.g. `'cover'`, `'days[].photo'` or `'places[].photo'`. The asset select uses `meta(`${basePath}.assetId`, mode)`; the three credit fields use `meta(`${basePath}.credit.photographer`, mode)`, `…credit.url` (type `url`) and `…credit.source`. `emptyText`: cover → `statusCopy.noCover`; day and place → `statusCopy.noPhoto`.
+- **F2 emergency contacts:** rows get "Naikkan", "Turunkan" (via `moveIndex`) and "Hapus kontak" (with `confirm`). Add button limit = `meta('emergencyContacts[].label', mode).maxItems`.
+- **F3 AI panel:** delete `AiAssistProbe`; put the brief's `<label>` before its `<textarea>`.
+- **F4 places:** render the group heading `<h4>` **before** the card when `index === 0 || place.group !== places[index - 1].group` and `place.group` is not null. Legend is only `Tempat {n}`. Delete asks `confirm('Hapus tempat ini?')`. Add limit `MAX_PLACES`.
+- **F5 days (multi):** "Naikkan hari" disabled on the first day, "Turunkan hari" on the last; move = `renumberDays(moveById(days, id, delta))`; delete asks `confirm('Hapus hari ini beserta aktivitasnya?')`, then `renumberDays`. Add limit = `meta('days[].title', mode).maxItems` (14).
+- **F6 `LocaleField`:** add a prop `unresolved: boolean`; show the `statusCopy.languageUnresolved` help text only when it is true (`language.source === 'unresolved'`).
+- **F7 `ModePicker`:** show the badge (with the title) once, then description and "Contoh: …". No second title line.
+- **F8:** the `LocaleField` input has `data-field-path="trip.language"`.
+
+Check: `node scripts/web/typecheck-scope.mjs tsconfig.app.json src/editor/EditorForm.tsx src/editor/fields.tsx src/editor/sections` → `0 error(s)`.
+
+#### H5. Rewrite `src/editor/main.tsx`
+
+`main.tsx` keeps the app shell and the orchestration; the form comes from `EditorForm`. Get the old file at any time with `git show 8dd31c3:src/editor/main.tsx`.
+
+- **Delete** (v1-only): local `Field`, `TextList`, `ObjectList`, `AssetSelect`, `options`, `modes`, `withAttribution`, `withAccommodation`, `setPath`, `setIndexed`, `setList`, `updateBlock`, `updateActivity`, `updateSpot`, `pendingRange` state, `requestRange`, `applyRange`, `reorderBlocks`, `removeBlock`, and the import of `coverage.ts`. Then delete `src/editor/coverage.ts`.
+- **Keep unchanged** (only adjust types if needed): `isPendingAiResponse`, `SuggestionPanel`, `refresh`, the three `useEffect`s, `markDirty`, `edit` (type its mutator `(next: WebItineraryContent) => void`; `EditorForm`'s `patch` is `edit`), `installRecord`, `canDiscard`, `open`, `create`, `changeLocale`, `localeSupported`, `proposalValid`, `resolveLanguage`, `checkProvider`, `acceptLanguage`, `generate`, `proposalPanel`, `aiAction`, `save` (apply `normalizeBlanks` to the content it sends), `previewSaved`, `publishSaved`, `unpublish`, `copyShareLink`, `reloadLatest`, `copyLocal`, `saveProfile`, `upload`, `changeProfile`.
+- **Change:**
+  - AI target kind `'spot'` → `'place'` everywhere.
+  - `findTarget`: `place` → `draft.places.some(p => p.id === target.id)`; `activity` → `draft.days.some(d => d.activities.some(a => a.id === target.id))`.
+  - `requestMode` compares with `content.trip.mode`; `applyMode(mode)` = `edit(next => Object.assign(next, changeMode(next, mode)))`.
+  - `focusDiagnostic`: replace with this (R5.7):
+    ```ts
+    function focusDiagnostic(d: { path: string; targetId?: string }) {
+      const template = templatePath(d.path);
+      const scoped = d.targetId ? document.querySelector<HTMLElement>(`[data-target-id="${CSS.escape(d.targetId)}"]`) : null;
+      const root: ParentNode = scoped ?? document;
+      const all = [...root.querySelectorAll<HTMLElement>('[data-field-path]')];
+      const listIndex = /\[(\d+)\]$/.exec(d.path);
+      let el = listIndex ? all.filter(e => e.dataset.fieldPath === template)[Number(listIndex[1])] : undefined;
+      el ??= all.find(e => e.dataset.fieldPath === template)
+        ?? all.find(e => e.dataset.fieldPath!.startsWith(`${template}.`))
+        ?? all.find(e => e.dataset.fieldPath!.startsWith(template))
+        ?? scoped ?? undefined;
+      if (!el) return;
+      for (let p = el.parentElement; p; p = p.parentElement) if (p instanceof HTMLDetailsElement) p.open = true;
+      el.focus(); el.scrollIntoView({ block: 'center' });
+    }
+    ```
+  - Diagnostic label: `labelFor(path)` = `fieldMeta(templatePath(path), mode).label` inside `try`, falling back to the raw path in `catch`.
+- **Layout and the UI contract.** The browser scripts depend on these exact texts and attributes; keep every one:
+
+  | Element | Exact text / attribute |
+  |---|---|
+  | status line | `<p role="status" aria-live="polite">`; messages "Engine tersambung", "Draft baru tersimpan", "Draft dibuka", "Tersimpan · revisi …", "Itinerary berhasil dipublish", "Link dicabut…" (copy these from the old file) |
+  | left column | `<aside>` containing: `ModePicker` (cards with `data-mode-card`), `DraftList`, the agency profile panel (logo select has `data-field-path="profile.agencyLogoAssetId"` and an `id` the "Ubah profil" button focuses), asset upload |
+  | draft header | title or "Tanpa judul" + mode badge + button "Simpan draft" + button "Preview" |
+  | form | `<EditorForm …>` with `meta={fieldMeta}`, `patch={edit}`, `onModeChange={requestMode}` |
+  | diagnostics | container `aria-label="Publish diagnostics"`; each item a `<button data-diagnostic-path={d.path}>` with text `` `${labelFor(d.path)}: ${d.message}` `` calling `focusDiagnostic(d)` |
+  | preview | `<iframe title="Preview itinerary tersimpan" sandbox="" srcDoc=…>` + Phone/Desktop toggle (copy from old file) |
+  | publication | buttons "Publish itinerary", "Publish ulang", "Cabut link", copy-link, version list (copy from old file) |
+  | AI | `SuggestionPanel` and `aiAssistExtra` (provider check, daily usage, `statusCopy.aiNotActive` when the credential is missing, `statusCopy.modelLabel` or `Model: {modelId}`, `statusCopy.saveBeforeAi`) inside the AI panel only |
+  | mode dialog | `role="dialog" aria-modal="true"`, heading "Ganti tipe itinerary?", the `hasModeLoss` strings as a list, buttons "Ganti tipe" and "Batal"; Escape cancels |
+  | conflict | the 409 panel from the old file, unchanged |
+
+- None of the six "Old" strings from the plain-language table may remain.
+
+Check, in order: `node scripts/web/typecheck-scope.mjs tsconfig.app.json src` → `0 error(s)`; `npm run build:web-app` → success. Do **not** use `npm run start:web-app` for a manual check: it uses the real data folder. The browser checks come in H8 with a temporary data folder.
+
+#### H6. `tsconfig.web.json` (PR-16)
+
+Add `"jsx": "react-jsx"` to `compilerOptions`. Without it `tests/web/editor.test.ts` cannot typecheck once it imports `.tsx`.
+
+Check: `node scripts/web/typecheck-scope.mjs tsconfig.web.json src/editor` → `0 error(s)`.
+
+#### H7. Rewrite `tests/web/editor.test.ts`
+
+Use `node:test`, `node:assert/strict`, `React.createElement` and `renderToStaticMarkup` from `react-dom/server`. Build `EditorForm` props with stubs: `aiAction: () => null`, `patch: () => {}`, `meta: fieldMeta`, `assets: []`, `writing: { brief: '', notes: [] }`, booleans `false`, strings `''`, `language: { requestedLanguage: 'auto', outputLanguage: null, source: 'unresolved' }`, `languageProposal: null`, `aiAssistExtra: null`.
+
+Helper `expandedDraft(mode)`: start from `createContentV2(mode)` and set `cover = { assetId: 'a1', credit: { photographer: 'P', url: 'https://example.test/p', source: 'S' } }`, the same photo on every day (scheduled) or place (guide), `pickup = { offered: true, area: 'A', time: '07:00', dropoffNote: 'N' }` (scheduled only), one item in each of the five lists, `emergencyContacts = [{ label: 'Polisi', value: '110' }]`, one tip on every place. Expected paths per mode = registry paths where `appliesTo(field, mode)` and `control` is not `hidden` or `derived`.
+
+Required tests (each name starts with the number):
+1. Per mode: every expected path appears as `data-field-path="<path>"` in the markup, and no registry path that does not apply appears.
+2. `fieldMeta` resolves every registry path for at least one mode it applies to; every non-hidden/derived `labelKey` has an entry in `fieldLabels` (or the path in `pathLabels`); `fieldMeta('included[]', 'full_day')` has `maxItems 50` and `maxLength 500`; `fieldMeta('trip.title', 'full_day').maxLength === 200`.
+3. A draft built from `makeDay`/`makeActivity`/`makePlace` plus required text passes `validateDraft` with zero errors (one case per mode).
+4. For all 12 ordered mode pairs from `createContentV2(source)`: `validateDraft(changeMode(...))` has zero errors; title, summary, the five lists and `guide` are kept; day/place counts match H3; `hasModeLoss` equals the H3 table exactly. Plus one case with pickup on → `penjemputan` appears for → guide.
+5. Helpers: `normalizeBlanks` (blank nullable → `null`, bad duration → `null`), `setPhotoCredit(null, …) === null`, credit back to all-blank → `credit: null`, `normalizeHotel` all-blank → `null`, `ensureMeals`.
+6. `moveById` / `moveIndex` keep IDs and do not mutate the input (port the two old tests).
+7. No file under `src/editor/` contains any of the six "Old" strings; `labels.ts` contains all six "New" strings (read the files with `fs`).
+8. Mutation check (manual, not a test): remove `data-field-path` from `TextField` in `fields.tsx`, run the test, confirm test 1 fails, restore. Write the result into the stage log.
+
+Check: `npm run test:web-editor` → 0 fail and at least 8 passing tests (`ℹ pass`), then `node scripts/web/typecheck-scope.mjs tsconfig.web.json tests/web/editor.test.ts src/editor` → `0 error(s)`.
+
+#### H8. Browser scripts
+
+- **`scripts/web/verify-editor.ts`:** rewrite. Keep its server/browser setup, `availablePort`, `waitStatus`, `records`, `getRecord`, console-error and external-request capture, and the `page.on('dialog', d => d.accept())` handler. Select fields with `page.locator('[data-field-path="…"]')` (use `nth` for repeated paths), mode cards with `[data-mode-card="…"]`. Scenarios:
+  1. For each mode card: create; status "Draft baru tersimpan"; badge text equals `modeCopy[mode].title`; the set of `[data-editor-section]` values equals: half/full `trip-info, time-meeting, trip-guide, cover, summary, schedule, practical, closing, ai-assist`; multi the same with `days` instead of `schedule`; guide `trip-info, trip-guide, cover, summary, places, practical, closing, ai-assist`.
+  2. Half day: fill title, destination, summary, two activity titles; reorder with "Naikkan"; save ("Tersimpan · revisi"); read the record via API (A); reload, open the draft ("Draft dibuka"); the values of `trip.title`, `trip.destination`, `summary` and every `days[].activities[].title` equal A, and the order of `[data-target-id]` inside the schedule equals A's activity IDs.
+  3. Mode change: in the half-day draft fill `trip.startTime` (`09:00`), then choose `multi_day` in the mode select; the dialog lists exactly `jam mulai/selesai`; click "Batal" → mode, start time and section list unchanged; repeat and click "Ganti tipe" → `days` section shown, 2 day cards, start time field gone. (When `hasModeLoss` is empty the change applies without a dialog; that is correct.)
+  4. Multi day: click "Tambah hari" until 14 days; the button is disabled; save succeeds.
+  5. Guide: click "Tambah tempat" until 60 places; the button is disabled; fill every place name/area/description with short text through `page.evaluate` using the native value setter plus an `input` event (the technique of the old `fill` helper), save succeeds.
+  6. For each mode at 390×844 and 1280×900: no horizontal overflow; full-page screenshot `output/web-editor/r5-<mode>-390.png` / `r5-<mode>-1280.png`.
+  7. No console errors, no external requests.
+- **`scripts/web/verify-preview.ts`:** replace `page.select('#new-mode', 'half_day'); clickButton('Buat')` with a click on `[data-mode-card="half_day"]`; replace the activity title selector `input[id*="-activity-title-"]` with `[data-field-path="days[].activities[].title"]`; find the diagnostic with `[data-diagnostic-path="days[0].activities[0].title"]` instead of matching its text. Keep every other assertion.
+- **`scripts/web/verify-publication.ts`:** replace `input[id$="-tripTitle"]` with `[data-field-path="trip.title"]`. Nothing else should need changing; if something else fails, fix the editor, not the assertion.
+
+Check per script: `npm run build:web-app` then the script; exit code 0.
+
+#### H9. R5 gate, stage log, commit, STOP
+
+Run in this order and paste each result into `logs/cp022_stage-log_r5-editor-v2.md`:
+
+| # | Command | Expected |
+|---|---|---|
+| 1 | `npm run build:brochure-css && npm run build:web-app` | success |
+| 2 | `node scripts/web/typecheck-scope.mjs tsconfig.app.json src scripts/web/verify-editor.ts` | `0 error(s)` |
+| 3 | `node scripts/web/typecheck-scope.mjs tsconfig.web.json src/editor tests/web/editor.test.ts scripts/web/verify-editor.ts scripts/web/verify-preview.ts scripts/web/verify-publication.ts` | `0 error(s)` |
+| 4 | `npm run test:web-editor` | ≥ 8 pass, 0 fail |
+| 5 | `npm run verify:web-editor`, `npm run verify:web-preview`, `npm run verify:web-publication` | exit 0 each |
+| 6 | `test:web-contracts`, `test:web-store`, `test:web-api`, `test:web-ai`, `test:web-render`, `test:web-preview`, `test:web-publication` | 42 / 11 / 12 / 28 / 14 / 12 / 12 pass, 0 fail |
+| 7 | `npm run typecheck:web-server`, `npm run check:web-types`, `npm run verify:web-render` | 0 errors / matches / exit 0 |
+| 8 | `grep -rnE "brochure\.|\.schedule\b|spots|makeSpot|timeLabel|durationLabel|resizeScheduleRange" src/editor` | no output |
+| 9 | `grep -rnE "@ts-(ignore|expect-error|nocheck)|as any|: any\b|<any>" src/editor tests/web/editor.test.ts` | no output |
+| 10 | `git diff --stat 8dd31c3 -- config src/contracts src/server src/render src/api package.json` | no output |
+| 11 | `ls src/editor/coverage.ts` | "No such file" |
+
+Then:
+- Open the 8 `output/web-editor/r5-*.png` screenshots and write one sentence each (what you saw: sections present, labels Indonesian, no overflow, badges distinct). If you cannot view images, write that and leave the visual check to the reviewer.
+- Record the H7 mutation check result, every deviation and every open question.
+- `TODOS.md` R5 line: append "(gate run <date>: pass; awaiting review)". CP022 stays `in_progress`.
+- Commit: `git add` the files you changed or created under `src/editor`, `tests/web/editor.test.ts`, the three `scripts/web/verify-*.ts`, `tsconfig.web.json`, `TODOS.md`, the stage log; message `CP022 revision: R5 editor guide-centric schema web-2.0.0 (pending review)`; remove the deleted `src/editor/coverage.ts` with `git rm`.
+- **STOP.** Report: commit hash, the gate table with counts, screenshot notes, deviations, open questions. Do not start H10.
+
+#### H10. R6 (only after the owner says "lanjut R6")
+
+Follow R6.1–R6.6 above, with these additions:
+
+- **Order** (one script at a time; after each, run that script and `node scripts/web/typecheck-scope.mjs tsconfig.web.json <that file>`): `verify-ai.ts` (default deterministic mode only) → `verify-ai-ui.ts` → `probe-publish-retry.ts` (`npm run verify:web-publish-retry`) → `probe-recovery-scope.ts` (`npm run probe:web-recovery-scope`) → `probe-cp027-findings.ts` (no npm script: make it typecheck and run it once with `npx tsx scripts/web/probe-cp027-findings.ts`; if it needs something unavailable, record "skipped" with the reason) → `verify-readiness.ts` → `tests/web/cp027-fixtures.json` → `verify-e2e.ts` (largest, last).
+- **Field mapping v1 → v2** (authoritative source: `src/contracts/upgrade-v1.ts` and `src/contracts/itinerary.generated.d.ts`; check each use against them):
+
+  | v1 | v2 |
+  |---|---|
+  | `brochure.tripTitle` / `destination` / `country` / `region` | `trip.title` / `trip.destination` / `trip.country` / `trip.region` |
+  | `brochure.itineraryMode` | `trip.mode` |
+  | output language in brochure/languageContext | `trip.language` (+ `languageContext` in the API body) |
+  | `hero.assetId` + `hero.photoAttribution` | `cover` (`{ assetId, credit }`) |
+  | `overview.summary` | `summary` |
+  | `schedule[]` (blocks with `dayStart/dayEnd`) | `days[]` (one per day, `dayNumber` derived) |
+  | `activity.timeLabel` / `durationLabel` / `type` / `area` | `time` (`HH:MM` or null) / `durationMinutes` / `kind` / `place` |
+  | `spots[]`, `groupLabel`, `bestTimeToVisit`, `nearbyPairing` | `places[]`, `group`, `bestTime`, `nearby` |
+  | `practical.included` / `notIncluded` / `whatToBring` / `localTips` / `healthSafety` | top-level `included` / `notIncluded` / `whatToBring` / `localTips` / `healthSafety` |
+  | AI target `{ kind: 'spot' }` | `{ kind: 'place' }` |
+  | removed: highlights, routeSummary, bestSeason, closing photo credits, scope label, travellers, pace, themes | do not port; drop the assertion only if it checks a removed field, and list each dropped assertion in the R6 stage log |
+
+- **Gate:** as R6.4, plus `npx tsc --noEmit -p tsconfig.web.json` and `npx tsc --noEmit -p tsconfig.app.json` both with 0 errors (full, unscoped).
+- Logs/docs/TODOS/commit as R6.6. Then **STOP** and report as in H9.
+
+#### Planner decisions in this section (the owner may override before execution)
+
+- **PR-12:** Meals are `null` only for `half_day`; `full_day`/`multi_day` always store an object (matches `createBlankDraft`).
+- **PR-13:** Credit edits never create a photo; credit fields exist only after a photo is chosen.
+- **PR-14:** Blank nullable strings become `null` once, at save time (`normalizeBlanks`), instead of per keystroke.
+- **PR-15:** The places limit is the constant `MAX_PLACES = 60` until the schema gets `places.maxItems` (R1 finding R1-S1, for the R1 reviewer).
+- **PR-16:** `tsconfig.web.json` gets `"jsx": "react-jsx"`; fixes the planner defect P1.
+- **PR-17:** `hasModeLoss` counts only days/places with content and ignores `id`, `dayNumber` and `kind`.
+- **PR-18:** Review stop between R5 and R6 (Haiku → review → Haiku workflow).
+
 ## Impact and Regression Risk
 
 - About 1,500 of 2,300 source lines are touched (audit). The store, publication state machine, share tokens, revocation and the AI ledger are preserved and must keep passing their existing tests.
