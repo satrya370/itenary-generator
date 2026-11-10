@@ -54,3 +54,40 @@ Tests: 5e (parity and guard safety), 5f (policy line handling). Editor 30/30.
 Gate S2: build rc 0; typecheck-app rc 0; contracts 43, store 12, api 13, ai 28, render 14, editor 30, preview 12, publication 12 (0 fail); `verify:web-editor`, `-preview`, `-publication`, `-ai-ui`, `-e2e`, `-publish-retry`, `-render` all rc 0.
 
 Screenshots opened (390 px, full_day, language en): `output/web-editor/cp035-s2-practical-390.png` (chips for each group, custom rows, no overflow) and `cp035-s2-closing-390.png` (terms & conditions picker above the textarea).
+
+## Stages S3 and S4 — wizard steps and publish validation (done, with deviations)
+
+| Item | Change | Where |
+|---|---|---|
+| Steps | 8–9 steps per mode (`stepsFor`): Info trip, Waktu & titik kumpul (not for the guide), Guide & foto, Ringkasan, Jadwal / Hari demi hari / Tempat (label per mode), Info praktis, Ketentuan & penutup, Bantuan AI, Preview & publish. Every step stays mounted; inactive ones use `hidden` (PD-5). | `src/editor/validation.ts`, `src/editor/EditorForm.tsx`, `src/editor/wizard/Stepper.tsx` |
+| Step bar | Horizontal scrolling pills with issue counts ("· N wajib"), "Langkah N dari M · title" line, sticky under the draft header. | `src/editor/wizard/Stepper.tsx`, `src/editor/main.tsx` |
+| Navigation | Kembali / Lanjut at the bottom. Lanjut only moves on when the current step has no missing required fields; otherwise the list of missing fields stays shown. | `src/editor/main.tsx` |
+| Publish | Publish button disabled while any required field is missing; text "Lengkapi N isian wajib sebelum publish."; Indonesian messages per code (PUBLISH_FIELD_REQUIRED "Wajib diisi sebelum publish." and others). Server validation remains the final gate. | `src/editor/validation.ts` (`publishIssues`), `main.tsx` |
+| Focus | Clicking a missing field switches to its step first, then focuses it (also used by server diagnostics). | `src/editor/main.tsx` `focusDiagnostic` |
+| Phone layout | When a draft is open on a phone, the draft list and mode cards are hidden; "Draf saya" reopens them. Desktop unchanged. | `src/editor/main.tsx` |
+| Tests | 5g: issue mapping (messages, stable activity id), step lists per mode, exactly one visible step (mutation: showing all steps fails it). | `tests/web/editor.test.ts` |
+| Browser scripts | Steps are navigated by their text before touching fields in a hidden step: `verify-e2e` (closing note), `verify-ai-ui` (summary, plan, place and title steps; phone draft list opened first). `verify-ai-ui` `save()` no longer waits for the Publish button to be enabled (it is now correctly locked while required fields are empty). | `scripts/web/verify-ai-ui.ts`, `scripts/web/verify-e2e.ts` |
+
+### Deviations from plan S3 and S4 (not done)
+
+1. **Sidebar not removed.** The plan asked for a home view (mode cards, drafts, profile) separate from the editor. On desktop the sidebar stays; on phones it is hidden while a draft is open. A full home view is follow-up work.
+2. **No field-level red borders and no touched-on-blur tracking.** Red messages appear as a list for the current step after Lanjut or when opening the publish step, and a step is never blocked from being viewed. Per-field `aria-invalid` and blur tracking are follow-up work.
+3. **"Tunjukkan" button** (focus first issue) is not added; each listed issue is itself a button that focuses it.
+4. **Screenshots** of Info trip / Jadwal / Info praktis / Preview & publish per mode at 390 and 1280 were not produced; one 390 screenshot of the missing-field state was opened and described (`output/web-editor/cp035-s4-validation-390.png`).
+
+### Flake found and not fixed
+
+`verify:web-publication` failed once (waiting for "Itinerary berhasil dipublish" after "Publish ulang" right after Simpan), passed on two reruns. It is a timing race in the existing script; not caused by CP035 but it is now more visible. Follow-up: wait for the Publish button to be enabled before clicking.
+
+### Gate S3+S4
+
+| Command | Result |
+|---|---|
+| `build:web-app`, `build:web-release`, `validate:web-release` | rc 0; validate: `valid`, 40 files |
+| `typecheck:web-app`, `typecheck:web-contracts`, `typecheck:web-server`, `check:web-types` | rc 0 each |
+| `test:web-contracts` / `store` / `api` / `ai` / `render` / `editor` / `preview` / `publication` | 43 / 12 / 13 / 28 / 14 / 31 / 12 / 12, 0 fail |
+| `verify:web-editor`, `-preview`, `-publication`, `-ai-ui`, `-e2e`, `-publish-retry`, `-render` | rc 0 each (final run) |
+
+### Screenshot opened (S4)
+
+`output/web-editor/cp035-s4-validation-390.png`: step bar with "1. Info trip · 3 wajib", "Langkah 1 dari 9", a red list "Lengkapi isian berikut" with the three missing fields (Negara, Destinasi, Judul perjalanan), then the form and Kembali / Lanjut at the bottom. No overflow.

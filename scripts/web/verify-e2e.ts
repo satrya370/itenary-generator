@@ -207,6 +207,7 @@ async function main() {
     assert.equal((await page.evaluate(async id => await (await fetch(`/api/v1/itineraries/${id}/publication`)).json(), recordId)).shareUrl, shareUrl);
     progress.restartPersistence = true;
     stage = 'edit-after-publish';
+    await page.evaluate(() => [...document.querySelectorAll('button')].find(button => button.textContent?.includes('Ketentuan & penutup'))?.click());
     await page.locator('[data-field-path="closingNote"]').fill('A revised local closing note after the original publication.');
     stage = 'save-republished-draft';
     await clickButton(page, 'Simpan draft'); await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Tersimpan · revisi'));

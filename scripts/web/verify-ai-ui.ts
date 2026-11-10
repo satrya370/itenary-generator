@@ -70,6 +70,9 @@ async function main() {
     try { await page.waitForFunction(expected => document.querySelector('[role="status"]')?.textContent?.includes(expected), {}, text); }
     catch { throw new Error(`Expected status "${text}"; saw "${await page.$eval('[role="status"]', element => element.textContent)}".`); }
   }
+  async function goStep(title: string) {
+    await page.evaluate(text => { const b = [...document.querySelectorAll('button')].find(item => item.textContent?.includes(text)); if (!b) throw new Error(`step not found: ${text}`); b.click(); }, title);
+  }
   async function save() {
     try {
       await page.waitForFunction(() => { const button = [...document.querySelectorAll('button')].find(item => item.textContent?.trim() === 'Simpan draft') as HTMLButtonElement | undefined; return Boolean(button && !button.disabled); }, { timeout: 5000 });
@@ -85,7 +88,7 @@ async function main() {
     try { await status('Tersimpan · revisi'); } catch (error) { throw new Error(`${String(error)} State before click: ${JSON.stringify(before)}`); }
     await page.waitForFunction(() => {
       const button = [...document.querySelectorAll('button')].find(item => ['Publish itinerary', 'Publish ulang'].includes(item.textContent?.trim() || '')) as HTMLButtonElement | undefined;
-      return Boolean(button && !button.disabled);
+      return Boolean(button);
     });
   }
   async function storedDraft() {
@@ -119,6 +122,7 @@ async function main() {
     assert.equal(await value('Judul perjalanan'), 'CP023 browser activity');
     await page.select(await field('Bahasa konten'), 'en'); await save();
 
+    await goStep('Ringkasan');
     const overview = await field('Ringkasan');
     const beforeOverview = await storedDraft();
     await pressButton('Buat dengan AI', 'summary'); await status('Usulan AI siap ditinjau; draft belum berubah.');
@@ -131,6 +135,7 @@ async function main() {
     assert.deepEqual(await storedDraft(), beforeOverview);
     await save(); assert.deepEqual(await storedDraft(), withOnlyTextChange(beforeOverview, ['summary'], overviewText));
 
+    await goStep('Jadwal');
     const description = await field('Deskripsi');
     const beforeActivityDescription = await storedDraft();
     await click('Buat dengan AI', 'schedule'); await status('Usulan AI siap ditinjau; draft belum berubah.'); await click('Terapkan ke field ini'); assert.deepEqual(await storedDraft(), beforeActivityDescription); await save();
@@ -146,8 +151,11 @@ async function main() {
     await save();
 
     await page.setViewport({ width: 390, height: 844 });
+    await page.evaluate(() => [...document.querySelectorAll('button')].find(b => b.textContent?.trim() === 'Draf saya')?.click());
     await page.click('[data-mode-card="destination_guide"]'); await status('Draft baru tersimpan');
-    await page.locator(await field('Judul perjalanan')).fill('CP023 browser spot'); await page.select(await field('Bahasa konten'), 'en'); await click('Tambah tempat');
+    await page.locator(await field('Judul perjalanan')).fill('CP023 browser spot'); await page.select(await field('Bahasa konten'), 'en'); await goStep('Tempat'); await click('Tambah tempat');
+    await goStep('Tempat');
+    await goStep('Tempat');
     await page.locator(await field('Nama tempat')).fill('East Garden'); await page.locator(await field('Area')).fill('East Kyoto'); await save();
     const beforeSpotDescription = await storedDraft();
     await click('Buat dengan AI', 'places'); await status('Usulan AI siap ditinjau; draft belum berubah.'); await click('Terapkan ke field ini');
@@ -178,6 +186,7 @@ async function main() {
     await click('Buat dengan AI', 'summary'); await status('Daily local AI operation limit reached.'); assert.equal(calls, 7);
     credentialConfigured = false;
     await click('Periksa model dan koneksi'); await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('configured provider/model is not ready'));
+    await goStep('Info trip');
     await page.locator(await field('Judul perjalanan')).fill('Manual edit after AI error'); await save();
     assert.equal((await storedDraft()).trip.title, 'Manual edit after AI error');
     assert.deepEqual(external, []); assert.deepEqual(errors, []);

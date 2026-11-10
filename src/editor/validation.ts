@@ -1,0 +1,55 @@
+import type { ItineraryMode, WebItineraryContent } from '../contracts/types.js';
+import { validateForPublish } from '../contracts/validator.js';
+
+export type StepId = 'info' | 'time' | 'guide' | 'summary' | 'plan' | 'practical' | 'terms' | 'ai' | 'publish';
+
+export interface PublishIssue { key: string; path: string; step: StepId; message: string }
+
+const messages: Record<string, string> = {
+  PUBLISH_FIELD_REQUIRED: 'Wajib diisi sebelum publish.',
+  SINGLE_DAY_REQUIRED: 'Itinerary ini harus punya tepat satu hari.',
+  MULTI_DAY_COUNT_INVALID: 'Itinerary beberapa hari perlu 2–14 hari.',
+  PLACES_REQUIRED: 'Tambahkan minimal satu tempat.',
+  EMPTY_DAY: 'Setiap hari perlu minimal satu aktivitas.',
+  ACTIVITY_ORDER: 'Urutkan jam aktivitas dari yang paling awal.',
+  DURATION_CAP_EXCEEDED: 'Total durasi melebihi batas untuk tipe ini.',
+  TIME_RANGE_INVALID: 'Jam selesai harus setelah jam mulai.',
+  PHOTO_ATTRIBUTION_REQUIRED: 'Isi nama fotografer untuk foto ini.'
+};
+
+export function stepFor(path: string): StepId {
+  if (/^trip\.(title|destination|country|region|language|colorTheme|startDate|mode)/.test(path)) return 'info';
+  if (/^(trip\.(startTime|endTime)|meeting|pickup)/.test(path)) return 'time';
+  if (/^(guide|cover)/.test(path)) return 'guide';
+  if (/^summary/.test(path)) return 'summary';
+  if (/^(days|places)/.test(path)) return 'plan';
+  if (/^(included|notIncluded|whatToBring|notSuitableFor|notAllowed|localTips|emergencyContacts)/.test(path)) return 'practical';
+  if (/^(policies|closingNote|disclaimer)/.test(path)) return 'terms';
+  return 'info';
+}
+
+export function stepsFor(mode: ItineraryMode): StepId[] {
+  const base: StepId[] = ['info'];
+  if (mode !== 'destination_guide') base.push('time');
+  base.push('guide', 'summary', 'plan', 'practical', 'terms', 'ai', 'publish');
+  return base;
+}
+
+function keyFor(content: WebItineraryContent, path: string): string {
+  const day = /^days\[(\d+)\]\.activities\[(\d+)\]/.exec(path);
+  if (day) return `${content.days[Number(day[1])]?.activities[Number(day[2])]?.id ?? ''}|${path.replace(/\[\d+\]/g, '[]')}`;
+  const dayOnly = /^days\[(\d+)\]/.exec(path);
+  if (dayOnly) return `${content.days[Number(dayOnly[1])]?.id ?? ''}|${path.replace(/\[\d+\]/g, '[]')}`;
+  const place = /^places\[(\d+)\]/.exec(path);
+  if (place) return `${content.places[Number(place[1])]?.id ?? ''}|${path.replace(/\[\d+\]/g, '[]')}`;
+  return `|${path.replace(/\[\d+\]/g, '[]')}`;
+}
+
+export function publishIssues(content: WebItineraryContent): PublishIssue[] {
+  return validateForPublish(content).errors.map((error) => ({
+    key: keyFor(content, error.path),
+    path: error.path,
+    step: stepFor(error.path),
+    message: messages[error.code] ?? error.message
+  }));
+}

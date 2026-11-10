@@ -244,6 +244,28 @@ test('5f. policy options add and remove exact lines and leave other text alone',
   assert.deepEqual(policyLines(null), []);
 });
 
+test('5g. publish issues map to Indonesian messages, wizard steps per mode, and one visible step at a time', async () => {
+  const { publishIssues, stepsFor, stepFor } = await import('../../src/editor/validation.js');
+  const empty = createContentV2('full_day');
+  empty.trip.title = ''; empty.trip.language = null; empty.days[0].activities[0].title = '';
+  const issues = publishIssues(empty);
+  const titleIssue = issues.find((issue) => issue.path === 'trip.title');
+  assert.ok(titleIssue, 'title is required before publish');
+  assert.equal(titleIssue!.step, 'info');
+  assert.equal(titleIssue!.message, 'Wajib diisi sebelum publish.');
+  const activityIssue = issues.find((issue) => issue.path === 'days[0].activities[0].title');
+  assert.equal(activityIssue!.key.split('|')[0], empty.days[0].activities[0].id, 'activity issues carry the stable activity id');
+  assert.equal(stepFor('places[1].name'), 'plan');
+  assert.equal(stepFor('emergencyContacts[0].value'), 'practical');
+  assert.deepEqual(stepsFor('destination_guide'), ['info', 'guide', 'summary', 'plan', 'practical', 'terms', 'ai', 'publish']);
+  assert.ok(stepsFor('full_day').includes('time'));
+  assert.deepEqual(publishIssues(createContentV2('full_day')), [], 'a complete fixture has no issues');
+  const html = renderToStaticMarkup(React.createElement(EditorForm, { ...editorProps('full_day', createContentV2('full_day')), activeStep: 'summary' }));
+  const visible = [...html.matchAll(/<div data-step="([a-z]+)"( hidden="")?/g)].filter((match) => !match[2]).map((match) => match[1]);
+  assert.deepEqual(visible, ['summary'], 'only the active step is visible');
+  assert.ok(html.includes('data-step="info" hidden=""'), 'hidden steps stay mounted');
+});
+
 test('6. reordering keeps stable IDs and does not mutate the input', () => {
   const rows = [makeActivity(), makeActivity(), makeActivity()];
   const ids = rows.map((row) => row.id);
