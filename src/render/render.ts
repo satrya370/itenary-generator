@@ -328,7 +328,7 @@ function renderGuide(places: Place[], options: RenderOptions, catalog: { labels:
 function renderPractical(content: ItineraryV2, catalog: { labels: Record<string, string> }): string {
   const groups: Array<[string, string[]]> = [
     ['included', content.included], ['notIncluded', content.notIncluded],
-    ['whatToBring', content.whatToBring], ['healthSafety', content.healthSafety],
+    ['whatToBring', content.whatToBring], ['notSuitableFor', content.notSuitableFor], ['notAllowed', content.notAllowed],
     ...content.localTips.length ? [['localTip', content.localTips]] : [],
     ...content.emergencyContacts.length ? [['emergencyContact', content.emergencyContacts.map((c) => `${c.label}: ${c.value}`)]] : []
   ].filter(([, values]) => values.length) as Array<[string, string[]]>;

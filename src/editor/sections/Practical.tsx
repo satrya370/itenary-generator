@@ -13,7 +13,8 @@ export function Practical(props: EditorProps) {
         <TextList id={`${recordId}-not-included`} meta={meta('notIncluded[]', mode)} values={content.notIncluded} onChange={(values) => patch((n) => { n.notIncluded = values; })} />
         <TextList id={`${recordId}-what-to-bring`} meta={meta('whatToBring[]', mode)} values={content.whatToBring} onChange={(values) => patch((n) => { n.whatToBring = values; })} />
         <TextList id={`${recordId}-local-tips`} meta={meta('localTips[]', mode)} values={content.localTips} onChange={(values) => patch((n) => { n.localTips = values; })} />
-        <TextList id={`${recordId}-health-safety`} meta={meta('healthSafety[]', mode)} values={content.healthSafety} onChange={(values) => patch((n) => { n.healthSafety = values; })} />
+        <TextList id={`${recordId}-not-suitable`} meta={meta('notSuitableFor[]', mode)} values={content.notSuitableFor} onChange={(values) => patch((n) => { n.notSuitableFor = values; })} />
+        <TextList id={`${recordId}-not-allowed`} meta={meta('notAllowed[]', mode)} values={content.notAllowed} onChange={(values) => patch((n) => { n.notAllowed = values; })} />
         <fieldset className="space-y-3 rounded-lg border border-slate-200 p-3">
           <legend className="px-1 text-sm font-semibold">{meta('emergencyContacts[].label', mode).label}</legend>
           {content.emergencyContacts.map((contact, index) => (

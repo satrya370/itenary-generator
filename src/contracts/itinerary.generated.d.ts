@@ -1,10 +1,10 @@
 /* Generated from config/web/itinerary.schema.json. Do not edit by hand. */
 
 /**
- * Canonical guide-centric itinerary content (web-2.0.0). Publish-only requirements and mode applicability are defined by the field registry and validators.
+ * Canonical guide-centric itinerary content (web-2.1.0). Publish-only requirements and mode applicability are defined by the field registry and validators.
  */
 export interface StandaloneItineraryContent {
-  schemaVersion: "web-2.0.0";
+  schemaVersion: "web-2.1.0";
   trip: Trip;
   guide: Guide;
   meeting: Meeting;
@@ -27,15 +27,19 @@ export interface StandaloneItineraryContent {
   /**
    * @maxItems 50
    */
+  notSuitableFor: string[];
+  /**
+   * @maxItems 50
+   */
+  notAllowed: string[];
+  /**
+   * @maxItems 50
+   */
   whatToBring: string[];
   /**
    * @maxItems 50
    */
   localTips: string[];
-  /**
-   * @maxItems 50
-   */
-  healthSafety: string[];
   /**
    * @maxItems 30
    */

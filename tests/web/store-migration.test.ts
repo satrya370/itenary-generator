@@ -10,6 +10,7 @@ import { createApp } from '../../src/server/app.js';
 import { upgradeV1ToV2 } from '../../src/contracts/upgrade-v1.js';
 import { MIGRATIONS, openStore, runMigrations, type Migration } from '../../src/server/store.js';
 import { createContent as createContentV1, ids as idsV1 } from './fixtures.js';
+import { createContentV2 } from './fixtures-v2.js';
 
 const PROFILE = { agencyName: 'Sample Travel Studio', agencyContact: 'guide@example.test', agencyLogoAssetId: null };
 const LANGUAGE = { requestedLanguage: 'en', outputLanguage: 'en', source: 'explicit' };
@@ -44,10 +45,10 @@ function versionsOf(db: DatabaseSync) {
 test('a fresh data root applies every migration once, creates no backup, and reopening is a no-op', async (t) => {
   const dataDir = await tempDir(t);
   const first = openStore({ dataDir });
-  assert.deepEqual(versionsOf(first.db), [1, 2, 3]);
+  assert.deepEqual(versionsOf(first.db), [1, 2, 3, 4]);
   first.close();
   const second = openStore({ dataDir });
-  assert.deepEqual(versionsOf(second.db), [1, 2, 3]);
+  assert.deepEqual(versionsOf(second.db), [1, 2, 3, 4]);
   second.close();
   assert.equal(existsSync(path.join(dataDir, 'backups')), false);
 });
@@ -90,13 +91,13 @@ test('migration 3 upgrades v1 drafts in place, keeps revisions/timestamps/IDs, s
   db.close();
 
   const store = openStore({ dataDir });
-  assert.deepEqual(versionsOf(store.db), [1, 2, 3]);
+  assert.deepEqual(versionsOf(store.db), [1, 2, 3, 4]);
   const upgraded = store.db.prepare('SELECT * FROM itineraries ORDER BY id').all() as any[];
   assert.equal(upgraded.length, 3);
   for (const row of upgraded) {
-    assert.equal(row.schema_version, 'web-2.0.0');
+    assert.equal(row.schema_version, 'web-2.1.0');
     const draft = JSON.parse(row.draft_json);
-    assert.equal(draft.schemaVersion, 'web-2.0.0');
+    assert.equal(draft.schemaVersion, 'web-2.1.0');
     assert.equal(validateDraft(draft).ok, true, `${row.id}: ${JSON.stringify(validateDraft(draft).errors)}`);
   }
   for (const [idx, row] of upgraded.entries()) {
@@ -166,8 +167,8 @@ test('a draft that cannot be upgraded rolls migration 3 back, refuses to start, 
   const backupPath = path.join(dataDir, 'backups', 'pre-migration-3.sqlite');
   assert.equal(existsSync(backupPath), true);
   const store = openStore({ dataDir });
-  assert.deepEqual(versionsOf(store.db), [1, 2, 3]);
-  assert.equal((store.db.prepare('SELECT schema_version FROM itineraries').get() as any).schema_version, 'web-2.0.0');
+  assert.deepEqual(versionsOf(store.db), [1, 2, 3, 4]);
+  assert.equal((store.db.prepare('SELECT schema_version FROM itineraries').get() as any).schema_version, 'web-2.1.0');
   store.close();
   const backup = new DatabaseSync(backupPath, { readOnly: true });
   assert.equal(Number((backup.prepare("SELECT count(*) AS count FROM itineraries WHERE id='it-corrupt'").get() as any).count), 1, 'the first backup is not overwritten');
@@ -181,7 +182,7 @@ test('an upgraded draft that fails v2 validation is reported by itinerary and er
   oversized.schedule = Array.from({ length: 15 }, (_, index) => ({ ...structuredClone(createContentV1('full_day').schedule[0]), id: `10000000-0000-5000-8000-${String(index + 1).padStart(12, '0')}`, dayStart: 1, dayEnd: 1, activities: [] }));
   insertV1(db, 'it-too-many-days', oversized);
   db.close();
-  assert.throws(() => openStore({ dataDir }), /itinerary it-too-many-days cannot be upgraded to web-2\.0\.0: SCHEMA_VALIDATION_FAILED@days/);
+  assert.throws(() => openStore({ dataDir }), /itinerary it-too-many-days cannot be upgraded to web-2\.1\.0: SCHEMA_VALIDATION_FAILED@days/);
   const after = new DatabaseSync(path.join(dataDir, 'engine.sqlite'));
   assert.equal((after.prepare('SELECT schema_version FROM itineraries').get() as any).schema_version, 'web-1.0.0');
   after.close();
@@ -190,11 +191,11 @@ test('an upgraded draft that fails v2 validation is reported by itinerary and er
 test('saving writes the schema version carried by the content', async (t) => {
   const dataDir = await tempDir(t);
   const store = openStore({ dataDir });
-  const created = store.createItinerary({ schemaVersion: 'web-2.0.0', marker: 'created' }, LANGUAGE, WRITING);
-  assert.equal(created.schemaVersion, 'web-2.0.0');
+  const created = store.createItinerary({ schemaVersion: 'web-2.1.0', marker: 'created' }, LANGUAGE, WRITING);
+  assert.equal(created.schemaVersion, 'web-2.1.0');
   store.db.prepare("UPDATE itineraries SET schema_version='web-1.0.0' WHERE id=?").run(created.id);
-  const updated = store.updateItinerary(created.id, 1, { schemaVersion: 'web-2.0.0', marker: 'updated' }, LANGUAGE, WRITING);
-  assert.equal(updated!.schemaVersion, 'web-2.0.0');
+  const updated = store.updateItinerary(created.id, 1, { schemaVersion: 'web-2.1.0', marker: 'updated' }, LANGUAGE, WRITING);
+  assert.equal(updated!.schemaVersion, 'web-2.1.0');
   assert.equal(updated!.revision, 2);
   store.close();
 });
@@ -271,4 +272,25 @@ test('a failing startup closes the store so the data root can be deleted', async
   await assert.rejects(createApp(options), /provider boom/);
   await rm(path.join(dataDir, 'engine.sqlite'));
   assert.equal(existsSync(path.join(dataDir, 'engine.sqlite')), false);
+});
+
+test('migration 4 upgrades stored web-2.0.0 drafts once: healthSafety becomes localTips, revision unchanged, backup written', async (t) => {
+  const dataDir = await tempDir(t);
+  const db = openLegacy(dataDir);
+  runMigrations(db, { dataDir }, MIGRATIONS.slice(0, 3));
+  const draft = { ...createContentV2('full_day', 'en'), schemaVersion: 'web-2.0.0' } as any;
+  delete draft.notSuitableFor; delete draft.notAllowed;
+  draft.healthSafety = ['Carry water'];
+  db.prepare("INSERT INTO itineraries(id,workspace_id,schema_version,revision,draft_json,language_json,writing_json,created_at,updated_at) VALUES(?,?,'web-2.0.0',7,?,?,?,?,?)")
+    .run('itin-20', 'ws-1', JSON.stringify(draft), JSON.stringify(LANGUAGE), JSON.stringify(WRITING), '2026-10-07T00:30:00.000Z', '2026-10-07T01:00:00.000Z');
+  runMigrations(db, { dataDir }, MIGRATIONS);
+  const row = db.prepare('SELECT schema_version, revision, draft_json FROM itineraries WHERE id=?').get('itin-20') as { schema_version: string; revision: number; draft_json: string };
+  assert.equal(row.schema_version, 'web-2.1.0');
+  assert.equal(row.revision, 7, 'revision is not bumped by a migration');
+  const upgraded = JSON.parse(row.draft_json);
+  assert.equal(upgraded.schemaVersion, 'web-2.1.0');
+  assert.equal('healthSafety' in upgraded, false);
+  assert.ok(upgraded.localTips.includes('Carry water'));
+  assert.ok(existsSync(path.join(dataDir, 'backups', 'pre-migration-4.sqlite')), 'backup written before the change');
+  db.close();
 });

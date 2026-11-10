@@ -92,7 +92,7 @@ test('all four trip modes satisfy the versioned structural and publish contracts
 test('blank drafts per mode are valid drafts with mode-correct shape and fail publish with concrete errors', () => {
   for (const mode of MODES) {
     const blank = createBlankDraft(mode, {});
-    assert.equal(blank.schemaVersion, 'web-2.0.0');
+    assert.equal(blank.schemaVersion, 'web-2.1.0');
     assert.equal(validateDraft(blank).ok, true, mode);
     assert.equal(validateForPublish(blank).ok, false, mode);
     assert.ok(codes(validateForPublish(blank).errors).includes('PUBLISH_FIELD_REQUIRED'), mode);
@@ -384,7 +384,7 @@ test('every v1 fixture mode upgrades to a valid v2 draft, preserving stable IDs 
     assert.deepEqual(v1, before, `${mode} input must not be mutated`);
     const checked = validateDraft(upgraded.value);
     assert.equal(checked.ok, true, `${mode}: ${JSON.stringify(checked.errors)}`);
-    assert.equal(upgraded.value.schemaVersion, 'web-2.0.0');
+    assert.equal(upgraded.value.schemaVersion, 'web-2.1.0');
     assert.equal(upgraded.value.trip.mode, mode);
     assert.equal(upgraded.value.trip.title, 'Ubud in a day');
     assert.equal(upgraded.value.trip.colorTheme, 'cultural');
@@ -618,7 +618,7 @@ test('v1 maximum field sizes carry over without truncation so migration cannot f
   const v1: any = createContentV1('destination_guide', 'en');
   Object.assign(v1.spots[0], { description: 'd'.repeat(6000), suggestedDuration: 's'.repeat(120), bestTimeToVisit: 'b'.repeat(240), nearbyPairing: 'n'.repeat(500), gettingThere: 'g'.repeat(1000), tips: Array.from({ length: 20 }, () => 't'.repeat(1000)) });
   v1.practical = {
-    included: Array.from({ length: 50 }, () => 'i'.repeat(500)), notIncluded: [], whatToBring: [], healthSafety: Array.from({ length: 50 }, () => 'h'.repeat(500)),
+    included: Array.from({ length: 50 }, () => 'i'.repeat(500)), notIncluded: [], whatToBring: [], notSuitableFor: Array.from({ length: 50 }, () => 'h'.repeat(500)), notAllowed: [],
     localTips: Array.from({ length: 50 }, () => ({ topic: 'p'.repeat(120), note: 'q'.repeat(1000) })),
     emergencyContacts: Array.from({ length: 30 }, () => ({ label: 'l'.repeat(120), value: 'v'.repeat(240) }))
   };
@@ -637,7 +637,7 @@ test('upgrade never throws, even on garbage input', () => {
   for (const input of [null, undefined, 'text', 7, [], {}, { brochure: 'x', schedule: 'y', spots: 3 }]) {
     let result: any;
     assert.doesNotThrow(() => { result = upgradeV1ToV2(input); }, JSON.stringify(input));
-    assert.equal(result.value.schemaVersion, 'web-2.0.0');
+    assert.equal(result.value.schemaVersion, 'web-2.1.0');
     assert.ok(Array.isArray(result.warnings));
   }
 });
@@ -704,4 +704,17 @@ test('legacy contact and theme conflicts are reported instead of silently droppe
 
   const untouched = adaptLegacyDocument(legacyFixture);
   assert.equal(untouched.diagnostics.some((diagnostic) => diagnostic.code === 'LEGACY_CONTACT_CONFLICT'), false);
+});
+
+test('v1 healthSafety moves into localTips and the v2.1 lists start empty', () => {
+  const source: any = createContentV1('full_day', 'en');
+  source.practical.healthSafety = ['Carry water', 'Carry water', 'Sun protection'];
+  source.practical.localTips = [{ topic: 'Tip', note: 'Pay in cash' }];
+  const result = upgradeV1ToV2(source);
+  assert.equal(result.value.schemaVersion, 'web-2.1.0');
+  assert.deepEqual(result.value.notSuitableFor, []);
+  assert.deepEqual(result.value.notAllowed, []);
+  assert.deepEqual(result.value.localTips, ['Tip: Pay in cash', 'Carry water', 'Sun protection']);
+  assert.equal('healthSafety' in result.value, false);
+  assert.deepEqual(validateDraft(result.value).errors, []);
 });

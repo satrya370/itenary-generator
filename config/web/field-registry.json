@@ -1,5 +1,5 @@
 {
-  "registryVersion": "web-2.0.0",
+  "registryVersion": "web-2.1.0",
   "schema": "./itinerary.schema.json",
   "constraintsSource": "itinerary.schema.json",
   "displayLabelKeys": [
@@ -388,15 +388,6 @@
       "renderTarget": "info.guide"
     },
     {
-      "path": "healthSafety[]",
-      "labelKey": "healthSafety",
-      "control": "repeater",
-      "source": "manual",
-      "modes": "all",
-      "requiredOnPublish": false,
-      "renderTarget": "practical.healthSafety"
-    },
-    {
       "path": "included[]",
       "labelKey": "included",
       "control": "repeater",
@@ -407,7 +398,7 @@
     },
     {
       "path": "localTips[]",
-      "labelKey": "localTip",
+      "labelKey": "knowBeforeYouGo",
       "control": "repeater",
       "source": "manual",
       "modes": "all",
@@ -458,6 +449,24 @@
       "modes": "all",
       "requiredOnPublish": false,
       "renderTarget": "practical.notIncluded"
+    },
+    {
+      "path": "notSuitableFor[]",
+      "labelKey": "notSuitableFor",
+      "control": "repeater",
+      "source": "manual",
+      "modes": "all",
+      "requiredOnPublish": false,
+      "renderTarget": "practical.notSuitableFor"
+    },
+    {
+      "path": "notAllowed[]",
+      "labelKey": "notAllowed",
+      "control": "repeater",
+      "source": "manual",
+      "modes": "all",
+      "requiredOnPublish": false,
+      "renderTarget": "practical.notAllowed"
     },
     {
       "path": "pickup.area",

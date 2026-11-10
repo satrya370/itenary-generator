@@ -36,7 +36,7 @@ function dayV2(mode: ItineraryMode, n: number): Day {
 export function createContentV2(mode: ItineraryMode = 'full_day', locale = 'en'): WebItineraryContent {
   const scheduled = mode !== 'destination_guide';
   return {
-    schemaVersion: 'web-2.0.0',
+    schemaVersion: 'web-2.1.0',
     trip: {
       mode, title: 'Ubud in a day', destination: 'Ubud', country: 'Indonesia', region: 'Bali', language: locale, colorTheme: 'cultural',
       startDate: scheduled ? '2026-12-01' : null, startTime: mode === 'half_day' || mode === 'full_day' ? '08:00' : null,
@@ -49,7 +49,7 @@ export function createContentV2(mode: ItineraryMode = 'full_day', locale = 'en')
     summary: 'Explore the landscape and culture at an unhurried pace.',
     days: scheduled ? (mode === 'multi_day' ? [dayV2(mode, 1), dayV2(mode, 2)] : [dayV2(mode, 1)]) : [],
     places: scheduled ? [] : [placeV2(1), placeV2(2)],
-    included: ['Local guide'], notIncluded: [], whatToBring: ['Water'], localTips: ['Carry small change.'], healthSafety: [],
+    included: ['Local guide'], notIncluded: [], whatToBring: ['Water'], localTips: ['Carry small change.'], notSuitableFor: [], notAllowed: [],
     emergencyContacts: [{ label: 'Guide', value: '+62-000-0000' }],
     policies: null, closingNote: 'Enjoy your journey.', disclaimer: 'Visit times are suggestions.'
   };

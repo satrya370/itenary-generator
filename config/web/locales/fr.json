@@ -61,7 +61,6 @@
     "included": "Inclus",
     "notIncluded": "Non inclus",
     "whatToBring": "À emporter",
-    "healthSafety": "Santé et sécurité",
     "emergencyContact": "Contact d’urgence",
     "contactValue": "Numéro ou lien",
     "closingNote": "Mot de fin",
@@ -120,6 +119,9 @@
     "placeGroup": "Groupe de lieux",
     "bestTime": "Meilleur moment",
     "nearby": "À proximité",
-    "dayRange": "Jours {start}–{end}"
+    "dayRange": "Jours {start}–{end}",
+    "notSuitableFor": "Ne convient pas à",
+    "notAllowed": "Non autorisé",
+    "knowBeforeYouGo": "À savoir avant de partir"
   }
 }

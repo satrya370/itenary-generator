@@ -61,7 +61,6 @@
     "included": "包含项目",
     "notIncluded": "不包含项目",
     "whatToBring": "建议携带",
-    "healthSafety": "健康与安全",
     "emergencyContact": "紧急联系人",
     "contactValue": "电话号码或链接",
     "closingNote": "结束寄语",
@@ -120,6 +119,9 @@
     "placeGroup": "地点分组",
     "bestTime": "最佳时间",
     "nearby": "附近",
-    "dayRange": "第{start}–{end}天"
+    "dayRange": "第{start}–{end}天",
+    "notSuitableFor": "不适合人群",
+    "notAllowed": "禁止事项",
+    "knowBeforeYouGo": "出行须知"
   }
 }

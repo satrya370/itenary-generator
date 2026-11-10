@@ -124,7 +124,8 @@ function contentDiagnostics(content: WebItineraryContent): ContractDiagnostic[] 
     ...content.included.map((value, i) => [`included[${i}]`, value] as [string, unknown]),
     ...content.notIncluded.map((value, i) => [`notIncluded[${i}]`, value] as [string, unknown]),
     ...content.whatToBring.map((value, i) => [`whatToBring[${i}]`, value] as [string, unknown]),
-    ...content.healthSafety.map((value, i) => [`healthSafety[${i}]`, value] as [string, unknown]),
+    ...content.notSuitableFor.map((value, i) => [`notSuitableFor[${i}]`, value] as [string, unknown]),
+    ...content.notAllowed.map((value, i) => [`notAllowed[${i}]`, value] as [string, unknown]),
     ...content.localTips.map((value, i) => [`localTips[${i}]`, value] as [string, unknown]),
     ...content.emergencyContacts.map((item, i) => [`emergencyContacts[${i}]`, [item.label, item.value]] as [string, unknown]),
     ['policies', content.policies], ['closingNote', content.closingNote], ['disclaimer', content.disclaimer]

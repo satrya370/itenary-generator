@@ -3,8 +3,8 @@ import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { AI_SCHEMA_DDL, recoverInterruptedAiOperations } from './ai/schema.js';
-import { LEGACY_SCHEMA_VERSION, SCHEMA_VERSION } from '../contracts/types.js';
-import { upgradeV1ToV2 } from '../contracts/upgrade-v1.js';
+import { LEGACY_SCHEMA_VERSION, PREVIOUS_SCHEMA_VERSION, SCHEMA_VERSION } from '../contracts/types.js';
+import { upgradeV1ToV2, upgradeV20ToV21 } from '../contracts/upgrade-v1.js';
 import { validateDraft } from '../contracts/validator.js';
 
 export interface StoreOptions { dataDir: string; }
@@ -112,10 +112,32 @@ function upgradeDraftsToV2(db: DatabaseSync) {
   db.prepare('INSERT OR REPLACE INTO app_meta(key,value) VALUES(?,?)').run('migration3_warnings', JSON.stringify(warningCodes));
 }
 
+function backupBeforeV21Upgrade(db: DatabaseSync, { dataDir }: MigrationContext) {
+  const pending = Number((db.prepare('SELECT count(*) AS count FROM itineraries WHERE schema_version=?').get(PREVIOUS_SCHEMA_VERSION) as { count: number }).count);
+  if (!pending) return;
+  const directory = path.join(dataDir, 'backups');
+  mkdirSync(directory, { recursive: true });
+  const target = path.join(directory, 'pre-migration-4.sqlite');
+  if (existsSync(target)) return;
+  db.exec(`VACUUM INTO '${target.replaceAll("'", "''")}'`);
+}
+
+function upgradeDraftsToV21(db: DatabaseSync) {
+  const rows = db.prepare('SELECT id,draft_json FROM itineraries WHERE schema_version=?').all(PREVIOUS_SCHEMA_VERSION) as Array<{ id: string; draft_json: string }>;
+  const update = db.prepare('UPDATE itineraries SET draft_json=?, schema_version=? WHERE id=?');
+  for (const row of rows) {
+    const upgraded = upgradeV20ToV21(JSON.parse(row.draft_json));
+    const checked = validateDraft(upgraded.value);
+    if (!checked.ok) throw new Error(`itinerary ${row.id} cannot be upgraded to ${SCHEMA_VERSION}: ${checked.errors.map((e) => e.code).join(', ')}`);
+    update.run(JSON.stringify(checked.value), SCHEMA_VERSION, row.id);
+  }
+}
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: 'core-schema', up: (db) => db.exec(CORE_SCHEMA_DDL) },
   { version: 2, name: 'ai-schema', up: (db) => db.exec(AI_SCHEMA_DDL) },
-  { version: 3, name: 'guide-centric-schema-web-2.0.0', before: backupBeforeV2Upgrade, up: (db) => upgradeDraftsToV2(db) }
+  { version: 3, name: 'guide-centric-schema-web-2.0.0', before: backupBeforeV2Upgrade, up: (db) => upgradeDraftsToV2(db) },
+  { version: 4, name: 'schema-web-2.1.0-practical-lists', before: backupBeforeV21Upgrade, up: (db) => upgradeDraftsToV21(db) }
 ];
 
 export function runMigrations(db: DatabaseSync, context: MigrationContext, migrations: Migration[] = MIGRATIONS) {

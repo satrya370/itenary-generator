@@ -61,7 +61,6 @@
     "included": "含まれるもの",
     "notIncluded": "含まれないもの",
     "whatToBring": "持ち物",
-    "healthSafety": "健康と安全",
     "emergencyContact": "緊急連絡先",
     "contactValue": "電話番号またはリンク",
     "closingNote": "締めくくりのメッセージ",
@@ -120,6 +119,9 @@
     "placeGroup": "場所のグループ",
     "bestTime": "おすすめの時間",
     "nearby": "近くの場所",
-    "dayRange": "{start}–{end}日目"
+    "dayRange": "{start}–{end}日目",
+    "notSuitableFor": "ご参加いただけない方",
+    "notAllowed": "禁止事項",
+    "knowBeforeYouGo": "事前にご確認ください"
   }
 }

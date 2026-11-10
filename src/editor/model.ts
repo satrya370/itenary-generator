@@ -123,7 +123,8 @@ export function normalizeBlanks(content: WebItineraryContent): WebItineraryConte
   next.notIncluded = keepFilled(next.notIncluded);
   next.whatToBring = keepFilled(next.whatToBring);
   next.localTips = keepFilled(next.localTips);
-  next.healthSafety = keepFilled(next.healthSafety);
+  next.notSuitableFor = keepFilled(next.notSuitableFor);
+  next.notAllowed = keepFilled(next.notAllowed);
   next.emergencyContacts = next.emergencyContacts.filter((contact) => contact.label.trim() !== '' || contact.value.trim() !== '');
   for (const place of next.places) {
     place.group = blankToNull(place.group);

@@ -61,7 +61,6 @@
     "included": "Termasuk",
     "notIncluded": "Tidak termasuk",
     "whatToBring": "Yang perlu dibawa",
-    "healthSafety": "Kesehatan dan keselamatan",
     "emergencyContact": "Kontak darurat",
     "contactValue": "Nomor atau tautan",
     "closingNote": "Catatan penutup",
@@ -120,6 +119,9 @@
     "placeGroup": "Kelompok tempat",
     "bestTime": "Waktu terbaik",
     "nearby": "Tempat terdekat",
-    "dayRange": "Hari {start}–{end}"
+    "dayRange": "Hari {start}–{end}",
+    "notSuitableFor": "Tidak cocok untuk",
+    "notAllowed": "Tidak diperbolehkan",
+    "knowBeforeYouGo": "Yang perlu diketahui"
   }
 }

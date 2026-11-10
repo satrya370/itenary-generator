@@ -61,7 +61,6 @@
     "included": "Inclusa",
     "notIncluded": "Non inclusa",
     "whatToBring": "Quae ferenda sunt",
-    "healthSafety": "Salus et valetudo",
     "emergencyContact": "Contactus subitus",
     "contactValue": "Numerus vel nexus",
     "closingNote": "Nota finalis",
@@ -120,6 +119,9 @@
     "placeGroup": "Grex locorum",
     "bestTime": "Tempus optimum",
     "nearby": "Prope",
-    "dayRange": "Dies {start}–{end}"
+    "dayRange": "Dies {start}–{end}",
+    "notSuitableFor": "Non idoneum pro",
+    "notAllowed": "Non licet",
+    "knowBeforeYouGo": "Ante iter scienda"
   }
 }

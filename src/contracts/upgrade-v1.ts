@@ -258,7 +258,7 @@ export function upgradeV1ToV2(input: unknown, profile: AgencyProfile = {}): Upgr
 
   const colorTheme = (COLOR_THEMES as readonly string[]).includes(brochure.destinationType) ? brochure.destinationType : 'mixed';
   const value = {
-    schemaVersion: 'web-2.0.0',
+    schemaVersion: 'web-2.1.0',
     trip: {
       mode, title: clean(brochure.tripTitle), destination: clean(brochure.destination), country: clean(brochure.country), region: orNull(brochure.region),
       language: orNull(brochure.outputLanguage), colorTheme, startDate, startTime: null, endTime: null
@@ -273,11 +273,12 @@ export function upgradeV1ToV2(input: unknown, profile: AgencyProfile = {}): Upgr
     included: strings(practical.included),
     notIncluded: strings(practical.notIncluded),
     whatToBring: strings(practical.whatToBring),
-    localTips: list(practical.localTips).map((tip, index) => {
+    notSuitableFor: [],
+    notAllowed: [],
+    localTips: [...list(practical.localTips).map((tip, index) => {
       const { topic, note } = rec(tip);
       return fit([clean(topic), clean(note)].filter(Boolean).join(': '), 1200, `localTips[${index}]`) ?? '';
-    }).filter(Boolean),
-    healthSafety: strings(practical.healthSafety),
+    }).filter(Boolean), ...strings(practical.healthSafety).filter((item) => item.trim() !== '')].filter((item, index, all) => all.indexOf(item) === index),
     emergencyContacts: list(practical.emergencyContacts).map((contact) => ({ label: clean(rec(contact).label), value: clean(rec(contact).value) })),
     policies: null,
     closingNote: orNull(closing.closingNote),
@@ -285,4 +286,18 @@ export function upgradeV1ToV2(input: unknown, profile: AgencyProfile = {}): Upgr
   } as ItineraryV2;
 
   return { value, warnings, notes };
+}
+
+export function upgradeV20ToV21(input: unknown): { ok: boolean; value: Record<string, unknown>; warnings: Array<{ code: string; path: string; message: string }> } {
+  const doc = structuredClone(input) as Record<string, unknown> & { localTips?: unknown[]; healthSafety?: unknown[] };
+  const warnings: Array<{ code: string; path: string; message: string }> = [];
+  const existing = Array.isArray(doc.localTips) ? doc.localTips.filter((item): item is string => typeof item === 'string') : [];
+  const health = Array.isArray(doc.healthSafety) ? doc.healthSafety.filter((item): item is string => typeof item === 'string') : [];
+  doc.localTips = [...existing, ...health].filter((item, index, all) => item.trim() !== '' && all.indexOf(item) === index);
+  if (health.length) warnings.push({ code: 'HEALTH_SAFETY_MERGED', path: 'localTips', message: 'Health and safety notes were moved into "Yang perlu diketahui".' });
+  delete doc.healthSafety;
+  doc.notSuitableFor = Array.isArray(doc.notSuitableFor) ? doc.notSuitableFor : [];
+  doc.notAllowed = Array.isArray(doc.notAllowed) ? doc.notAllowed : [];
+  doc.schemaVersion = 'web-2.1.0';
+  return { ok: true, value: doc, warnings };
 }

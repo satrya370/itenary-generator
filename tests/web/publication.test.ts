@@ -167,8 +167,8 @@ test('startup recovery preserves committed artifacts and terminalizes pending op
   await writeFile(path.join(publishedDir, htmlKey), html); await writeFile(path.join(publishedDir, imageKey), image);
   const content = createContentV2('full_day', 'en');
   store.db.prepare('INSERT INTO workspaces(id,profile_json,revision,created_at,updated_at) VALUES(?,?,1,?,?)').run(foreignWorkspace, JSON.stringify({ agencyName: 'Other workspace' }), createdAt, createdAt);
-  store.db.prepare('INSERT INTO itineraries(id,workspace_id,schema_version,revision,draft_json,language_json,writing_json,created_at,updated_at) VALUES(?,?,?,1,?,?,?,?,?)').run(itineraryId, foreignWorkspace, 'web-2.0.0', JSON.stringify(content), JSON.stringify({ requestedLanguage: 'en', outputLanguage: 'en', source: 'explicit' }), JSON.stringify({ brief: '', notes: [] }), createdAt, createdAt);
-  store.db.prepare('INSERT INTO published_versions(id,workspace_id,itinerary_id,source_revision,snapshot_json,schema_version,html_key,html_sha256,og_image_key,og_image_sha256,created_at) VALUES(?,?,?,1,?,?,?,?,?,?,?)').run(versionId, foreignWorkspace, itineraryId, JSON.stringify(content), 'web-2.0.0', htmlKey, createHash('sha256').update(html).digest('hex'), imageKey, createHash('sha256').update(image).digest('hex'), createdAt);
+  store.db.prepare('INSERT INTO itineraries(id,workspace_id,schema_version,revision,draft_json,language_json,writing_json,created_at,updated_at) VALUES(?,?,?,1,?,?,?,?,?)').run(itineraryId, foreignWorkspace, 'web-2.1.0', JSON.stringify(content), JSON.stringify({ requestedLanguage: 'en', outputLanguage: 'en', source: 'explicit' }), JSON.stringify({ brief: '', notes: [] }), createdAt, createdAt);
+  store.db.prepare('INSERT INTO published_versions(id,workspace_id,itinerary_id,source_revision,snapshot_json,schema_version,html_key,html_sha256,og_image_key,og_image_sha256,created_at) VALUES(?,?,?,1,?,?,?,?,?,?,?)').run(versionId, foreignWorkspace, itineraryId, JSON.stringify(content), 'web-2.1.0', htmlKey, createHash('sha256').update(html).digest('hex'), imageKey, createHash('sha256').update(image).digest('hex'), createdAt);
   store.db.prepare('INSERT INTO share_tokens(id,workspace_id,itinerary_id,token_value,token_sha256,created_at,revoked_at) VALUES(?,?,?,?,?,?,NULL)').run(tokenId, foreignWorkspace, itineraryId, token, createHash('sha256').update(token).digest('hex'), createdAt);
   store.db.prepare('INSERT INTO publication_state(workspace_id,itinerary_id,current_version_id,active_token_id,epoch,updated_at) VALUES(?,?,?,?,0,?)').run(foreignWorkspace, itineraryId, versionId, tokenId, createdAt);
   store.db.prepare("INSERT INTO publish_operations(id,workspace_id,itinerary_id,fingerprint,status,created_at,updated_at) VALUES(?,?,?,'foreign-pending','pending',?,?)").run(operationId, foreignWorkspace, itineraryId, createdAt, createdAt);
@@ -259,7 +259,7 @@ test('an operation ID already held by another workspace is a conflict, not a ser
   const db = (f.app as any).store.db;
   const foreignWorkspace = randomUUID(); const foreignItinerary = randomUUID(); const operationId = randomUUID(); const createdAt = new Date().toISOString();
   db.prepare('INSERT INTO workspaces(id,profile_json,revision,created_at,updated_at) VALUES(?,?,1,?,?)').run(foreignWorkspace, '{}', createdAt, createdAt);
-  db.prepare('INSERT INTO itineraries(id,workspace_id,schema_version,revision,draft_json,language_json,writing_json,created_at,updated_at) VALUES(?,?,?,1,?,?,?,?,?)').run(foreignItinerary, foreignWorkspace, 'web-2.0.0', JSON.stringify(f.content), '{}', '{}', createdAt, createdAt);
+  db.prepare('INSERT INTO itineraries(id,workspace_id,schema_version,revision,draft_json,language_json,writing_json,created_at,updated_at) VALUES(?,?,?,1,?,?,?,?,?)').run(foreignItinerary, foreignWorkspace, 'web-2.1.0', JSON.stringify(f.content), '{}', '{}', createdAt, createdAt);
   db.prepare("INSERT INTO publish_operations(id,workspace_id,itinerary_id,fingerprint,status,created_at,updated_at) VALUES(?,?,?,'foreign','completed',?,?)").run(operationId, foreignWorkspace, foreignItinerary, createdAt, createdAt);
   const response = await publish(f.app, f.id, f.revision, operationId);
   assert.equal(response.statusCode, 409, response.body);
@@ -288,8 +288,8 @@ test('Open Graph tags and the stored snapshot come from the v2 trip title, summa
   assert.match(page.body, /property="og:title" content="Ubud in a day"/);
   assert.match(page.body, /property="og:description" content="Explore the landscape and culture at an unhurried pace\."/);
   const version = (f.app as any).store.db.prepare('SELECT schema_version,snapshot_json FROM published_versions').get();
-  assert.equal(version.schema_version, 'web-2.0.0');
-  assert.equal(JSON.parse(version.snapshot_json).schemaVersion, 'web-2.0.0');
+  assert.equal(version.schema_version, 'web-2.1.0');
+  assert.equal(JSON.parse(version.snapshot_json).schemaVersion, 'web-2.1.0');
 });
 
 test('publishing through the real renderer uses the workspace profile and never leaks the private writing brief', async (t) => {

@@ -38,7 +38,7 @@ function expandedDraft(mode: ItineraryMode): WebItineraryContent {
   }
   for (const place of content.places) { place.tips = ['Tip']; place.photo = photo(); }
   if (mode !== 'destination_guide') content.pickup = { offered: true, area: 'A', time: '07:00', dropoffNote: 'N' };
-  content.included = ['a']; content.notIncluded = ['b']; content.whatToBring = ['c']; content.localTips = ['d']; content.healthSafety = ['e'];
+  content.included = ['a']; content.notIncluded = ['b']; content.whatToBring = ['c']; content.localTips = ['d']; content.notSuitableFor = ['e']; content.notAllowed = ['f']; content.notSuitableFor = ['e'];
   content.emergencyContacts = [{ label: 'Polisi', value: '110' }];
   return content;
 }
@@ -161,14 +161,15 @@ test('5. model helpers normalise blanks, photos, hotels and meals', () => {
   listed.notIncluded = ['  '];
   listed.whatToBring = [];
   listed.localTips = ['', 'Carry change'];
-  listed.healthSafety = [' '];
+  listed.notSuitableFor = [' '];
+  listed.notAllowed = [];
   listed.places = [];
   listed.emergencyContacts = [{ label: '', value: '' }, { label: 'Police', value: '' }, { label: '', value: '110' }, { label: ' ', value: ' ' }];
   const tidied = normalizeBlanks(listed);
   assert.deepEqual(tidied.included, ['Local guide', ' Entrance fee '], 'kept text is not trimmed');
   assert.deepEqual(tidied.notIncluded, []);
   assert.deepEqual(tidied.localTips, ['Carry change']);
-  assert.deepEqual(tidied.healthSafety, []);
+  assert.deepEqual(tidied.notSuitableFor, []);
   assert.deepEqual(tidied.emergencyContacts, [{ label: 'Police', value: '' }, { label: '', value: '110' }], 'contacts with one side filled are kept');
   const withTips = createContentV2('destination_guide');
   withTips.places = [{ ...withTips.places[0], tips: ['  ', 'Wear shoes'] }];
