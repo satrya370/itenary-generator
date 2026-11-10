@@ -32,6 +32,8 @@
 
 **Chapter CP027–CP028 — standalone verification and deployment readiness:** structured Ask Question 2026-10-07: **Target belum diputuskan** + **Readiness saja**. Satu shared plan `plans/cp027-cp028_implementation-plan_standalone-verification-and-deployment-readiness.md`, CP027 → CP028, log masing-masing. V27-01…06 passed original-CP revisions. CP027 synthetic four-mode/six-locale E2E, publish crash and cross-workspace recovery pass; broader matrix/review remains in progress. CP028 remains pending. Scope CP028: runtime-only release tanpa PDF/browser, local Linux/TLS proxy, backup/restore/rollback dan resource report. Tidak ada AWS provisioning/spend, staging, DNS atau production deploy. Public HTTPS/WhatsApp card test tetap deferred.
 
+**Chapter CP033–CP036 — editor usability, agency setup and place autocomplete (sebelum CP030):** owner test 2026-11-10 menemukan 11 masalah (preview/bahasa, AI key, setup negara & guide, upload foto, opsi OTA, validasi merah, wizard mobile-first, Google autocomplete). Tiga putaran structured Ask Question 2026-11-10. Satu plan bersama `plans/cp033-cp036_implementation-plan_editor-usability-setup-and-places.md`; tiap CP punya completion log sendiri; berhenti untuk review setelah tiap CP.
+
 **Chapter CP030–CP032 — document and text import:** structured Ask Question 2026-11-05 (tiga putaran). Satu shared plan `plans/cp030-cp032_implementation-plan_document-and-text-import.md`, CP030 → CP031 → CP032, log masing-masing, chapter review setelah CP032. Keputusan: hasil import = draft untuk review/edit yang mengisi field canonical asli (tanpa auto-publish); format teks/DOCX/PDF ber-teks (tanpa OCR); tanpa kuota/plafon budget import tetapi biaya tiap import dicatat di ledger terpisah (tidak memakai ledger US$2/kuota 30 harian); data hilang = kosong + warning; deskripsi hanya dari dokumen; guide memilih mode sebelum import; kutipan sumber per field disimpan privat. Status: planned, belum ada eksekusi.
 
 **Revisi CP019–CP025 — guide-centric schema & editor (`web-2.0.0`), PRIORITAS:** structured Ask Question 2026-11-05 (dua putaran) setelah owner melaporkan UI berantakan, field tidak nyambung, dan mode tidak berbeda; audit read-only backend/DB mengonfirmasi cacat schema, editor dan backend. Satu shared revision plan `plans/cp019-cp025_revision-plan_guide-centric-schema-and-editor.md` dengan tahap bergerbang R1 (CP019) → R2 (CP021/CP023) → R3 (CP020) → R4 (CP024/CP025) → R5 (CP022) → R6 regression/E2E/log. Ditujukan untuk dieksekusi Claude Haiku; plan mengunci schema, mapping migrasi, teks UI dan perintah gate. Keputusan: schema + UI dirombak; tetap 4 mode (half ≤6 jam tanpa makan, full ≤12 jam dengan makan); tambah titik/jam kumpul, penjemputan, guide trip, ketentuan; hapus field turunan/duplikat, profil wisatawan, tema/jenis destinasi (diganti warna tema), sorotan/musim terbaik; tempat destination guide wajib nama+area+deskripsi; draft dimigrasi otomatis, snapshot published tetap. Chapter import CP030–CP032 menunggu revisi ini selesai dan plan import direvisi ke `web-2.0.0`.
@@ -62,7 +64,11 @@
 | CP026 | removed-pdf-export | — | removed from product scope |
 | CP027 | standalone-end-to-end-verification | CP025 | completed |
 | CP028 | standalone-deployment-readiness | CP027 | completed (standalone-ready / not deployed) |
-| CP030 | import-source-intake | CP028 + revisi `web-2.0.0` (R1–R6) selesai | pending (plan perlu revisi ke v2) |
+| CP033 | language-preview-and-ai-key-fixes | revisi `web-2.0.0` selesai | pending |
+| CP034 | agency-setup-profile-defaults-and-photo-upload | CP033 | pending |
+| CP035 | ota-practical-fields-wizard-and-validation | CP034 | pending |
+| CP036 | google-places-autocomplete | CP035 | pending |
+| CP030 | import-source-intake | CP036 + revisi `web-2.0.0` (R1–R6) selesai | pending (plan perlu revisi ke v2) |
 | CP031 | ai-structured-itinerary-extraction | CP030 | pending |
 | CP032 | import-review-editor-and-e2e | CP031 | pending |
 | CP029 | laravel-saas-integration | CP032 + kesiapan SaaS Laravel | pending (deferred — last) |
