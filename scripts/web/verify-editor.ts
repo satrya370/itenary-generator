@@ -8,6 +8,7 @@ import { createApp } from '../../src/server/app.js';
 import type { RecordDto } from '../../src/api/client.js';
 import type { ItineraryMode } from '../../src/contracts/types.js';
 import { modeCopy } from '../../src/editor/labels.js';
+import { completeSetup } from './complete-setup.js';
 
 const SCHEDULED_BASE = ['trip-info', 'time-meeting', 'trip-guide', 'cover', 'summary'];
 const TAIL = ['practical', 'closing', 'ai-assist'];
@@ -30,6 +31,7 @@ async function main() {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), 'itinerary-r5-browser-'));
   const port = await availablePort(); const origin = `http://127.0.0.1:${port}`;
   const app = await createApp({ dataDir, publicOrigin: origin, allowedOrigins: [origin] });
+  await completeSetup(app, origin);
   await app.listen({ host: '127.0.0.1', port });
   const browser = await puppeteer.launch({ headless: 'shell', args: ['--disable-background-networking', '--no-first-run'] });
   const evidenceDir = path.resolve('output/web-editor'); await mkdir(evidenceDir, { recursive: true });

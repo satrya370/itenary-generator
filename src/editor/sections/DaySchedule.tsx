@@ -8,7 +8,7 @@ export function DaySchedule(props: EditorProps) {
       <section data-editor-section="schedule" className="space-y-4">
         <h3 className="font-semibold">Jadwal</h3>
         {content.days.map((day) => (
-          <DayCard key={day.id} day={day} mode={mode} recordId={recordId} assets={assets} meta={meta} patch={patch} aiAction={props.aiAction} showHotel={false} showTransfer={false} showDayControls={false} isFirst isLast
+          <DayCard key={day.id} onUploadAsset={props.onUploadAsset} day={day} mode={mode} recordId={recordId} assets={assets} meta={meta} patch={patch} aiAction={props.aiAction} showHotel={false} showTransfer={false} showDayControls={false} isFirst isLast
             onMove={() => {}} onRemove={() => {}} />
         ))}
       </section>

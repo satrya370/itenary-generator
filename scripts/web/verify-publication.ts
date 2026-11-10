@@ -6,6 +6,7 @@ import path from 'node:path';
 import puppeteer from 'puppeteer';
 import { createApp } from '../../src/server/app.js';
 import { createContentV2 } from '../../tests/web/fixtures-v2.js';
+import { completeSetup } from './complete-setup.js';
 
 const managementHeaders = { origin: 'http://127.0.0.1:3000', 'x-engine-request': '1', 'content-type': 'application/json' };
 async function availablePort() {
@@ -20,6 +21,7 @@ async function main() {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), 'itinerary-cp025-browser-'));
   const port = await availablePort(); const origin = `http://127.0.0.1:${port}`;
   const app = await createApp({ dataDir, publicOrigin: origin, shareOrigin: origin, allowedOrigins: [origin], renderStylesheetPath: path.resolve('.runtime/web-render/brochure.css') });
+  await completeSetup(app, origin);
   await app.listen({ host: '127.0.0.1', port });
   const browser = await puppeteer.launch({ headless: 'shell', args: ['--disable-background-networking', '--no-first-run'] });
   const page = await browser.newPage(); const failures: string[] = []; const external: string[] = [];

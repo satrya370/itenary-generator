@@ -39,7 +39,7 @@ export function Places(props: EditorProps) {
                   <TextArea id={`${recordId}-place-getting-${place.id}`} meta={meta('places[].gettingThere', mode)} value={place.gettingThere} onChange={(v) => patch((n) => { const p = n.places.find((x) => x.id === place.id); if (p) p.gettingThere = blankToNull(v); })} />
                   <TextField id={`${recordId}-place-nearby-${place.id}`} meta={meta('places[].nearby', mode)} value={place.nearby} onChange={(v) => patch((n) => { const p = n.places.find((x) => x.id === place.id); if (p) p.nearby = blankToNull(v); })} />
                   <TextList id={`${recordId}-place-tips-${place.id}`} meta={meta('places[].tips[]', mode)} values={place.tips} onChange={(values) => patch((n) => { const p = n.places.find((x) => x.id === place.id); if (p) p.tips = values; })} />
-                  <PhotoField id={`${recordId}-place-photo-${place.id}`} basePath="places[].photo" mode={mode} meta={meta} photo={place.photo} assets={assets} emptyText={statusCopy.noPhoto}
+                  <PhotoField onUpload={props.onUploadAsset} id={`${recordId}-place-photo-${place.id}`} basePath="places[].photo" mode={mode} meta={meta} photo={place.photo} assets={assets} emptyText={statusCopy.noPhoto}
                     onAsset={(v) => patch((n) => { const p = n.places.find((x) => x.id === place.id); if (p) p.photo = setPhotoAsset(p.photo, v); })}
                     onCredit={(k, v) => patch((n) => { const p = n.places.find((x) => x.id === place.id); if (p) p.photo = setPhotoCredit(p.photo, k, v); })} />
                 </div>

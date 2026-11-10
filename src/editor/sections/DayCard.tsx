@@ -40,9 +40,10 @@ function ActivityList({ dayId, day, mode, recordId, assets, meta, patch, aiActio
   );
 }
 
-export function DayCard({ day, mode, recordId, assets, meta, patch, aiAction, showHotel, showTransfer, showDayControls, isFirst, isLast, onMove, onRemove }: {
+export function DayCard({ day, mode, recordId, assets, meta, patch, aiAction, showHotel, showTransfer, showDayControls, isFirst, isLast, onUploadAsset, onMove, onRemove }: {
   day: NonNullable<WebItineraryContent['days'][number]>; mode: ItineraryMode; recordId: string; assets: AssetDto[]; meta: MetaFn; patch: Patch; aiAction: AiAction;
   showHotel: boolean; showTransfer: boolean; showDayControls: boolean; isFirst: boolean; isLast: boolean;
+  onUploadAsset: (file: File) => void;
   onMove: (delta: number) => void; onRemove: () => void;
 }) {
   return (
@@ -57,7 +58,7 @@ export function DayCard({ day, mode, recordId, assets, meta, patch, aiAction, sh
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <TextField id={`${recordId}-day-title-${day.id}`} meta={meta('days[].title', mode)} value={day.title} onChange={(v) => patch((next) => { const d = next.days.find((x) => x.id === day.id); if (d) d.title = v ?? ''; })} />
         <TextField id={`${recordId}-day-location-${day.id}`} meta={meta('days[].location', mode)} value={day.location} onChange={(v) => patch((next) => { const d = next.days.find((x) => x.id === day.id); if (d) d.location = blankToNull(v); })} />
-        <PhotoField id={`${recordId}-day-photo-${day.id}`} basePath="days[].photo" mode={mode} meta={meta} photo={day.photo} assets={assets} emptyText={statusCopy.noPhoto}
+        <PhotoField onUpload={onUploadAsset} id={`${recordId}-day-photo-${day.id}`} basePath="days[].photo" mode={mode} meta={meta} photo={day.photo} assets={assets} emptyText={statusCopy.noPhoto}
           onAsset={(v) => patch((next) => { const d = next.days.find((x) => x.id === day.id); if (d) d.photo = setPhotoAsset(d.photo, v); })}
           onCredit={(k, v) => patch((next) => { const d = next.days.find((x) => x.id === day.id); if (d) d.photo = setPhotoCredit(d.photo, k, v); })} />
         {showHotel && (

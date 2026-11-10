@@ -64,6 +64,11 @@ async function main() {
     progress.serverReady = true;
     await page.setViewport({ width: 1440, height: 1000 });
     await page.goto(origin); await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Engine tersambung'));
+    await page.evaluate(async () => {
+      const current = await (await fetch('/api/v1/itinerary-engine/profile')).json();
+      const response = await fetch('/api/v1/itinerary-engine/profile', { method: 'PATCH', headers: { 'content-type': 'application/json', 'x-engine-request': '1' }, body: JSON.stringify({ expectedRevision: current.revision, profile: { agencyName: 'Verification Guide', agencyContact: 'guide@example.test', agencyLogoAssetId: null, defaultCountry: '', defaultLanguage: null, guides: [], setupCompleted: true } }) });
+      if (response.status !== 200) throw new Error(`setup not completed: ${response.status}`);
+    });
     const seedContent = createContentV2('full_day', 'fr');
     seedContent.trip.title = 'CP027 end-to-end'; seedContent.trip.destination = 'Kyoto'; seedContent.trip.country = 'Japan'; seedContent.trip.region = null;
     seedContent.summary = ''; seedContent.included = ['Local guide']; seedContent.closingNote = 'Enjoy the visit.'; seedContent.disclaimer = 'Visit times are suggestions.';

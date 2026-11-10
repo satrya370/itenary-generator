@@ -10,6 +10,7 @@ import { fieldMeta, templatePath } from './schema-meta.js';
 import { DraftList } from './sections/DraftList.js';
 import { ModePicker } from './sections/ModePicker.js';
 import { Profile, type ProfileData } from './sections/Profile.js';
+import { ProfileForm, emptyProfile, type AgencyProfile } from './sections/ProfileForm.js';
 import './style.css';
 
 type Diagnostic = { code: string; path: string; message: string; targetId?: string };
@@ -31,6 +32,8 @@ function SuggestionPanel({ proposal, canApply, onText, onApply, onDiscard }: { p
 
 function App() {
   const [profile, setProfile] = useState<ProfileData | null>(null);
+  const [view, setView] = useState<'editor' | 'settings' | 'setup'>('editor');
+  const [setupStep, setSetupStep] = useState(0);
   const [records, setRecords] = useState<Array<{ id: string; revision: number; mode: string; title: string; updatedAt: string }>>([]);
   const [assets, setAssets] = useState<AssetDto[]>([]);
   const [record, setRecord] = useState<RecordDto | null>(null);
@@ -68,6 +71,7 @@ function App() {
     const [context, nextProfile, rows, nextAssets] = await Promise.all([api.context(), api.profile(), api.list(), api.assets()]);
     setCapabilities(context.capabilities);
     if (profileGeneration.current === profileSavedGeneration.current) setProfile(nextProfile);
+    if (nextProfile?.profile && nextProfile.profile.setupCompleted !== true) setView('setup');
     setRecords(rows.items); setAssets(nextAssets.items);
   }
   useEffect(() => { refresh().then(() => setStatus('Engine tersambung')).catch(() => setStatus('Engine belum tersambung. Jalankan server lokal lalu muat ulang.')); }, []);
@@ -333,6 +337,37 @@ function App() {
     catch (e) { setStatus((e as Error).message); }
     finally { setBusy(false); }
   }
+  function agencyProfile(): AgencyProfile {
+    return { ...emptyProfile, ...(profile?.profile ?? {}) } as AgencyProfile;
+  }
+  function setAgencyProfile(next: AgencyProfile) {
+    profileGeneration.current++; setProfileDirty(true);
+    setProfile(old => old && { ...old, profile: next });
+  }
+  async function uploadAsset(file: File) {
+    setBusy(true);
+    try { const uploaded = await api.upload(file); setAssets(old => [uploaded, ...old]); setStatus(`Foto tersimpan · ${uploaded.width}×${uploaded.height}`); return uploaded; }
+    catch (caught) { setStatus((caught as Error).message); return null; }
+    finally { setBusy(false); }
+  }
+  async function uploadLogo(file: File) {
+    setBusy(true);
+    try { const uploaded = await api.upload(file); setAssets(old => [uploaded, ...old]); setAgencyProfile({ ...agencyProfile(), agencyLogoAssetId: uploaded.id }); setStatus(`Logo tersimpan · ${uploaded.width}×${uploaded.height}`); }
+    catch (caught) { setStatus((caught as Error).message); }
+    finally { setBusy(false); }
+  }
+  async function finishSetup() {
+    if (!profile) return;
+    const next = { ...agencyProfile(), setupCompleted: true };
+    setAgencyProfile(next);
+    setBusy(true);
+    try {
+      const saved = await api.saveProfile(profile.revision, next);
+      setProfile(saved); setProfileDirty(false); profileSavedGeneration.current = profileGeneration.current;
+      setView('editor'); setStatus('Setup selesai; profil tersimpan.');
+    } catch (caught) { setStatus((caught as Error & { status?: number }).status === 409 ? 'Konflik profil; muat ulang lalu selesaikan Setup.' : (caught as Error).message); }
+    finally { setBusy(false); }
+  }
   function changeProfile(key: string, value: string) {
     profileGeneration.current++; setProfileDirty(true);
     setProfile(old => old && { ...old, profile: { ...old.profile, [key]: value } });
@@ -354,10 +389,34 @@ function App() {
     </div>
   );
 
+  if (view === 'setup' || view === 'settings') {
+    const isSetup = view === 'setup';
+    const steps = ['Agensi', 'Default', 'Guide'];
+    const sectionFor = isSetup ? (['agency', 'defaults', 'guides'] as const)[setupStep] : 'all';
+    const stepBody = <ProfileForm profile={agencyProfile()} assets={assets} busy={busy} section={sectionFor} onChange={setAgencyProfile} onUpload={uploadLogo} />;
+    return <main className="mx-auto min-h-screen max-w-2xl px-4 py-8 text-slate-900">
+      <p role="status" aria-live="polite" className="text-sm text-slate-600">{status}</p>
+      <h1 className="mt-2 text-2xl font-bold">{isSetup ? 'Setup agensi' : 'Pengaturan'}</h1>
+      {isSetup && <p className="mt-1 text-sm text-slate-600">Langkah {setupStep + 1} dari {steps.length} · {steps[setupStep]}</p>}
+      <div className="mb-28 mt-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">{stepBody}</div>
+      <div className="sticky bottom-0 mt-6 flex justify-between gap-3 border-t border-slate-200 bg-white px-1 py-3 shadow-[0_-4px_12px_rgba(15,23,42,0.06)]">
+        {isSetup ? <>
+          <button type="button" disabled={setupStep === 0} className={buttonClass} onClick={() => setSetupStep(s => s - 1)}>Kembali</button>
+          {setupStep < steps.length - 1
+            ? <button type="button" className={primaryClass} onClick={() => setSetupStep(s => s + 1)}>Lanjut</button>
+            : <button type="button" disabled={busy} className={primaryClass} onClick={finishSetup}>Selesai</button>}
+        </> : <>
+          <button type="button" className={buttonClass} onClick={() => setView('editor')}>Kembali ke draf</button>
+          <button type="button" disabled={busy || !profileDirty} className={primaryClass} onClick={saveProfile}>Simpan</button>
+        </>}
+      </div>
+    </main>;
+  }
+
   return <main className="mx-auto min-h-screen max-w-7xl px-4 py-8 text-slate-900 sm:px-6 lg:px-8">
     <header className="mb-8 flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-5">
       <div><p className="text-sm font-semibold uppercase tracking-widest text-teal-700">Itinerary Engine · lokal</p><h1 className="mt-2 text-3xl font-bold tracking-tight">Ruang kerja perjalanan</h1></div>
-      <p role="status" aria-live="polite" className="text-sm text-slate-600">{status}</p>
+      <div className="flex flex-wrap items-center gap-3"><p role="status" aria-live="polite" className="text-sm text-slate-600">{status}</p><button type="button" className={buttonClass} onClick={() => setView('settings')}>Pengaturan</button></div>
     </header>
     <div className="grid gap-6 lg:grid-cols-[20rem_1fr]">
       <aside className="space-y-5">
@@ -385,7 +444,7 @@ function App() {
             localeInput={localeInput} localeError={localeError} language={language} localeNeedsSupport={localeNeedsSupport} languageProposal={languageProposal}
             onLocaleChange={changeLocale} onDetectLanguage={resolveLanguage} onAcceptLanguage={acceptLanguage} busy={busy} dirty={dirty}
             localeSupportedCheck={localeSupported(language.outputLanguage)} aiAction={aiAction}
-            writing={writing} onWritingChange={next => { markDirty(); setWriting(next); }} aiAssistExtra={aiExtra} />
+            writing={writing} onWritingChange={next => { markDirty(); setWriting(next); }} aiAssistExtra={aiExtra} guides={agencyProfile().guides} onUploadAsset={uploadAsset} />
           {sectionErrors.length > 0 && <section aria-label="Kesalahan draft" className="mt-6 rounded-lg border border-red-300 bg-red-50 p-4"><h3 className="font-semibold text-red-900">Periksa field berikut</h3><ul className="mt-2 list-disc pl-5 text-sm text-red-800">{sectionErrors.map((item, index) => <li key={`${item.path}-${index}`}><button type="button" data-diagnostic-path={item.path} className="text-left underline underline-offset-2" onClick={() => focusDiagnostic(item)}>{labelFor(item.path, activeMode ?? 'half_day')}: {item.message}</button></li>)}</ul></section>}
           {previewDiagnostics && <section aria-label="Publish diagnostics" className="mt-6 rounded-xl border border-slate-300 bg-slate-50 p-4"><h3 className="font-semibold">Pemeriksaan publish</h3>{previewDiagnostics.errors.length === 0 && <p className="mt-2 text-sm text-emerald-800">Tidak ada error publish.</p>}{previewDiagnostics.errors.length > 0 && <ul className="mt-2 space-y-2 text-sm text-red-800">{previewDiagnostics.errors.map((item, index) => <li key={`${item.code}-${item.path}-${index}`}><button type="button" data-diagnostic-path={item.path} className="text-left underline underline-offset-2" onClick={() => focusDiagnostic(item)}>{item.path ? `${labelFor(item.path, activeMode)}: ` : ''}{item.message}</button></li>)}</ul>}{previewDiagnostics.warnings.length > 0 && <><h4 className="mt-4 text-sm font-semibold text-amber-900">Peringatan</h4><ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-amber-900">{previewDiagnostics.warnings.map((item, index) => <li key={`${item.code}-${item.path}-${index}`}><button type="button" data-diagnostic-path={item.path} className="text-left underline underline-offset-2" onClick={() => focusDiagnostic(item)}>{item.path ? `${labelFor(item.path, activeMode)}: ` : ''}{item.message}</button></li>)}</ul></>}</section>}
           <section aria-label="Publikasi" className="mt-6 rounded-xl border border-slate-300 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-semibold">Halaman publik</h3>{publication?.currentVersion && <p className="mt-1 text-sm text-slate-600">Versi {publication.currentVersion.id.slice(0, 8)} · revisi sumber {publication.currentVersion.sourceRevision}{(publication.draftDiffers || dirty) && <span className="text-amber-800"> · draft berbeda dari versi published</span>}</p>}{publication && !publication.active && publication.currentVersion && <p className="mt-1 text-sm text-red-800">Link dicabut; publish ulang akan membuat link baru.</p>}</div><div className="flex flex-wrap gap-2">{publication?.active ? <><button type="button" disabled={busy || dirty} className={buttonClass} onClick={publishSaved}>Publish ulang</button><button type="button" disabled={busy} className={buttonClass} onClick={unpublish}>Cabut link</button></> : <button type="button" disabled={busy || dirty || !record || Boolean(localeError)} className={primaryClass} onClick={publishSaved}>Publish itinerary</button>}</div></div>{publication?.active && publication.shareUrl && <div className="mt-3 flex flex-wrap items-center gap-2"><a className="break-all text-sm text-teal-800 underline" href={publication.shareUrl} target="_blank" rel="noreferrer">{publication.shareUrl}</a><button type="button" className={buttonClass} onClick={copyShareLink}>Salin link</button></div>}{versions.length > 0 && <details className="mt-3"><summary className="cursor-pointer text-sm font-medium">Riwayat published ({versions.length})</summary><ol className="mt-2 list-inside list-decimal space-y-1 text-xs text-slate-600">{versions.map(version => <li key={version.id}>{version.id.slice(0, 8)} · revisi {version.sourceRevision} · {new Date(version.createdAt).toLocaleString()}</li>)}</ol></details>}</section>

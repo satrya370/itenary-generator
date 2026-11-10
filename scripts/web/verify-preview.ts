@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import puppeteer from 'puppeteer';
 import { createApp } from '../../src/server/app.js';
+import { completeSetup } from './complete-setup.js';
 
 async function availablePort() {
   const server = net.createServer();
@@ -18,6 +19,7 @@ async function main() {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), 'itinerary-cp024-browser-'));
   const port = await availablePort(); const origin = `http://127.0.0.1:${port}`;
   const app = await createApp({ dataDir, publicOrigin: origin, allowedOrigins: [origin], renderStylesheetPath: path.resolve('.runtime/web-render/brochure.css') });
+  await completeSetup(app, origin);
   await app.listen({ host: '127.0.0.1', port });
   const browser = await puppeteer.launch({ headless: 'shell', args: ['--disable-background-networking', '--no-first-run'] });
   const page = await browser.newPage(); const consoleErrors: string[] = []; const external: string[] = [];

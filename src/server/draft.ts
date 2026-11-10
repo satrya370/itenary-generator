@@ -12,11 +12,11 @@ function blankDay(mode: ItineraryMode, dayNumber: number): Day {
   };
 }
 
-export function createBlankDraft(mode: ItineraryMode, _profile?: Record<string, unknown>): WebItineraryContent {
+export function createBlankDraft(mode: ItineraryMode, profile: { defaultCountry?: string; defaultLanguage?: string | null } = {}): WebItineraryContent {
   const days = mode === 'half_day' || mode === 'full_day' ? [blankDay(mode, 1)] : mode === 'multi_day' ? [blankDay(mode, 1), blankDay(mode, 2)] : [];
   return {
     schemaVersion: 'web-2.0.0',
-    trip: { mode, title: '', destination: '', country: '', region: null, language: null, colorTheme: 'mixed', startDate: null, startTime: null, endTime: null },
+    trip: { mode, title: '', destination: '', country: profile.defaultCountry ?? '', region: null, language: profile.defaultLanguage ?? null, colorTheme: 'mixed', startDate: null, startTime: null, endTime: null },
     guide: { name: null, phone: null },
     meeting: { place: null, mapsUrl: null, time: null, note: null },
     pickup: { offered: false, area: null, time: null, dropoffNote: null },

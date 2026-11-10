@@ -279,3 +279,25 @@ test('create and update store the canonical schema version, and photo references
   assert.equal(rejected.statusCode, 422);
   assert.equal(rejected.json().error.code, 'ASSET_INVALID');
 });
+
+test('profile accepts setup fields and rejects invalid ones; new drafts inherit defaults', async (t) => {
+  const f = await fixture(t);
+  const current = (await f.app.inject({ url: '/api/v1/itinerary-engine/profile' })).json();
+  const guide = { id: randomUUID(), name: 'Made', phone: '+62-000' };
+  const ok = await f.app.inject({ method: 'PATCH', url: '/api/v1/itinerary-engine/profile', headers, payload: { expectedRevision: current.revision, profile: { agencyName: 'North Star', agencyContact: 'a@example.test', agencyLogoAssetId: null, defaultCountry: 'Indonesia', defaultLanguage: 'id', guides: [guide], setupCompleted: true } } });
+  assert.equal(ok.statusCode, 200);
+  const rev = ok.json().revision;
+  const bad = (profile: Record<string, unknown>) => f.app.inject({ method: 'PATCH', url: '/api/v1/itinerary-engine/profile', headers, payload: { expectedRevision: rev, profile: { agencyName: '', agencyContact: '', agencyLogoAssetId: null, ...profile } } });
+  assert.equal((await bad({ defaultLanguage: 'inggris' })).statusCode, 422, 'unsupported language');
+  assert.equal((await bad({ defaultCountry: 'x'.repeat(121) })).statusCode, 422, 'country too long');
+  assert.equal((await bad({ guides: [{ ...guide, name: '' }] })).statusCode, 422, 'guide needs a name');
+  assert.equal((await bad({ guides: [guide, guide] })).statusCode, 422, 'duplicate guide ids');
+  assert.equal((await bad({ guides: Array.from({ length: 21 }, () => ({ id: randomUUID(), name: 'G', phone: '' })) })).statusCode, 422, 'more than 20 guides');
+  assert.equal((await bad({ setupCompleted: 'yes' })).statusCode, 422, 'setup flag must be boolean');
+  const draft = await f.app.inject({ method: 'POST', url: '/api/v1/itineraries', headers, payload: { mode: 'full_day' } });
+  assert.equal(draft.statusCode, 201);
+  assert.equal(draft.json().draftContent.trip.country, 'Indonesia');
+  assert.equal(draft.json().draftContent.trip.language, 'id');
+  assert.equal(draft.json().languageContext.outputLanguage, 'id');
+  assert.equal(draft.json().languageContext.source, 'explicit');
+});

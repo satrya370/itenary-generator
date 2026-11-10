@@ -110,9 +110,10 @@ export function TextList({ id, meta, values, onChange }: {
   );
 }
 
-export function AssetSelect({ id, meta, value, assets, onChange }: {
-  id: string; meta: FieldMeta; value: string | null; assets: AssetDto[]; onChange: (value: string | null) => void;
+export function AssetSelect({ id, meta, value, assets, onChange, onUpload }: {
+  id: string; meta: FieldMeta; value: string | null; assets: AssetDto[]; onChange: (value: string | null) => void; onUpload?: (file: File) => void;
 }) {
+  const fileInput = useRef<HTMLInputElement>(null);
   return (
     <div className="min-w-0">
       <label htmlFor={id} className="block text-sm font-medium text-slate-800">{meta.label}{meta.required && <span aria-hidden="true" className="ml-1 text-red-700">*</span>}</label>
@@ -120,6 +121,10 @@ export function AssetSelect({ id, meta, value, assets, onChange }: {
         <option value="">Tanpa foto</option>
         {assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.filename} · {asset.width}×{asset.height}</option>)}
       </select>
+      {onUpload && <>
+        <button type="button" className={`${buttonClass} mt-2`} onClick={() => fileInput.current?.click()}>Unggah foto</button>
+        <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" aria-label={`Unggah ${meta.label}`} onChange={(event) => { const file = event.target.files?.[0]; if (file) onUpload(file); event.target.value = ''; }} />
+      </>}
     </div>
   );
 }
@@ -145,13 +150,13 @@ export function ThemePicker({ id, meta, value, onChange }: {
 }
 
 
-export function PhotoField({ id, basePath, mode, meta, photo, assets, emptyText, onAsset, onCredit }: {
-  id: string; basePath: string; mode: ItineraryMode; meta: MetaFn; photo: Photo | null; assets: AssetDto[]; emptyText: string;
+export function PhotoField({ id, basePath, mode, meta, photo, assets, emptyText, onAsset, onCredit, onUpload }: {
+  id: string; basePath: string; mode: ItineraryMode; meta: MetaFn; photo: Photo | null; assets: AssetDto[]; emptyText: string; onUpload?: (file: File) => void;
   onAsset: (value: string | null) => void; onCredit: (key: 'photographer' | 'url' | 'source', value: string | null) => void;
 }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2">
-      <AssetSelect id={id} meta={meta(`${basePath}.assetId`, mode)} value={photo?.assetId ?? null} assets={assets} onChange={onAsset} />
+      <AssetSelect id={id} meta={meta(`${basePath}.assetId`, mode)} value={photo?.assetId ?? null} assets={assets} onChange={onAsset} onUpload={onUpload} />
       {photo === null ? <p className="self-end text-sm text-slate-600">{emptyText}</p> : (
         <>
           <TextField id={`${id}-photographer`} meta={meta(`${basePath}.credit.photographer`, mode)} value={photo.credit?.photographer ?? ''} onChange={(v) => onCredit('photographer', v)} />

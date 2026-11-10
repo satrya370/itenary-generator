@@ -22,7 +22,7 @@ function editorProps(mode: ItineraryMode, content: WebItineraryContent): EditorP
     content, mode, recordId: 'rec', assets: [], meta: fieldMeta, patch: noop, onModeChange: noop, agencyName: '', onFocusProfile: noop,
     localeInput: 'en', localeError: '', language: { requestedLanguage: 'en', outputLanguage: 'en', source: 'explicit' }, localeNeedsSupport: false,
     languageProposal: null, onLocaleChange: noop, onDetectLanguage: noop, onAcceptLanguage: noop, busy: false, dirty: false, localeSupportedCheck: true,
-    aiAction: () => null, writing: { brief: '', notes: [] }, onWritingChange: noop, aiAssistExtra: null
+    aiAction: () => null, writing: { brief: '', notes: [] }, onWritingChange: noop, aiAssistExtra: null, guides: [], onUploadAsset: noop
   };
 }
 
@@ -209,6 +209,17 @@ test('5c. the language field is a dropdown of the six content languages plus aut
   const bad = renderToStaticMarkup(React.createElement(EditorForm, badProps));
   assert.ok(bad.includes('Bahasa tidak didukung: inggris'), 'an unsupported stored tag is shown, not hidden');
   assert.ok(!bad.includes('list="'), 'no datalist text input');
+});
+
+test('5d. the guide picker lists profile guides; a photo field offers upload', () => {
+  const guides = [{ id: '40000000-0000-5000-8000-000000000001', name: 'Made', phone: '+62-000' }];
+  const html = renderToStaticMarkup(React.createElement(EditorForm, { ...editorProps('full_day', createContentV2('full_day')), guides }));
+  assert.ok(html.includes('Pilih guide'), 'picker shown when guides exist');
+  assert.ok(html.includes('value="40000000-0000-5000-8000-000000000001"'), 'guide option has its id');
+  assert.ok(html.includes('Unggah foto'), 'photo field has an upload action when a handler is given');
+  const noGuides = renderToStaticMarkup(React.createElement(EditorForm, { ...editorProps('full_day', createContentV2('full_day')), guides: [] }));
+  assert.ok(!noGuides.includes('Pilih guide'), 'no picker without guides; name and phone fields shown');
+  assert.ok(noGuides.includes('data-field-path="guide.name"'));
 });
 
 test('6. reordering keeps stable IDs and does not mutate the input', () => {

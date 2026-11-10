@@ -6,6 +6,7 @@ import path from 'node:path';
 import puppeteer from 'puppeteer';
 import { ProviderFailure, type AiProvider, type SuggestionContext } from '../../src/server/ai/provider.js';
 import { createApp } from '../../src/server/app.js';
+import { completeSetup } from './complete-setup.js';
 
 function withOnlyTextChange(draft: any, pathParts: string[], text: string) {
   const copy = structuredClone(draft); let target = copy;
@@ -36,6 +37,7 @@ async function main() {
     }
   };
   const app = await createApp({ dataDir, publicOrigin: origin, allowedOrigins: [origin], aiProvider: provider, aiLimits: { dailyOperations: 7, operationsPerMinute: 30, maxInFlight: 1, contextBytes: 16 * 1024, timeoutMs: 45_000 } });
+  await completeSetup(app, origin);
   await app.listen({ host: '127.0.0.1', port });
   const browser = await puppeteer.launch({ headless: 'shell', args: ['--disable-background-networking', '--no-first-run'] });
   const evidenceDir = path.resolve('output/web-ai'); await mkdir(evidenceDir, { recursive: true });

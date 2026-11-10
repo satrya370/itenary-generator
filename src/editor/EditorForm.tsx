@@ -43,6 +43,8 @@ export interface EditorProps {
   writing: { brief: string; notes: Array<{ targetId: string; text: string }> };
   onWritingChange: (writing: EditorProps['writing']) => void;
   aiAssistExtra: React.ReactNode;
+  guides: Array<{ id: string; name: string; phone: string }>;
+  onUploadAsset: (file: File) => void;
 }
 
 export function EditorForm(props: EditorProps) {

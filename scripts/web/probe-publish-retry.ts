@@ -34,6 +34,13 @@ async function main() {
     assert.equal((await fetch(`${origin}/api/health`)).ok, true, 'test child ready');
     browser = await puppeteer.launch({ headless: 'shell', args: ['--disable-background-networking', '--no-first-run'] });
     const page = await browser.newPage(); await page.goto(origin);
+    await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Engine tersambung') || document.querySelector('[role="status"]')?.textContent?.includes('Setup'));
+    await page.evaluate(async () => {
+      const current = await (await fetch('/api/v1/itinerary-engine/profile')).json();
+      const response = await fetch('/api/v1/itinerary-engine/profile', { method: 'PATCH', headers: { 'content-type': 'application/json', 'x-engine-request': '1' }, body: JSON.stringify({ expectedRevision: current.revision, profile: { agencyName: 'Probe Guide', agencyContact: 'guide@example.test', agencyLogoAssetId: null, defaultCountry: '', defaultLanguage: null, guides: [], setupCompleted: true } }) });
+      if (response.status !== 200) throw new Error(`setup not completed: ${response.status}`);
+    });
+    await page.reload();
     await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Engine tersambung'));
     const content = createContentV2('full_day', 'en'); content.trip.title = 'CP027 pending retry probe';
     const created = await page.evaluate(async ({ content }: { content: unknown }) => {

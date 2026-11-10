@@ -25,7 +25,16 @@ export interface AppOptions {
   /** Test-only renderer seam; production always uses the saved-draft preview renderer. */
   renderPreview?: typeof renderSavedDraftPreview;
 }
-const profileKeys = new Set(['agencyName', 'agencyContact', 'agencyLogoAssetId']);
+const profileKeys = new Set(['agencyName', 'agencyContact', 'agencyLogoAssetId', 'defaultCountry', 'defaultLanguage', 'guides', 'setupCompleted']);
+const profileLanguages = new Set(['id', 'en', 'fr', 'ja', 'zh-Hans', 'la']);
+function validGuides(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length > 20) return false;
+  const ids = new Set<string>();
+  return value.every((guide) => object(guide) && Object.keys(guide).every((key) => ['id', 'name', 'phone'].includes(key))
+    && typeof guide.id === 'string' && /^[0-9a-f-]{36}$/i.test(guide.id) && !ids.has(guide.id) && ids.add(guide.id)
+    && typeof guide.name === 'string' && guide.name.trim().length >= 1 && guide.name.length <= 120
+    && typeof guide.phone === 'string' && guide.phone.length <= 40);
+}
 const modes = new Set<ItineraryMode>(['half_day', 'full_day', 'multi_day', 'destination_guide']);
 const defaultLanguage: LanguageContext = { requestedLanguage: 'auto', outputLanguage: null, source: 'unresolved' };
 const defaultWriting = { brief: '', notes: [] as Array<{ targetId: string; text: string }> };
@@ -129,6 +138,10 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     if (!object(body) || Object.keys(body).some((key) => !['expectedRevision', 'profile'].includes(key)) || !Number.isInteger(body.expectedRevision) || !object(body.profile) || Object.keys(body.profile).some((key) => !profileKeys.has(key))) return reply.code(422).send(error('INVALID_PROFILE', 'Profile fields or revision are invalid.'));
     const p = body.profile;
     if (typeof p.agencyName !== 'string' || p.agencyName.length > 160 || typeof p.agencyContact !== 'string' || p.agencyContact.length > 320 || (p.agencyLogoAssetId !== null && typeof p.agencyLogoAssetId !== 'string')) return reply.code(422).send(error('INVALID_PROFILE', 'Profile values are invalid.'));
+    if (p.defaultCountry !== undefined && (typeof p.defaultCountry !== 'string' || p.defaultCountry.length > 120)) return reply.code(422).send(error('INVALID_PROFILE', 'Default country is invalid.'));
+    if (p.defaultLanguage !== undefined && p.defaultLanguage !== null && !profileLanguages.has(String(p.defaultLanguage))) return reply.code(422).send(error('INVALID_PROFILE', 'Default language is not supported.'));
+    if (p.guides !== undefined && !validGuides(p.guides)) return reply.code(422).send(error('INVALID_PROFILE', 'Guide list is invalid.'));
+    if (p.setupCompleted !== undefined && typeof p.setupCompleted !== 'boolean') return reply.code(422).send(error('INVALID_PROFILE', 'Setup flag is invalid.'));
     if (p.agencyLogoAssetId && !store.getAsset(p.agencyLogoAssetId)) return reply.code(422).send(error('ASSET_INVALID', 'The profile logo must reference an uploaded workspace asset.'));
     if (!store.updateProfile(p, Number(body.expectedRevision))) return reply.code(409).send(error('REVISION_CONFLICT', 'The profile changed since it was loaded.', { currentRevision: store.workspace().revision }));
     return store.workspace();
@@ -143,11 +156,12 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     const body = request.body;
     if (!object(body) || Object.keys(body).some((key) => !['mode', 'draftContent', 'languageContext', 'writingContext'].includes(key))) return reply.code(422).send(error('INVALID_REQUEST', 'Create request fields are invalid.'));
     if (body.mode !== undefined && !modes.has(body.mode as ItineraryMode)) return reply.code(422).send(error('INVALID_MODE', 'Choose a supported itinerary mode.'));
-    const content = body.draftContent === undefined ? createBlankDraft((body.mode || 'half_day') as ItineraryMode) : body.draftContent;
+    const profile = store.workspace().profile as { defaultCountry?: string; defaultLanguage?: string | null };
+    const content = body.draftContent === undefined ? createBlankDraft((body.mode || 'half_day') as ItineraryMode, profile) : body.draftContent;
     const checked = validateDraft(content);
     if (!checked.ok) return reply.code(422).send(error('INVALID_DOCUMENT', 'The draft does not match the canonical content schema.', checked.errors));
     if (body.mode !== undefined && checked.value.trip.mode !== body.mode) return reply.code(422).send(error('MODE_MISMATCH', 'The requested mode must match the canonical draft mode.'));
-    const language = body.languageContext === undefined ? { ...defaultLanguage, outputLanguage: checked.value.trip.language } : body.languageContext;
+    const language = body.languageContext === undefined ? (checked.value.trip.language ? { requestedLanguage: checked.value.trip.language, outputLanguage: checked.value.trip.language, source: 'explicit' as const } : { ...defaultLanguage, outputLanguage: checked.value.trip.language }) : body.languageContext;
     const writing = body.writingContext === undefined ? defaultWriting : body.writingContext;
     if (!validLanguage(language, checked.value.trip.language)) return reply.code(422).send(error('INVALID_LANGUAGE_CONTEXT', 'Language metadata must match the canonical output locale.'));
     if (!validWriting(writing)) return reply.code(422).send(error('INVALID_WRITING_CONTEXT', 'Writing context is invalid.'));
