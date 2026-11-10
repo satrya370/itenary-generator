@@ -1,12 +1,11 @@
 import registry from '../../config/web/field-registry.json' with { type: 'json' };
 import schema from '../../config/web/itinerary.schema.json' with { type: 'json' };
-import { fieldLabels, pathLabels } from './labels';
-import type { ItineraryMode } from '../contracts/types';
+import { fieldLabels, pathLabels } from './labels.js';
+import type { ItineraryMode } from '../contracts/types.js';
 
 type Rec = Record<string, unknown>;
-type FieldMode = ItineraryMode | 'all' | 'scheduled';
 
-interface FieldMeta {
+export interface FieldMeta {
   path: string;
   labelKey: string;
   label: string;
@@ -24,26 +23,80 @@ export function appliesTo(field: (typeof registry.fields)[number], mode: Itinera
     if (modes === 'scheduled') return mode !== 'destination_guide';
     return false;
   }
-  return modes.includes(mode);
+  return (modes as string[]).includes(mode);
 }
 
 export function templatePath(path: string): string {
-  return path
-    .replace(/\[\d+\]/g, '[]')
-    .replace(/\.id$/, '[]');
+  return path.replace(/\[\d+\]/g, '[]');
+}
+
+function deref(node: unknown): unknown {
+  let current = node;
+  let guard = 0;
+  while (current && typeof current === 'object' && guard++ < 8) {
+    const record = current as Rec;
+    if (typeof record.$ref === 'string') {
+      const name = record.$ref.split('/').pop();
+      current = (schema as Rec).$defs ? (schema as unknown as Rec).$defs[name as string] : undefined;
+      continue;
+    }
+    if (Array.isArray(record.anyOf)) {
+      const nonNull = (record.anyOf as Rec[]).find((entry) => !(entry.type === 'null' || entry.const === null));
+      if (nonNull) {
+        current = nonNull;
+        continue;
+      }
+    }
+    break;
+  }
+  return current;
+}
+
+function extractLimits(template: string): { maxLength?: number; maxItems?: number } {
+  const result: { maxLength?: number; maxItems?: number } = {};
+  let node: unknown = schema;
+  node = deref(node);
+  for (const segment of template.split('.')) {
+    const isArraySegment = segment.endsWith('[]');
+    const name = segment.replace(/\[\]$/, '');
+    if (!node || typeof node !== 'object') return result;
+    const record = node as Rec;
+    const props = record.properties as Rec | undefined;
+    if (props && props[name] !== undefined) {
+      node = props[name];
+    } else if (record.items && typeof record.items === 'object') {
+      node = record.items;
+    } else {
+      return result;
+    }
+    const resolved = deref(node) as Rec | undefined;
+    if (resolved) {
+      if (typeof resolved.maxLength === 'number') result.maxLength = resolved.maxLength;
+      if (typeof resolved.maxItems === 'number') result.maxItems = resolved.maxItems;
+    }
+    if (resolved && resolved.items && typeof resolved.items === 'object') {
+      const items = deref(resolved.items) as Rec | undefined;
+      if (items && typeof items.maxLength === 'number') result.maxLength = items.maxLength;
+    }
+    node = resolved ?? node;
+    if (isArraySegment && resolved && resolved.items) {
+      node = deref(resolved.items) ?? node;
+    }
+  }
+  return result;
 }
 
 export function fieldMeta(path: string, mode: ItineraryMode): FieldMeta {
   const template = templatePath(path);
-  const field = registry.fields.find(f => f.path === template);
+  const field = registry.fields.find((entry) => entry.path === template);
   if (!field) throw new Error(`Path not found in registry: ${template}`);
-  if (!appliesTo(field, mode)) throw new Error(`Path ${template} does not apply to ${mode}`);
+  if (!appliesTo(field, mode as ItineraryMode)) throw new Error(`Path ${template} does not apply to ${mode}`);
 
   const labelKey = field.labelKey;
-  const pathLabel = pathLabels[template as keyof typeof pathLabels];
-  const label = pathLabel || fieldLabels[labelKey as keyof typeof fieldLabels] || labelKey;
-
-  const required = field.requiredOnPublish && (!field.requiredModes || field.requiredModes.includes(mode));
+  const pathLabel = pathLabels[template];
+  const label = pathLabel ?? fieldLabels[labelKey] ?? labelKey;
+  const requiredModes = (field as { requiredModes?: string[] }).requiredModes;
+  const required = Boolean(field.requiredOnPublish) && (!requiredModes || requiredModes.includes(mode));
   const limits = extractLimits(template);
 
   return {
@@ -55,44 +108,4 @@ export function fieldMeta(path: string, mode: ItineraryMode): FieldMeta {
     applies: true,
     ...limits
   };
-}
-
-function extractLimits(path: string): { maxLength?: number; maxItems?: number } {
-  const result: { maxLength?: number; maxItems?: number } = {};
-
-  let schemaNode: unknown = schema;
-  const parts = path.split('.').filter(p => p && !p.includes('['));
-
-  for (const part of parts) {
-    if (typeof schemaNode !== 'object' || schemaNode === null) break;
-    const s = schemaNode as Rec;
-
-    if (s.properties && typeof s.properties === 'object' && s.properties[part]) {
-      schemaNode = (s.properties as Rec)[part];
-    } else if (s.items) {
-      schemaNode = s.items;
-      break;
-    } else if (s.$ref) {
-      const ref = s.$ref as string;
-      const defName = ref.split('/').pop();
-      schemaNode = (schema.$defs as Rec)?.[defName as string];
-    } else if (s.anyOf) {
-      const nonNull = (s.anyOf as Rec[]).find(a => a.type !== 'null');
-      schemaNode = nonNull;
-    } else {
-      break;
-    }
-  }
-
-  if (typeof schemaNode === 'object' && schemaNode !== null) {
-    const s = schemaNode as Rec;
-    if (typeof s.maxLength === 'number') result.maxLength = s.maxLength;
-    if (typeof s.maxItems === 'number') result.maxItems = s.maxItems;
-    if (s.items && typeof s.items === 'object') {
-      const items = s.items as Rec;
-      if (typeof items.maxLength === 'number') result.maxLength = items.maxLength;
-    }
-  }
-
-  return result;
 }

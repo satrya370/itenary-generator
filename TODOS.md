@@ -55,7 +55,7 @@
 | CP019 | canonical-schema-and-field-registry | CP018 | in_progress (R1 — schema v2) |
 | CP020 | portable-html-renderer | CP019 | completed |
 | CP021 | engine-api-and-draft-persistence | CP019 | in_progress (R2 — migration runner, API v2; awaiting joint R1+R2 review) |
-| CP022 | dynamic-itinerary-editor | CP020, CP021 | completed |
+| CP022 | dynamic-itinerary-editor | CP020, CP021 | in_progress (R5 - editor v2) |
 | CP023 | field-scoped-ai-writing | CP022 | in_progress (R2 — AI paths v2; awaiting joint R1+R2 review) |
 | CP024 | draft-preview-and-publish-validation | CP023 | completed (revisions passed) |
 | CP025 | published-web-link-and-versioning | CP024 | completed |

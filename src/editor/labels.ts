@@ -53,13 +53,76 @@ export const fieldLabels: Record<string, string> = {
   contactValue: 'Nomor/kontak',
   policies: 'Ketentuan (pembatalan, cuaca, anak, dll.)',
   closingNote: 'Catatan penutup',
-  disclaimer: 'Penafian'
-  time: 'Waktu', activityType: 'Jenis aktivitas', activityTitle: 'Judul aktivitas', description: 'Deskripsi',
-  area: 'Area', category: 'Kategori', localTip: 'Tips lokal', accommodationName: 'Nama akomodasi',
-  accommodationNote: 'Catatan akomodasi', mealsIncluded: 'Makanan termasuk', transport: 'Catatan transportasi',
-  placeName: 'Nama tempat', group: 'Grup/tema area', suggestedDuration: 'Durasi yang disarankan',
-  bestTimeToVisit: 'Waktu kunjungan yang disarankan', gettingThere: 'Cara menuju lokasi', nearbyPairing: 'Tempat terdekat',
-  included: 'Termasuk', notIncluded: 'Tidak termasuk', whatToBring: 'Barang yang dibawa', healthSafety: 'Kesehatan dan keselamatan',
-  topic: 'Topik', emergencyContact: 'Label kontak darurat', contactValue: 'Nilai kontak darurat', closingNote: 'Catatan penutup',
-  disclaimer: 'Penafian', photoCredits: 'Kredit foto'
+  disclaimer: 'Penafian',
+  stableId: 'ID stabil',
+  schemaVersion: 'Versi skema',
+  dayLabel: 'Hari'
+};
+
+export const pathLabels: Record<string, string> = {
+  'cover.assetId': 'Foto sampul',
+  'days[].photo.assetId': 'Foto hari',
+  'places[].photo.assetId': 'Foto tempat',
+  'days[].activities[].place': 'Tempat / area',
+  'days[].hotel.area': 'Area hotel',
+  'places[].tips[]': 'Tips'
+};
+
+export const kindLabels: Record<string, string> = {
+  sightseeing: 'Wisata',
+  food: 'Makan',
+  activity: 'Aktivitas',
+  transport: 'Perjalanan',
+  free: 'Waktu bebas'
+};
+
+export const themeNames: Record<string, string> = {
+  beach: 'Toska',
+  mountain: 'Biru batu',
+  city: 'Biru kota',
+  cultural: 'Nila & toska',
+  nature: 'Hijau daun',
+  desert: 'Abu & emas',
+  mixed: 'Biru tua (bawaan)'
+};
+
+export const modeCopy: Record<string, { title: string; description: string; example: string; badge: string }> = {
+  half_day: {
+    title: 'Setengah hari',
+    description: 'Tur ±4–6 jam dengan titik kumpul dan jadwal per jam. Tanpa makan.',
+    example: 'City tour pagi Yogyakarta',
+    badge: 'bg-amber-100 text-amber-900'
+  },
+  full_day: {
+    title: 'Sehari penuh',
+    description: 'Tur hingga ±12 jam dengan jadwal per jam dan makan yang termasuk.',
+    example: 'Bromo sunrise & kawah',
+    badge: 'bg-teal-100 text-teal-900'
+  },
+  multi_day: {
+    title: 'Beberapa hari',
+    description: '2–14 hari; tiap hari punya jadwal, hotel, makan dan perpindahan.',
+    example: 'Bali 5 hari 4 malam',
+    badge: 'bg-indigo-100 text-indigo-900'
+  },
+  destination_guide: {
+    title: 'Panduan destinasi',
+    description: 'Kumpulan tempat rekomendasi per area, tanpa tanggal dan jam.',
+    example: 'Panduan kuliner Bandung',
+    badge: 'bg-rose-100 text-rose-900'
+  }
+};
+
+export const statusCopy = {
+  newDraftCreated: 'Draft baru tersimpan',
+  draftOpened: 'Draft dibuka',
+  draftSaved: 'Tersimpan · revisi',
+  engineConnected: 'Engine tersambung',
+  publishSucceeded: 'Itinerary berhasil dipublish',
+  languageUnresolved: 'Bahasa belum dipilih. Pilih bahasa atau klik ‘Deteksi otomatis’. Teks Anda tidak akan diterjemahkan.',
+  aiNotActive: 'AI belum aktif: kunci API belum diatur di server. Semua field tetap bisa diisi manual.',
+  modelLabel: 'Model: GPT-6 Luna',
+  assetCount: '1 foto tersedia.',
+  noCover: 'Belum ada foto sampul — halaman memakai warna tema.',
+  saveBeforeAi: 'Simpan draft dan pilih bahasa dulu untuk memakai AI.'
 };
