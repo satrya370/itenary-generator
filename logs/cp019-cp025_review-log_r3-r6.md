@@ -46,3 +46,23 @@ Reviewer: Claude Opus 5.5. Date: 2026-11-10. Reviewed: disk state at commit `636
 - CP020, CP024, CP025: stay `completed` (R3/R4 accepted). F-R3-1 and F-R3-2 are recorded as follow-ups.
 - CP022: stays `in_progress` until "R5 review round 1" in the plan passes. R5 and R6 checkboxes stay open until then.
 - CP030-CP032: stay `pending`; their plan must be revised to `web-2.0.0` first (note already appended by R6).
+
+## Re-review of R5 round 1 — 2026-11-10 (Claude Opus 5.5 plan, executed by Sonnet 5.5)
+
+**Verdict: ACCEPT, after one fix applied during the review** (commit below). Commit reviewed: `7197b34`.
+
+| Item | Result | Evidence |
+|---|---|---|
+| RF1 blank rows | OK | Mutation A (`included` not filtered) and B (contact needs both sides) each make test 5 fail; restored, 26/26 pass. |
+| RF2 no place cap | OK | `MAX_PLACES` gone from `src`, `scripts`, `tests`; `verify-editor` asserts the button is still enabled at 60. |
+| RF3 readable save errors | **Defect found, fixed** | The list used `focusDiagnostic` without a `targetId`, so a path such as `days[0].activities[1].time` focused the first activity. Fix: `targetIdFor(content, path)` in `model.ts` (activity, day or place ID), used when a 422 is stored; `focusDiagnostic` also resolves single-level row paths such as `emergencyContacts[1].value`. |
+| RF4 theme focus | OK | `r5-theme-focus.png`: teal outline on the focused swatch; DOM assertion checks a non-zero outline width. |
+| RF5 doc wording | OK | Both "mirrors" gone; `422 INVALID_LANGUAGE_CONTEXT` stated. |
+| RF6 log corrections | OK | Two lines added to each completion log, nothing edited. |
+
+Added: unit test 5b (`targetIdFor`, 26 tests now) and a browser check in `verify-editor.ts` that returns a synthetic 422 for `days[0].activities[1].time` and asserts the label "Jam: ..." and that focus lands on the second activity's time field. With the fix disabled the assertion fails (focus lands on the first activity); with it enabled it passes.
+
+Gate re-run by the reviewer: full `typecheck:web-app`, `typecheck:web-contracts`, `typecheck:web-contracts-v2` (0 errors), `check:web-types`; tests 42 / 11 / 12 / 28 / 14 / 26 / 12 / 12; `verify:web-editor`, `-preview`, `-publication`, `-ai-ui`, `-e2e`, `-publish-retry` all exit 0 (`-e2e` and `-ai-ui` were not run by the executor).
+
+R5 and R6 may be ticked and CP022 set to `completed`. Open follow-ups unchanged: F-R3-1, F-R3-2, P1, `verify:web-readiness` when Docker is available.
+

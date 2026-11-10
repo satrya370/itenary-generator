@@ -180,6 +180,16 @@ export function changeMode(content: WebItineraryContent, mode: ItineraryMode): W
   return next;
 }
 
+export function targetIdFor(content: WebItineraryContent, path: string): string | undefined {
+  const activity = /^days\[(\d+)\]\.activities\[(\d+)\]/.exec(path);
+  if (activity) return content.days[Number(activity[1])]?.activities[Number(activity[2])]?.id;
+  const day = /^days\[(\d+)\]/.exec(path);
+  if (day) return content.days[Number(day[1])]?.id;
+  const place = /^places\[(\d+)\]/.exec(path);
+  if (place) return content.places[Number(place[1])]?.id;
+  return undefined;
+}
+
 export function hasModeLoss(content: WebItineraryContent, mode: ItineraryMode): string[] {
   const current = content.trip.mode;
   if (current === mode) return [];

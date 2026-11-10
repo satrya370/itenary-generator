@@ -5,7 +5,7 @@ import type { ItineraryMode, LanguageContext, WebItineraryContent } from '../con
 import { EditorForm } from './EditorForm.js';
 import { buttonClass, inputClass, primaryClass } from './fields.js';
 import { modeCopy, statusCopy } from './labels.js';
-import { changeMode, hasModeLoss, normalizeBlanks } from './model.js';
+import { changeMode, hasModeLoss, normalizeBlanks, targetIdFor } from './model.js';
 import { fieldMeta, templatePath } from './schema-meta.js';
 import { DraftList } from './sections/DraftList.js';
 import { ModePicker } from './sections/ModePicker.js';
@@ -50,7 +50,7 @@ function App() {
   const [languageProposal, setLanguageProposal] = useState<LanguageResolutionDto | null>(null);
   const [pendingMode, setPendingMode] = useState<ItineraryMode | null>(null);
   const [conflict, setConflict] = useState<{ latest: RecordDto; local: WebItineraryContent; language: LanguageContext; writing: RecordDto['writingContext'] } | null>(null);
-  const [sectionErrors, setSectionErrors] = useState<Array<{ code: string; path: string; message: string }>>([]);
+  const [sectionErrors, setSectionErrors] = useState<Diagnostic[]>([]);
   const [preview, setPreview] = useState<PreviewDto | null>(null);
   const [previewDiagnostics, setPreviewDiagnostics] = useState<{ errors: PreviewDto['errors']; warnings: PreviewDto['warnings'] } | null>(null);
   const [previewViewport, setPreviewViewport] = useState<'phone' | 'desktop'>('phone');
@@ -231,7 +231,7 @@ function App() {
       if (e.status === 409) {
         try { const latest = await api.get(record.id); setConflict({ latest, local: structuredClone(draftRef.current || content), language: structuredClone(language), writing: structuredClone(writing) }); setStatus(`Konflik: versi tersimpan sudah di revisi ${latest.revision}; perubahan lokal tetap aman.`); }
         catch { setStatus('Konflik revisi; perubahan lokal tetap aman, tetapi versi terbaru belum dapat dimuat.'); }
-      } else if (e.status === 422) { setSectionErrors(e.body?.fields || []); setStatus('Draft memiliki data yang perlu diperbaiki sebelum dapat disimpan.'); }
+      } else if (e.status === 422) { setSectionErrors((e.body?.fields ?? []).map(item => ({ ...item, targetId: item.targetId ?? targetIdFor(draftRef.current ?? submitted, item.path) }))); setStatus('Draft memiliki data yang perlu diperbaiki sebelum dapat disimpan.'); }
       else setStatus(`Gagal menyimpan: ${e.message}`);
     } finally { setBusy(false); }
   }
@@ -292,7 +292,9 @@ function App() {
     const root: ParentNode = scoped ?? document;
     const all = [...root.querySelectorAll<HTMLElement>('[data-field-path]')];
     const listIndex = /\[(\d+)\]$/.exec(d.path);
-    let el = listIndex ? all.filter(e => e.dataset.fieldPath === template)[Number(listIndex[1])] : undefined;
+    const rowIndex = /^[A-Za-z]+\[(\d+)\]\.[A-Za-z]+$/.exec(d.path);
+    let el = listIndex ? all.filter(e => e.dataset.fieldPath === template)[Number(listIndex[1])]
+      : rowIndex && !scoped ? all.filter(e => e.dataset.fieldPath === template)[Number(rowIndex[1])] : undefined;
     el ??= all.find(e => e.dataset.fieldPath === template)
       ?? all.find(e => e.dataset.fieldPath?.startsWith(`${template}.`))
       ?? all.find(e => e.dataset.fieldPath?.startsWith(template))

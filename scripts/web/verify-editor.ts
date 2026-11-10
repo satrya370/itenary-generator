@@ -133,6 +133,19 @@ async function main() {
     assert.equal((await values('summary'))[0], 'A relaxed walk through Kyoto gardens.');
     assert.deepEqual((await getRecord(halfId)).draftContent, halfSaved.draftContent, 'reopen does not change the saved draft');
 
+    // A 422 on save: readable labels, and the button focuses the exact activity (second one), not the first.
+    await set('summary', 'Edit that triggers a rejected save');
+    const rejectSave = async (request: import('puppeteer').HTTPRequest) => {
+      if (request.method() === 'PATCH' && request.url().includes(`/api/v1/itineraries/${halfId}`)) {
+        await request.respond({ status: 422, contentType: 'application/json', body: JSON.stringify({ error: { code: 'INVALID_DOCUMENT', message: 'Synthetic rejection', fields: [{ code: 'SCHEMA_VALIDATION_FAILED', path: 'days[0].activities[1].time', message: 'pattern: invalid value' }] } }) });
+      } else await request.continue();
+    };
+    page.on('request', rejectSave); await page.setRequestInterception(true);
+    await clickButton('Simpan draft'); await page.waitForSelector('[aria-label="Kesalahan draft"] button');
+    page.off('request', rejectSave); await page.setRequestInterception(false);
+    assert.equal(await page.$eval('[aria-label="Kesalahan draft"] button', element => element.textContent), 'Jam: pattern: invalid value');
+    await page.click('[aria-label="Kesalahan draft"] button');
+    assert.equal(await page.evaluate(() => document.activeElement?.id), `${halfId}-activity-time-${activityIds[1]}`, 'save error focuses the exact activity');
     await set('summary', 'Local conflict copy');
     const conflictStatus = await page.evaluate(async id => {
       const current = await (await fetch(`/api/v1/itineraries/${id}`)).json();

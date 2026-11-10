@@ -387,3 +387,8 @@ Executor: Claude Haiku 5.5. Plan: "R5 review round 1" in `plans/cp019-cp025_revi
 
 - A first attempt of the focus check used Shift+Tab from the first radio. That started from the wrong element and failed (`trip.region` got focus). The check was changed to start at `trip.region` and press Tab. The assertion itself is unchanged.
 - Not run in this round: the full `verify:web-e2e` and `verify:web-ai-ui` (neither touches the changed code paths; both ran green on the R6 commit). Reviewer may ask for them.
+
+### Review fix after round 1 (reviewer, 2026-11-10)
+
+Save errors (422) did not carry a `targetId`, so indexed paths focused the wrong item. Added `targetIdFor` (`src/editor/model.ts`), used in `main.tsx` when storing the errors, and a row-index fallback in `focusDiagnostic`. Test 5b and a browser check were added; the browser check fails without the fix. Tests: 26 pass. Details in `logs/cp019-cp025_review-log_r3-r6.md`.
+

@@ -9,7 +9,7 @@ import { validateDraft } from '../../src/contracts/validator.js';
 import type { ItineraryMode, Photo, WebItineraryContent } from '../../src/contracts/types.js';
 import { EditorForm, type EditorProps } from '../../src/editor/EditorForm.js';
 import { fieldLabels, pathLabels } from '../../src/editor/labels.js';
-import { blankToNull, changeMode, ensureMeals, hasModeLoss, makeActivity, makeDay, makePlace, moveById, moveIndex, normalizeBlanks, normalizeHotel, setPhotoCredit } from '../../src/editor/model.js';
+import { blankToNull, changeMode, ensureMeals, hasModeLoss, makeActivity, makeDay, makePlace, moveById, moveIndex, normalizeBlanks, normalizeHotel, setPhotoCredit, targetIdFor } from '../../src/editor/model.js';
 import { appliesTo, fieldMeta } from '../../src/editor/schema-meta.js';
 import { createContentV2 } from './fixtures-v2.js';
 
@@ -184,6 +184,18 @@ test('5. model helpers normalise blanks, photos, hotels and meals', () => {
   const day = makeDay('half_day', 1);
   assert.equal(day.meals, null);
   assert.deepEqual(ensureMeals(day).meals, { breakfast: false, lunch: false, dinner: false });
+});
+
+test('5b. targetIdFor maps an indexed path to the stable ID of its activity, day or place', () => {
+  const trip = createContentV2('multi_day');
+  assert.equal(targetIdFor(trip, 'days[1].activities[0].time'), trip.days[1].activities[0].id);
+  assert.equal(targetIdFor(trip, 'days[1].activities[1].title'), trip.days[1].activities[1].id);
+  assert.equal(targetIdFor(trip, 'days[0].hotel.name'), trip.days[0].id);
+  const guide = createContentV2('destination_guide');
+  assert.equal(targetIdFor(guide, 'places[1].tips[0]'), guide.places[1].id);
+  assert.equal(targetIdFor(guide, 'places[9].name'), undefined, 'out-of-range index has no target');
+  assert.equal(targetIdFor(trip, 'meeting.mapsUrl'), undefined);
+  assert.equal(targetIdFor(trip, 'emergencyContacts[0].value'), undefined);
 });
 
 test('6. reordering keeps stable IDs and does not mutate the input', () => {
