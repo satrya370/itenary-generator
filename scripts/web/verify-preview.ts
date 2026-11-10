@@ -52,6 +52,7 @@ async function main() {
     await page.locator(`[id="${localeId}"]`).fill('en');
     await clickButton('Simpan draft');
     await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Tersimpan · revisi'));
+    await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent?.trim() === 'Preview' && !(button as HTMLButtonElement).disabled));
     await clickButton('Preview');
     await page.waitForFunction(() => document.querySelector('iframe[title="Preview itinerary tersimpan"]') !== null);
     await page.waitForFunction(() => document.querySelector('[aria-label="Publish diagnostics"] [data-diagnostic-path="days[0].activities[0].title"]') !== null);

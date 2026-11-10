@@ -70,3 +70,29 @@
 - This is still one local loopback workspace; no public deployment, signup, multi-tenant auth or Laravel integration.
 - CP021 malformed-image re-encode finding/fix is recorded as an unformalized follow-up per user direction in `logs/cp021_completion-log_engine-api-and-draft-persistence.md`; planner/reviewer is to decide whether a formal CP021 revision plan is required after chapter handoff.
 - CP023 may start only after this log exists and CP022 is `completed` in `TODOS.md`.
+
+## Revision: 2026-11-10 - Guide-centric schema web-2.0.0 (R5)
+
+### Revision Plan
+
+`plans/cp019-cp025_revision-plan_guide-centric-schema-and-editor.md` (R5, "R5/R6 execution plan" and "R5 completion and R6 plan"). Stage log: `logs/cp022_stage-log_r5-editor-v2.md`; review of the first attempt: `logs/cp022_review-log_r5-editor-wip.md`.
+
+### Changes Made
+
+- The editor was rewritten for v2: four mode cards with colour badges (amber, teal, indigo, rose); per-mode sections; registry/schema-driven `fieldMeta` (label, required marker, schema limits) and a `data-field-path` attribute on every control; plain Indonesian wording (the six old developer-style status texts are gone); `changeMode` clears fields that do not apply and the confirmation lists exactly what is lost; blank nullable strings are stored as `null` at save; focusing a diagnostic uses the registry path plus `targetId`.
+- `main.tsx` shrank to the app shell (398 lines); the form is `EditorForm` plus 15 section files; `coverage.ts` deleted; `tsconfig.web.json` got `"jsx": "react-jsx"`.
+- Commits: `407c0c5` (OpenCode snapshot), `73168be` (R5).
+
+### Verification Performed
+
+Run on 2026-11-10: `test:web-editor` 25/25 (registry DOM coverage for each mode, 12 mode-change pairs, helpers, copy); mutation checks made the coverage and mode-change tests fail as intended; `verify:web-editor` (four modes, save/reopen identical, 409 conflict, 14 days, 60 places, upload, no overflow at 390/1280, no console errors or external requests), `verify:web-preview` (6 consecutive runs), `verify:web-publication`, `verify:web-ai-ui`; full `typecheck:web-app` 0 errors. Screenshots `output/web-editor/r5-<mode>-{390,1280}.png`.
+
+### Acceptance Criteria Results
+
+Plan criteria 1 (every applicable registry path rendered, none that do not apply): PASS. 2 (modes visibly distinct): PASS. 3 (no editable derived/duplicate field; agency read-only from profile): PASS. 5 (guide place required fields): PASS. 8 (phone/desktop screenshots inspected): PASS for the four 1280 shots and cropped 390 shots; half/full 390 were checked by the automated no-overflow assertion only.
+
+### Remaining Limitations
+
+- The places limit is a constant (`MAX_PLACES = 60`) until the schema carries `places.maxItems`.
+- The unsupported-language note ("Katalog/font render ... fallback diam-diam") is developer-style wording kept from v1.
+- CP status in `TODOS.md` is not changed by this section; the reviewer decides after the joint review.

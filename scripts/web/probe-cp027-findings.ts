@@ -4,7 +4,7 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import sharp from 'sharp';
 import { createApp } from '../../src/server/app.js';
-import { createContent } from '../../tests/web/fixtures.js';
+import { createContentV2 } from '../../tests/web/fixtures-v2.js';
 
 const headers = { origin: 'http://127.0.0.1:3000', 'x-engine-request': '1', 'content-type': 'application/json' };
 const results: Array<Record<string, unknown>> = [];
@@ -16,19 +16,19 @@ const app = await createApp({ dataDir, renderStylesheetPath: stylesheetPath, sha
 async function makeRecord(mode: 'half_day' | 'full_day') {
   const created = await app.inject({ method: 'POST', url: '/api/v1/itineraries', headers, payload: { mode } });
   const blank = created.json();
-  const content = createContent(mode, 'en');
+  const content = createContentV2(mode, 'en');
   const saved = await app.inject({ method: 'PATCH', url: `/api/v1/itineraries/${blank.id}`, headers, payload: { expectedRevision: blank.revision, draftContent: content, languageContext: { requestedLanguage: 'en', outputLanguage: 'en', source: 'explicit' }, writingContext: { brief: '', notes: [] } } });
   return { id: blank.id as string, content, record: saved.json() };
 }
 
 try {
   const unquantified = await makeRecord('half_day');
-  unquantified.content.schedule[0].activities[0].timeLabel = '';
-  unquantified.content.schedule[0].activities[0].durationLabel = '7 hours';
+  unquantified.content.days[0].activities[0].time = null;
+  unquantified.content.days[0].activities[0].durationMinutes = 420;
   const saved = await app.inject({ method: 'PATCH', url: `/api/v1/itineraries/${unquantified.id}`, headers, payload: { expectedRevision: unquantified.record.revision, draftContent: unquantified.content, languageContext: unquantified.record.languageContext, writingContext: unquantified.record.writingContext } });
   const preview = await app.inject({ method: 'POST', url: `/api/v1/itineraries/${unquantified.id}/preview`, headers, payload: { expectedRevision: saved.json().revision } });
   const publish = await app.inject({ method: 'POST', url: `/api/v1/itineraries/${unquantified.id}/publish`, headers, payload: { operationId: randomUUID(), expectedRevision: saved.json().revision } });
-  results.push({ finding: 'V27-01', expected: 'A proven 7h half-day cap violation blocks publish despite an unknown start time.', actual: { previewStatus: preview.statusCode, publishReady: preview.json().publishReady, publishStatus: publish.statusCode, scheduleErrors: preview.json().errors.filter((item: any) => item.code.startsWith('SCHEDULE_')).map((item: any) => item.code) }, reproduced: publish.statusCode === 200 });
+  results.push({ finding: 'V27-01', expected: 'A proven 7h half-day cap violation blocks publish despite an unknown start time.', actual: { previewStatus: preview.statusCode, publishReady: preview.json().publishReady, publishStatus: publish.statusCode, scheduleErrors: preview.json().errors.filter((item: { code: string }) => ['DURATION_CAP_EXCEEDED', 'SCHEDULE_TIME_UNKNOWN'].includes(item.code)).map((item: { code: string }) => item.code) }, reproduced: publish.statusCode === 200 });
 
   const itinerary = await makeRecord('full_day');
   const firstOperation = randomUUID();
@@ -60,8 +60,7 @@ try {
   await mkdir(path.join(dataDir, 'assets'), { recursive: true });
   await writeFile(path.join(dataDir, 'assets', storageKey), fullPng);
   const asset = (app as any).store.createAsset({ mime: 'image/png', bytes: fullPng.length, width: 8, height: 8, filename: 'corrupt-fixture.png' }, storageKey);
-  assetRecord.content.hero.assetId = asset.id; assetRecord.content.hero.gradientOnly = false;
-  assetRecord.content.hero.photoAttribution = { photographer: 'Synthetic', photographerUrl: null, source: 'Guide' };
+  assetRecord.content.cover = { assetId: asset.id, credit: { photographer: 'Synthetic', url: null, source: 'Guide' } };
   const assetSave = await app.inject({ method: 'PATCH', url: `/api/v1/itineraries/${assetRecord.id}`, headers, payload: { expectedRevision: assetRecord.record.revision, draftContent: assetRecord.content, languageContext: assetRecord.record.languageContext, writingContext: assetRecord.record.writingContext } });
   const uploadedBytesPath = path.join(dataDir, 'assets', storageKey);
   const corruptBytes = Buffer.from(fullPng);

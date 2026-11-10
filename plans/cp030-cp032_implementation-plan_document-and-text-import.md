@@ -176,3 +176,14 @@ Guide: mode + (text | DOCX | PDF)
 - **Model JSON reliability.** Mitigation: structured output if supported, AJV, one repair retry, then a clean failure.
 - **Release packaging drift** from new dependencies. Mitigation: validate-release in CP032; packaging changes go through a CP028 revision plan.
 - **Rollback:** the feature is additive. Remove the route registration and UI entry to disable it. Import tables are additive migrations; existing drafts/publications are unaffected. Imported drafts remain ordinary drafts.
+
+## Planner note 2026-11-10: revise before CP030 starts
+
+The guide-centric revision (R1-R6, `plans/cp019-cp025_revision-plan_guide-centric-schema-and-editor.md`) replaced the canonical schema with `web-2.0.0`. This plan was written against `web-1.0.0` and is **not valid as written**:
+
+- Its extraction target (`brochure`, `schedule` blocks with `dayStart`/`dayEnd`, `spots`, `hero`, `overview`, `practical`, `closing`) no longer exists. The target is now `trip`, `guide`, `meeting`, `pickup`, `cover`, `summary`, `days[]` (one entry per day), `places[]`, the practical lists, `policies`, `closingNote`, `disclaimer`; agency data comes from the workspace profile.
+- Activity time and duration are structured (`time` as `HH:MM` or null, `durationMinutes`), not free labels; mode rules (`FIELD_NOT_APPLICABLE`, span caps 360/720/960) apply to imported drafts as to any draft.
+- The editor registry (`config/web/field-registry.json`) is the source for which fields an import may fill; imported fields should map to registry paths.
+- The existing `upgradeV1ToV2` is a one-way upgrade for stored v1 drafts and is not an extraction path.
+
+Before CP030 starts: run a new Ask Question round, then replace this plan with a revision plan (RULES section 6) written against `web-2.0.0`. Status of CP030-CP032 stays `pending`.

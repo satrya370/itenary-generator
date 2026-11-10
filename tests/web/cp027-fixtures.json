@@ -1,17 +1,91 @@
 {
   "baselineLocales": [
-    { "locale": "la", "tripTitle": "Iter CP027 novum", "scopeLabel": "Dies plenus", "activityTitle": "Visitatio horti" },
-    { "locale": "fr", "tripTitle": "Voyage CP027 au jardin", "scopeLabel": "Journée complète", "activityTitle": "Visite du jardin" },
-    { "locale": "en", "tripTitle": "CP027 Garden Day", "scopeLabel": "Full day", "activityTitle": "Garden visit" },
-    { "locale": "id", "tripTitle": "Perjalanan taman CP027", "scopeLabel": "Sehari penuh", "activityTitle": "Kunjungan taman" },
-    { "locale": "ja", "tripTitle": "CP027 京都の旅", "scopeLabel": "終日", "activityTitle": "庭園を訪問" },
-    { "locale": "zh-Hans", "tripTitle": "CP027 京都行程", "scopeLabel": "全天行程", "activityTitle": "花园游览" }
+    {
+      "locale": "la",
+      "tripTitle": "Iter CP027 novum",
+      "scopeLabel": "Dies plenus",
+      "activityTitle": "Visitatio horti"
+    },
+    {
+      "locale": "fr",
+      "tripTitle": "Voyage CP027 au jardin",
+      "scopeLabel": "Journée complète",
+      "activityTitle": "Visite du jardin"
+    },
+    {
+      "locale": "en",
+      "tripTitle": "CP027 Garden Day",
+      "scopeLabel": "Full day",
+      "activityTitle": "Garden visit"
+    },
+    {
+      "locale": "id",
+      "tripTitle": "Perjalanan taman CP027",
+      "scopeLabel": "Sehari penuh",
+      "activityTitle": "Kunjungan taman"
+    },
+    {
+      "locale": "ja",
+      "tripTitle": "CP027 京都の旅",
+      "scopeLabel": "終日",
+      "activityTitle": "庭園を訪問"
+    },
+    {
+      "locale": "zh-Hans",
+      "tripTitle": "CP027 京都行程",
+      "scopeLabel": "全天行程",
+      "activityTitle": "花园游览"
+    }
   ],
   "modeExpectations": [
-    { "mode": "half_day", "scopeLabel": "Demi-journée", "blockIds": ["10000000-0000-5000-8000-000000000001"], "itemIds": ["20000000-0000-5000-8000-000000000001"], "firstActivity": "Rice terraces" },
-    { "mode": "full_day", "scopeLabel": "Full day", "blockIds": ["10000000-0000-5000-8000-000000000001"], "itemIds": ["20000000-0000-5000-8000-000000000001"], "firstActivity": "Rice terraces" },
-    { "mode": "multi_day", "scopeLabel": "2 jours", "blockIds": ["10000000-0000-5000-8000-000000000001", "10000000-0000-5000-8000-000000000002"], "itemIds": ["20000000-0000-5000-8000-000000000001", "20000000-0000-5000-8000-000000000002"], "firstActivity": "Rice terraces" },
-    { "mode": "destination_guide", "scopeLabel": "Guide de destination", "itemIds": ["30000000-0000-5000-8000-000000000001"], "firstSpot": "Tegallalang Rice Terraces" }
+    {
+      "mode": "half_day",
+      "scopeLabel": "Demi-journée",
+      "dayIds": [
+        "10000000-0000-5000-8000-000000000001"
+      ],
+      "itemIds": [
+        "20000000-0000-5000-8000-000000000011",
+        "20000000-0000-5000-8000-000000000012"
+      ],
+      "firstActivity": "Rice terraces"
+    },
+    {
+      "mode": "full_day",
+      "scopeLabel": "Full day",
+      "dayIds": [
+        "10000000-0000-5000-8000-000000000001"
+      ],
+      "itemIds": [
+        "20000000-0000-5000-8000-000000000011",
+        "20000000-0000-5000-8000-000000000012"
+      ],
+      "firstActivity": "Rice terraces"
+    },
+    {
+      "mode": "multi_day",
+      "scopeLabel": "2 jours",
+      "dayIds": [
+        "10000000-0000-5000-8000-000000000001",
+        "10000000-0000-5000-8000-000000000002"
+      ],
+      "itemIds": [
+        "20000000-0000-5000-8000-000000000011",
+        "20000000-0000-5000-8000-000000000012",
+        "20000000-0000-5000-8000-000000000021",
+        "20000000-0000-5000-8000-000000000022"
+      ],
+      "firstActivity": "Rice terraces"
+    },
+    {
+      "mode": "destination_guide",
+      "scopeLabel": "Guide de destination",
+      "itemIds": [
+        "30000000-0000-5000-8000-000000000001",
+        "30000000-0000-5000-8000-000000000002"
+      ],
+      "firstPlace": "Tegallalang Rice Terraces"
+    }
   ],
   "longCopy": {
     "tripTitle": "CP027 Long Copy",
@@ -27,6 +101,6 @@
   },
   "stress": {
     "multiDayDays": 14,
-    "guideSpots": 60
+    "guidePlaces": 60
   }
 }

@@ -5,7 +5,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import puppeteer, { type Browser, type HTTPRequest } from 'puppeteer';
-import { createContent } from '../../tests/web/fixtures.js';
+import { createContentV2 } from '../../tests/web/fixtures-v2.js';
 
 async function availablePort() {
   const server = net.createServer();
@@ -35,14 +35,14 @@ async function main() {
     browser = await puppeteer.launch({ headless: 'shell', args: ['--disable-background-networking', '--no-first-run'] });
     const page = await browser.newPage(); await page.goto(origin);
     await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Engine tersambung'));
-    const content: any = createContent('full_day', 'en'); content.brochure.tripTitle = 'CP027 pending retry probe';
+    const content = createContentV2('full_day', 'en'); content.trip.title = 'CP027 pending retry probe';
     const created = await page.evaluate(async ({ content }: { content: unknown }) => {
       const response = await fetch('/api/v1/itineraries', { method: 'POST', headers: { 'content-type': 'application/json', 'x-engine-request': '1' }, body: JSON.stringify({ mode: 'full_day', draftContent: content, languageContext: { requestedLanguage: 'en', outputLanguage: 'en', source: 'explicit' }, writingContext: { brief: '', notes: [] } }) });
       return { status: response.status, body: await response.json() };
     }, { content });
     assert.equal(created.status, 201);
     await page.reload(); await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Engine tersambung'));
-    await page.evaluate((title: string) => { const button = [...document.querySelectorAll('aside button')].find(item => item.textContent?.includes(title)); if (!button) throw new Error('probe draft not listed'); (button as HTMLButtonElement).click(); }, content.brochure.tripTitle);
+    await page.evaluate((title: string) => { const button = [...document.querySelectorAll('aside button')].find(item => item.textContent?.includes(title)); if (!button) throw new Error('probe draft not listed'); (button as HTMLButtonElement).click(); }, content.trip.title);
     await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Draft dibuka'));
 
     const operationIds: string[] = []; let responseMode: 'pending' | 'network-error' | 'http-error' = 'pending';
@@ -65,8 +65,8 @@ async function main() {
       }, {}, expected);
     };
     await clickPublish('pending'); await clickPublish('pending');
-    assert.equal(await page.$$('input[id$="-tripTitle"]').then(elements => elements.length), 1);
-    await page.locator('input[id$="-tripTitle"]').fill('CP027 pending retry after revision');
+    assert.equal(await page.$$('[data-field-path="trip.title"]').then(elements => elements.length), 1);
+    await page.locator('[data-field-path="trip.title"]').fill('CP027 pending retry after revision');
     const saveClicked = await page.evaluate(() => { const button = [...document.querySelectorAll('button')].find(item => item.textContent?.trim() === 'Simpan draft'); if (!button) return false; (button as HTMLButtonElement).click(); return true; });
     assert.equal(saveClicked, true); await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Tersimpan · revisi'));
     await clickPublish('pending'); responseMode = 'network-error'; await clickPublish('failed');

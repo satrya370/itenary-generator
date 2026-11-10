@@ -16,7 +16,7 @@ const locales = [
   { locale: 'ja', brief: '静かな庭園や歴史ある路地をゆっくり散策し、地元ガイドから地域の文化や伝統、実用的な情報について学びます。' },
   { locale: 'zh-Hans', brief: '悠闲漫步于安静的庭园和历史街巷，由当地向导分享当地文化、传统以及实用的旅行信息。' }
 ];
-const descriptionKinds = ['activity', 'spot', 'activity', 'spot', 'activity', 'spot'] as const;
+const descriptionKinds = ['activity', 'place', 'activity', 'place', 'activity', 'place'] as const;
 const origin = 'http://127.0.0.1:3000';
 const headers = { origin, 'x-engine-request': '1', 'content-type': 'application/json' };
 function stableUuid(name: string) {
@@ -26,15 +26,14 @@ function stableUuid(name: string) {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 function outputLanguage(locale: string): LanguageContext { return { requestedLanguage: locale, outputLanguage: locale, source: 'explicit' }; }
-function draftFor(locale: string, brief: string, target: 'activity' | 'spot'): WebItineraryContent {
-  const mode: ItineraryMode = target === 'spot' ? 'destination_guide' : 'full_day';
-  const draft = createBlankDraft(mode, {}) as WebItineraryContent;
-  draft.brochure.tripTitle = `CP023 live ${locale} ${target}`; draft.brochure.destination = 'Kyoto'; draft.brochure.country = 'Japan'; draft.brochure.outputLanguage = locale;
-  draft.overview.quickFacts.bestSeason = '';
+function draftFor(locale: string, brief: string, target: 'activity' | 'place'): WebItineraryContent {
+  const mode: ItineraryMode = target === 'place' ? 'destination_guide' : 'full_day';
+  const draft = createBlankDraft(mode, {});
+  draft.trip.title = `CP023 live ${locale} ${target}`; draft.trip.destination = 'Kyoto'; draft.trip.country = 'Japan'; draft.trip.language = locale;
   if (target === 'activity') {
-    draft.schedule[0].location = 'Kyoto'; draft.schedule[0].activities[0].title = 'Garden visit'; draft.schedule[0].activities[0].type = 'sightseeing';
+    draft.days[0].location = 'Kyoto'; draft.days[0].activities[0].title = 'Garden visit'; draft.days[0].activities[0].kind = 'sightseeing';
   } else {
-    (draft as any).spots.push({ id: randomUUID(), groupLabel: 'Kyoto', name: 'Garden visit', area: 'East Kyoto', category: 'garden', description: '', suggestedDuration: '90 minutes', bestTimeToVisit: 'Morning', gettingThere: 'Local bus', tips: ['Comfortable shoes'], nearbyPairing: null, assetId: null, photoAttribution: null });
+    draft.places.push({ id: randomUUID(), group: 'Kyoto', name: 'Garden visit', area: 'East Kyoto', description: '', tips: ['Comfortable shoes'], gettingThere: 'Local bus', suggestedDuration: '90 minutes', bestTime: 'Morning', nearby: null, photo: null });
   }
   return draft;
 }
@@ -90,8 +89,8 @@ async function main() {
       const priorOperation = store.db.prepare('SELECT itinerary_id,operation_kind,target_kind,target_id FROM ai_operations WHERE operation_id=?').get(operationId) as { itinerary_id: string; operation_kind: string; target_kind: string | null; target_id: string | null } | undefined;
       let record: RecordDto | null = priorOperation ? store.getItinerary(priorOperation.itinerary_id) : null;
       if (!record) {
-        const targetName = item.task === 'description' && item.targetKind === 'spot' ? 'spot' : 'activity';
-        const mode = targetName === 'spot' ? 'destination_guide' : 'full_day';
+        const targetName = item.task === 'description' && item.targetKind === 'place' ? 'place' : 'activity';
+        const mode = targetName === 'place' ? 'destination_guide' : 'full_day';
         const title = `CP023 live ${item.locale} ${targetName}`;
         const listed = await app.inject({ url: '/api/v1/itineraries?limit=100' });
         const existing = (listed.json().items as Array<{ id: string; title: string }>).find(row => row.title === title);
@@ -109,8 +108,8 @@ async function main() {
       if (!record) throw new Error(`No persistent CP023 fixture exists for ${item.locale}.`);
       if (item.task === 'description') {
         const expectedKind = item.targetKind!;
-        const modeMatches = expectedKind === 'spot' ? record.draftContent.brochure.itineraryMode === 'destination_guide' : record.draftContent.brochure.itineraryMode !== 'destination_guide';
-        const targetId = expectedKind === 'spot' ? record.draftContent.spots[0]?.id : record.draftContent.schedule[0]?.activities[0]?.id;
+        const modeMatches = expectedKind === 'place' ? record.draftContent.trip.mode === 'destination_guide' : record.draftContent.trip.mode !== 'destination_guide';
+        const targetId = expectedKind === 'place' ? record.draftContent.places[0]?.id : record.draftContent.days[0]?.activities[0]?.id;
         if (!modeMatches || typeof targetId !== 'string') throw new Error(`CP023 fixture has no matching ${expectedKind} target for ${activeCase}.`);
         if (priorOperation && (priorOperation.operation_kind !== 'description' || priorOperation.target_kind !== expectedKind || priorOperation.target_id !== targetId)) throw new Error(`Persisted operation target does not match fixture for ${activeCase}.`);
       } else if (priorOperation && (priorOperation.operation_kind !== 'overview' || priorOperation.target_kind !== null)) throw new Error(`Persisted overview operation metadata is invalid for ${activeCase}.`);
@@ -126,7 +125,7 @@ async function main() {
       const before = record.draftContent;
       const request = item.task === 'overview'
         ? { operationId, expectedRevision: record.revision }
-        : { operationId, expectedRevision: record.revision, target: { kind: item.targetKind, id: item.targetKind === 'spot' ? record.draftContent.spots[0].id : record.draftContent.schedule[0].activities[0].id } };
+        : { operationId, expectedRevision: record.revision, target: { kind: item.targetKind, id: item.targetKind === 'place' ? record.draftContent.places[0].id : record.draftContent.days[0].activities[0].id } };
       const pathName = item.task === 'overview' ? 'overview' : 'description';
       const response = await app.inject({ method: 'POST', url: `/api/v1/itineraries/${record.id}/ai/${pathName}`, headers, payload: request });
       if (response.statusCode !== 200) {

@@ -124,3 +124,27 @@ Smoke-test draft/profile values were removed from `.runtime/engine.sqlite` after
 
 - The injected failure covers DB metadata persistence after final rename; low-level OS write/rename failure injection is not included. Existing compensating cleanup for the tested persistence path is verified.
 - No dependency/schema/renderer change was needed. CP023 revision remains next in sequence; chapter verdict remains REVISE until CP023 passes and the chapter is re-reviewed.
+
+## Revision: 2026-11-10 - Guide-centric schema web-2.0.0 (R2)
+
+### Revision Plan
+
+`plans/cp019-cp025_revision-plan_guide-centric-schema-and-editor.md` (stage R2, its amendment and "R1/R2 revision round 1").
+
+### Changes Made
+
+- A real migration runner with migration 3 (backup by `VACUUM INTO`, transactional, revision not bumped) upgrades v1 drafts to v2; `schema_version` is written on save; list sorted by `updated_at` with an opaque cursor; pending/duplicate publish operations no longer stick or return 500; a missing asset file returns 404; AI target kind is `place`; round-1 fixes RV1-RV7 for label parsing, double meals, startup without AI tables, DB handle leaks, over-broad conflict catch and migration notes.
+- Commits: `86ad1f4` (R2), `a97ca9f` (review), `ee2462c`, `65ff9df`, `ee10278`, `e260e92`.
+- R6 touched only tests/scripts: `tests/web/store-migration.test.ts` received a type annotation for the snapshot rows (assertions unchanged); `probe-publish-retry.ts` and `probe-recovery-scope.ts` now seed v2 content.
+
+### Verification Performed
+
+Run on 2026-11-10: `test:web-store` 11/11, `test:web-api` 12/12, `typecheck:web-server` and full `typecheck:web-app` 0 errors, `verify:web-publish-retry` (reproduced: false, 6 attempts), `probe:web-recovery-scope` (reproduced: false), `verify:web-e2e` (restart persistence and crash recovery steps passed). Earlier R2 evidence: real-data copy 6/6 drafts migrated (R2 gate).
+
+### Acceptance Criteria Results
+
+Plan criteria 6 (v1 drafts open after migration, backup exists, links still serve): PASS at the R2 gate; re-confirmed by the restart steps of `verify:web-e2e`. 7 (backend fixes): PASS. 9 (daily quota, tokens, immutability unchanged): PASS (api/publication tests). Joint R1+R2 review: pending.
+
+### Remaining Limitations
+
+- CP status in `TODOS.md` is not changed by this section; the reviewer decides after the joint review.

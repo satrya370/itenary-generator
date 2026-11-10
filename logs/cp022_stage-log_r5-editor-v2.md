@@ -303,7 +303,7 @@ Executor: Claude Sonnet 5.5 (the owner switched models; the plan was written for
 
 - H2 `schema-meta.ts`: S1 type error fixed, `MAX_PLACES = 60` added (PR-15).
 - H3 `labels.ts` (L1 straight quotes, `noPhoto`), `model.ts` rewritten: M1 no validator call in `changeMode`, M2 `ensureMeals`, M3 `setPhotoCredit(null)` returns `null`, M4/M5 `hasModeLoss` rewritten, M6 `normalizeBlanks` (used by `save()`).
-- H4 `sections/TripInfo.tsx` split into `EditorForm.tsx` + 13 files in `sections/` (code moved, not rewritten); `PhotoField`/`LocaleField` moved to `fields.tsx`, `ObjectList` deleted. Fixes F1-F8 applied.
+- H4 `sections/TripInfo.tsx` split into `EditorForm.tsx` + 15 files in `sections/` (incl. `Profile.tsx`) (code moved, not rewritten); `PhotoField`/`LocaleField` moved to `fields.tsx`, `ObjectList` deleted. Fixes F1-F8 applied.
 - H5 `main.tsx` rewritten (398 lines): orchestration kept from the v1 file; all v1 field code removed; `focusDiagnostic` per plan; new `sections/Profile.tsx`; `coverage.ts` deleted; no `any`.
 - H6 `tsconfig.web.json`: `"jsx": "react-jsx"`.
 - H7 `tests/web/editor.test.ts` rewritten (25 tests). H8 `verify-editor.ts` rewritten; `verify-preview.ts` and `verify-publication.ts` selectors only.

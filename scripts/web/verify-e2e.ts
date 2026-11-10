@@ -7,7 +7,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import puppeteer from 'puppeteer';
 import sharp from 'sharp';
-import { createContent } from '../../tests/web/fixtures.js';
+import { createContentV2 } from '../../tests/web/fixtures-v2.js';
 import fixtureManifest from '../../tests/web/cp027-fixtures.json' with { type: 'json' };
 import type { ItineraryMode } from '../../src/contracts/types.js';
 
@@ -64,20 +64,15 @@ async function main() {
     progress.serverReady = true;
     await page.setViewport({ width: 1440, height: 1000 });
     await page.goto(origin); await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Engine tersambung'));
-    const seeded = await page.evaluate(async () => {
-      const content: any = {
-        schemaVersion: 'web-1.0.0',
-        brochure: { agencyName: 'Synthetic CP027 Guide', agencyContact: 'guide@example.test', agencyLogoAssetId: null, tripTitle: 'CP027 end-to-end', destination: 'Kyoto', region: null, country: 'Japan', itineraryMode: 'full_day', durationDays: null, scopeLabel: 'Full day', startDate: null, endDate: null, travelerCount: 2, travelerType: 'couple', paceLevel: 'Balanced', themes: ['culture'], destinationType: 'cultural', generatedDate: null, outputLanguage: 'fr' },
-        hero: { assetId: null, photoAttribution: null, gradientOnly: true },
-        overview: { summary: '', quickFacts: { scope: 'Full day', bestSeason: 'Spring', pace: 'Balanced', themes: ['culture'] }, routeSummary: ['Kyoto garden'], highlights: [] },
-        schedule: [{ id: crypto.randomUUID(), dayStart: 1, dayEnd: 1, date: null, title: 'Garden day', location: 'Kyoto', isCondensed: false, assetId: null, photoAttribution: null, activities: [{ id: crypto.randomUUID(), timeLabel: '09:00', type: 'sightseeing', title: 'Garden visit', description: '', durationLabel: '90 minutes', area: 'Kyoto', category: 'Garden', tip: null }], accommodation: null, mealsIncluded: [], transportNote: null, blockTip: null }],
-        spots: [],
-        practical: { included: ['Local guide'], notIncluded: [], whatToBring: [], localTips: [], healthSafety: [], emergencyContacts: [] },
-        closing: { closingNote: 'Enjoy the visit.', agencyContact: 'guide@example.test', disclaimer: 'Visit times are suggestions.', photoCredits: [] }
-      };
+    const seedContent = createContentV2('full_day', 'fr');
+    seedContent.trip.title = 'CP027 end-to-end'; seedContent.trip.destination = 'Kyoto'; seedContent.trip.country = 'Japan'; seedContent.trip.region = null;
+    seedContent.summary = ''; seedContent.included = ['Local guide']; seedContent.closingNote = 'Enjoy the visit.'; seedContent.disclaimer = 'Visit times are suggestions.';
+    seedContent.days[0].title = 'Garden day'; seedContent.days[0].location = 'Kyoto';
+    seedContent.days[0].activities = [{ id: crypto.randomUUID(), time: '09:00', durationMinutes: 90, kind: 'sightseeing', title: 'Garden visit', place: 'Kyoto', description: '', tip: null }];
+    const seeded = await page.evaluate(async content => {
       const response = await fetch('/api/v1/itineraries', { method: 'POST', headers: { 'content-type': 'application/json', 'x-engine-request': '1' }, body: JSON.stringify({ mode: 'full_day', draftContent: content, languageContext: { requestedLanguage: 'fr', outputLanguage: 'fr', source: 'explicit' }, writingContext: { brief: 'Une promenade tranquille dans les jardins de Kyoto avec un guide local qui explique les traditions.', notes: [{ targetId: 'itinerary', text: 'The guide confirmed a relaxed morning pace.' }] } }) });
       return { status: response.status, record: await response.json() };
-    });
+    }, seedContent);
     assert.equal(seeded.status, 201, JSON.stringify(seeded.record.error || {}));
     progress.fullDayDraftCreated = true;
     const recordId = seeded.record.id as string;
@@ -86,7 +81,7 @@ async function main() {
     await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Draft dibuka'));
 
     const beforeAi = await page.evaluate(async id => (await (await fetch(`/api/v1/itineraries/${id}`)).json()).draftContent, recordId);
-    await clickButton(page, 'Generate overview');
+    await clickButton(page, 'Buat dengan AI', 'summary');
     await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Usulan AI siap ditinjau'));
     const afterGenerate = await page.evaluate(async id => (await (await fetch(`/api/v1/itineraries/${id}`)).json()).draftContent, recordId);
     assert.deepEqual(afterGenerate, beforeAi, 'Generate must not mutate the server draft');
@@ -94,24 +89,24 @@ async function main() {
     await page.waitForFunction(() => document.body.innerText.includes('Saran diterapkan ke field lokal'));
     const afterOverviewApply = await page.evaluate(async id => (await (await fetch(`/api/v1/itineraries/${id}`)).json()).draftContent, recordId);
     assert.deepEqual(afterOverviewApply, beforeAi, 'Apply stays local until manual Save');
-    const overviewLocal = await page.$eval('textarea[id$="-overview"]', element => (element as HTMLTextAreaElement).value);
+    const overviewLocal = await page.$eval('[data-field-path="summary"]', element => (element as HTMLTextAreaElement).value);
     assert.ok(overviewLocal.trim(), 'AI Apply populated the local overview');
     await clickButton(page, 'Simpan draft');
     await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Tersimpan · revisi'));
     const savedAfterAi = await page.evaluate(async id => (await (await fetch(`/api/v1/itineraries/${id}`)).json()).draftContent, recordId);
-    const expectedAfterOverviewSave = structuredClone(beforeAi); expectedAfterOverviewSave.overview.summary = overviewLocal;
+    const expectedAfterOverviewSave = structuredClone(beforeAi); expectedAfterOverviewSave.summary = overviewLocal;
     assert.deepEqual(savedAfterAi, expectedAfterOverviewSave, 'manual Save changes only the requested overview field');
 
     const beforeDescription = structuredClone(savedAfterAi);
-    await clickButton(page, 'Generate deskripsi');
+    await clickButton(page, 'Buat dengan AI', 'schedule');
     await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Usulan AI siap ditinjau'));
     await clickButton(page, 'Terapkan ke field ini');
     await page.waitForFunction(() => document.body.innerText.includes('Saran diterapkan ke field lokal'));
-    const descriptionLocal = await page.$eval('textarea[id*="-activity-description-"]', element => (element as HTMLTextAreaElement).value);
+    const descriptionLocal = await page.$eval('[data-field-path="days[].activities[].description"]', element => (element as HTMLTextAreaElement).value);
     await clickButton(page, 'Simpan draft');
     await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Tersimpan · revisi'));
     const savedRecord = await page.evaluate(async id => await (await fetch(`/api/v1/itineraries/${id}`)).json(), recordId);
-    const expectedAfterDescriptionSave = structuredClone(savedAfterAi); expectedAfterDescriptionSave.schedule[0].activities[0].description = descriptionLocal;
+    const expectedAfterDescriptionSave = structuredClone(savedAfterAi); expectedAfterDescriptionSave.days[0].activities[0].description = descriptionLocal;
     assert.deepEqual(savedRecord.draftContent, expectedAfterDescriptionSave, 'manual Save changes only the requested description field');
     progress.aiApplyAndSave = true;
     assert.equal(savedRecord.writingContext.brief, 'Une promenade tranquille dans les jardins de Kyoto avec un guide local qui explique les traditions.');
@@ -145,7 +140,7 @@ async function main() {
     stage = 'crash-prepare-new-revision';
     const crashRevision = await page.evaluate(async id => {
       const current = await (await fetch(`/api/v1/itineraries/${id}`)).json();
-      const draftContent = structuredClone(current.draftContent); draftContent.closing.closingNote = 'Crash-boundary candidate must remain a draft.';
+      const draftContent = structuredClone(current.draftContent); draftContent.closingNote = 'Crash-boundary candidate must remain a draft.';
       const response = await fetch(`/api/v1/itineraries/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json', 'x-engine-request': '1' }, body: JSON.stringify({ expectedRevision: current.revision, draftContent, languageContext: current.languageContext, writingContext: current.writingContext }) });
       return { status: response.status, body: await response.json() };
     }, recordId);
@@ -203,11 +198,11 @@ async function main() {
     await page.evaluate(title => { const button = [...document.querySelectorAll('aside button')].find(item => item.textContent?.includes(title)); if (!button) throw new Error('persisted draft is missing after child restart'); (button as HTMLButtonElement).click(); }, 'CP027 end-to-end');
     await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Draft dibuka'));
     const restoredDraft = await page.evaluate(async id => await (await fetch(`/api/v1/itineraries/${id}`)).json(), recordId);
-    assert.equal(restoredDraft.draftContent.overview.summary, overviewLocal);
+    assert.equal(restoredDraft.draftContent.summary, overviewLocal);
     assert.equal((await page.evaluate(async id => await (await fetch(`/api/v1/itineraries/${id}/publication`)).json(), recordId)).shareUrl, shareUrl);
     progress.restartPersistence = true;
     stage = 'edit-after-publish';
-    await page.locator('textarea[id$="-closing-note"]').fill('A revised local closing note after the original publication.');
+    await page.locator('[data-field-path="closingNote"]').fill('A revised local closing note after the original publication.');
     stage = 'save-republished-draft';
     await clickButton(page, 'Simpan draft'); await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Tersimpan · revisi'));
     stage = 'preview-republished-draft';
@@ -238,17 +233,17 @@ async function main() {
     for (const fixture of fixtureManifest.modeExpectations.filter(item => item.mode !== 'full_day')) {
       const mode = fixture.mode as ItineraryMode;
       stage = `mode-${mode}-create`;
-      const modeContent: any = createContent(mode, 'fr'); modeContent.brochure.tripTitle = `CP027 ${mode}`;
-      const expectedIds = fixture as { blockIds?: string[]; itemIds: string[] };
-      assert.deepEqual(modeContent.schedule.map((block: any) => block.id), expectedIds.blockIds || []);
-      assert.deepEqual(mode === 'destination_guide' ? modeContent.spots.map((spot: any) => spot.id) : modeContent.schedule.flatMap((block: any) => block.activities.map((activity: any) => activity.id)), expectedIds.itemIds);
+      const modeContent = createContentV2(mode, 'fr'); modeContent.trip.title = `CP027 ${mode}`;
+      const expectedIds = fixture as { dayIds?: string[]; itemIds: string[] };
+      assert.deepEqual(modeContent.days.map(day => day.id), expectedIds.dayIds || []);
+      assert.deepEqual(mode === 'destination_guide' ? modeContent.places.map(place => place.id) : modeContent.days.flatMap(day => day.activities.map(activity => activity.id)), expectedIds.itemIds);
       const createdMode = await page.evaluate(async ({ mode, content }) => {
         const response = await fetch('/api/v1/itineraries', { method: 'POST', headers: { 'content-type': 'application/json', 'x-engine-request': '1' }, body: JSON.stringify({ mode, draftContent: content, languageContext: { requestedLanguage: 'fr', outputLanguage: 'fr', source: 'explicit' }, writingContext: { brief: 'Synthetic local guide fixture.', notes: [] } }) });
         return { status: response.status, body: await response.json() };
       }, { mode, content: modeContent });
       assert.equal(createdMode.status, 201, `${mode}: ${JSON.stringify(createdMode.body.error || {})}`);
       await page.reload(); await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Engine tersambung'));
-      await page.evaluate(title => { const button = [...document.querySelectorAll('aside button')].find(item => item.textContent?.includes(title)); if (!button) throw new Error(`draft not listed: ${title}`); (button as HTMLButtonElement).click(); }, modeContent.brochure.tripTitle);
+      await page.evaluate(title => { const button = [...document.querySelectorAll('aside button')].find(item => item.textContent?.includes(title)); if (!button) throw new Error(`draft not listed: ${title}`); (button as HTMLButtonElement).click(); }, modeContent.trip.title);
       await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Draft dibuka'));
       await clickButton(page, 'Preview'); await page.waitForFunction(() => document.querySelector('[aria-label="Publish diagnostics"]')?.textContent?.includes('Tidak ada error publish'));
       await clickButton(page, 'Publish itinerary'); await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Itinerary berhasil dipublish'));
@@ -257,14 +252,14 @@ async function main() {
       assert.equal(modePublication.active, true, mode);
       await publicPage.goto(modePublication.shareUrl);
       stage = `mode-${mode}-title`;
-      assert.equal(await publicPage.title(), modeContent.brochure.tripTitle, mode);
+      assert.equal(await publicPage.title(), modeContent.trip.title, mode);
       stage = `mode-${mode}-og-title`;
-      assert.equal(await publicPage.$eval('meta[property="og:title"]', element => element.getAttribute('content')), modeContent.brochure.tripTitle);
+      assert.equal(await publicPage.$eval('meta[property="og:title"]', element => element.getAttribute('content')), modeContent.trip.title);
       const modePublicText = await publicPage.evaluate(() => document.body.innerText);
       stage = `mode-${mode}-scope`;
-      assert.ok(modePublicText.includes(fixture.scopeLabel), `${mode}: scope label`);
+      assert.ok((await publicPage.content()).includes(fixture.scopeLabel), `${mode}: scope label (exact case, from the page source; innerText is upper-cased by CSS)`);
       stage = `mode-${mode}-item`;
-      assert.ok(modePublicText.includes(fixture.mode === 'destination_guide' ? fixture.firstSpot! : fixture.firstActivity!), `${mode}: first canonical item`);
+      assert.ok(modePublicText.includes(fixture.mode === 'destination_guide' ? fixture.firstPlace! : fixture.firstActivity!), `${mode}: first canonical item`);
       const anonymousModeHtml = await fetch(modePublication.shareUrl); assert.equal(anonymousModeHtml.status, 200);
       assert.doesNotMatch(await anonymousModeHtml.text(), /<script\b/i);
       for (const [size, width, height] of [['desktop', 1440, 1000], ['mobile', 390, 844]] as const) {
@@ -279,10 +274,9 @@ async function main() {
     const renderedLocales: string[] = [];
     for (const fixture of fixtureManifest.baselineLocales) {
       stage = `locale-${fixture.locale}-create`;
-      const localeContent: any = createContent('full_day', fixture.locale);
-      localeContent.brochure.tripTitle = fixture.tripTitle;
-      localeContent.brochure.scopeLabel = fixture.scopeLabel;
-      localeContent.schedule[0].activities[0].title = fixture.activityTitle;
+      const localeContent = createContentV2('full_day', fixture.locale);
+      localeContent.trip.title = fixture.tripTitle;
+      localeContent.days[0].activities[0].title = fixture.activityTitle;
       const createdLocale = await page.evaluate(async ({ locale, content }) => {
         const response = await fetch('/api/v1/itineraries', { method: 'POST', headers: { 'content-type': 'application/json', 'x-engine-request': '1' }, body: JSON.stringify({ mode: 'full_day', draftContent: content, languageContext: { requestedLanguage: locale, outputLanguage: locale, source: 'explicit' }, writingContext: { brief: 'Synthetic locale rendering fixture.', notes: [] } }) });
         return { status: response.status, body: await response.json() };
@@ -306,10 +300,10 @@ async function main() {
       stage = `locale-${fixture.locale}-public-render`;
       await publicPage.setViewport({ width: 1440, height: 1000 });
       await publicPage.goto(localePublication.shareUrl); await publicPage.evaluate(async () => await document.fonts.ready);
-      const localePublic = await publicPage.evaluate(() => ({ title: document.title, htmlLang: document.documentElement.lang, body: document.body.innerText, fontCss: [...document.styleSheets].map(sheet => { try { return [...sheet.cssRules].map(rule => rule.cssText).join(''); } catch { return ''; } }).join('') }));
+      const localePublic = await publicPage.evaluate(() => ({ title: document.title, html: document.documentElement.outerHTML, htmlLang: document.documentElement.lang, body: document.body.innerText, fontCss: [...document.styleSheets].map(sheet => { try { return [...sheet.cssRules].map(rule => rule.cssText).join(''); } catch { return ''; } }).join('') }));
       assert.equal(localePublic.title, fixture.tripTitle); assert.equal(localePublic.htmlLang, fixture.locale);
       stage = `locale-${fixture.locale}-public-copy`;
-      assert.ok(localePublic.body.includes(fixture.scopeLabel) && localePublic.body.includes(fixture.activityTitle), fixture.locale);
+      assert.ok(localePublic.html.includes(fixture.scopeLabel) && localePublic.body.includes(fixture.activityTitle), fixture.locale);
       stage = `locale-${fixture.locale}-font`;
       if (fixture.locale === 'ja') assert.match(localePublic.fontCss, /Noto Sans JP Variable/);
       if (fixture.locale === 'zh-Hans') assert.match(localePublic.fontCss, /Noto Sans SC Variable/);
@@ -323,10 +317,10 @@ async function main() {
       progress.renderedLocales.push(fixture.locale);
     }
     stage = 'long-copy-create';
-    const longCopyContent: any = createContent('full_day', 'en');
-    longCopyContent.brochure.tripTitle = fixtureManifest.longCopy.tripTitle;
+    const longCopyContent = createContentV2('full_day', 'en');
+    longCopyContent.trip.title = fixtureManifest.longCopy.tripTitle;
     const longCopy = fixtureManifest.longCopy.phrase.repeat(fixtureManifest.longCopy.repeatCount);
-    longCopyContent.schedule[0].activities[0].description = longCopy;
+    longCopyContent.days[0].activities[0].description = longCopy;
     assert.ok(Array.from(longCopy).length >= fixtureManifest.longCopy.minimumCodePoints);
     const longCreated = await page.evaluate(async content => {
       const response = await fetch('/api/v1/itineraries', { method: 'POST', headers: { 'content-type': 'application/json', 'x-engine-request': '1' }, body: JSON.stringify({ mode: 'full_day', draftContent: content, languageContext: { requestedLanguage: 'en', outputLanguage: 'en', source: 'explicit' }, writingContext: { brief: '', notes: [] } }) });
@@ -361,12 +355,16 @@ async function main() {
     }, png.toString('base64'));
     assert.equal(uploaded.status, 201);
     const assetFixture = fixtureManifest.assetFixture;
-    const assetContent: any = createContent('full_day', 'fr'); assetContent.brochure.tripTitle = assetFixture.tripTitle;
-    assetContent.brochure.agencyLogoAssetId = uploaded.body.id;
-    assetContent.hero.assetId = uploaded.body.id; assetContent.hero.gradientOnly = false;
-    assetContent.hero.photoAttribution = { photographer: assetFixture.credit, photographerUrl: assetFixture.creditUrl, source: 'Guide-owned' };
-    assetContent.schedule[0].assetId = uploaded.body.id;
-    assetContent.schedule[0].photoAttribution = { photographer: assetFixture.credit, photographerUrl: assetFixture.creditUrl, source: 'Guide-owned' };
+    const profileSaved = await page.evaluate(async assetId => {
+      const current = await (await fetch('/api/v1/itinerary-engine/profile')).json();
+      const response = await fetch('/api/v1/itinerary-engine/profile', { method: 'PATCH', headers: { 'content-type': 'application/json', 'x-engine-request': '1' }, body: JSON.stringify({ expectedRevision: current.revision, profile: { ...current.profile, agencyName: current.profile.agencyName || 'Synthetic CP027 Guide', agencyContact: current.profile.agencyContact || 'guide@example.test', agencyLogoAssetId: assetId } }) });
+      return { status: response.status, body: await response.json() };
+    }, uploaded.body.id);
+    assert.equal(profileSaved.status, 200, JSON.stringify(profileSaved.body));
+    const assetContent = createContentV2('full_day', 'fr'); assetContent.trip.title = assetFixture.tripTitle;
+    const ownedCredit = { photographer: assetFixture.credit, url: assetFixture.creditUrl, source: 'Guide-owned' };
+    assetContent.cover = { assetId: uploaded.body.id, credit: { ...ownedCredit } };
+    assetContent.days[0].photo = { assetId: uploaded.body.id, credit: { ...ownedCredit } };
     const assetCreated = await page.evaluate(async content => {
       const response = await fetch('/api/v1/itineraries', { method: 'POST', headers: { 'content-type': 'application/json', 'x-engine-request': '1' }, body: JSON.stringify({ mode: 'full_day', draftContent: content, languageContext: { requestedLanguage: 'fr', outputLanguage: 'fr', source: 'explicit' }, writingContext: { brief: '', notes: [] } }) });
       return { status: response.status, body: await response.json() };
@@ -392,23 +390,20 @@ async function main() {
     progress.ownedAssetPublished = true;
 
     stage = 'stress-14-day-create';
-    const multiDayContent: any = createContent('multi_day', 'en');
-    while (multiDayContent.schedule.length < fixtureManifest.stress.multiDayDays) {
-      const dayStart = multiDayContent.schedule.length + 1;
-      const block = structuredClone(multiDayContent.schedule[0]); block.id = crypto.randomUUID(); block.dayStart = dayStart; block.dayEnd = dayStart; block.title = `Day ${dayStart}`;
-      block.activities = block.activities.map((activity: any) => ({ ...activity, id: crypto.randomUUID(), title: `Visit ${dayStart}` }));
-      multiDayContent.schedule.push(block);
+    const multiDayContent = createContentV2('multi_day', 'en'); multiDayContent.trip.title = 'CP027 14-day stress';
+    while (multiDayContent.days.length < fixtureManifest.stress.multiDayDays) {
+      const dayNumber = multiDayContent.days.length + 1;
+      const day = structuredClone(multiDayContent.days[0]); day.id = crypto.randomUUID(); day.dayNumber = dayNumber; day.title = `Day ${dayNumber}`;
+      day.activities = day.activities.map(activity => ({ ...activity, id: crypto.randomUUID(), title: `Visit ${dayNumber}` }));
+      multiDayContent.days.push(day);
     }
-    multiDayContent.brochure.durationDays = fixtureManifest.stress.multiDayDays;
-    multiDayContent.brochure.scopeLabel = `${fixtureManifest.stress.multiDayDays} days`;
-    multiDayContent.overview.quickFacts.scope = `${fixtureManifest.stress.multiDayDays} days`;
     const stressMultiCreated = await page.evaluate(async content => {
       const response = await fetch('/api/v1/itineraries', { method: 'POST', headers: { 'content-type': 'application/json', 'x-engine-request': '1' }, body: JSON.stringify({ mode: 'multi_day', draftContent: content, languageContext: { requestedLanguage: 'en', outputLanguage: 'en', source: 'explicit' }, writingContext: { brief: '', notes: [] } }) });
       return { status: response.status, body: await response.json() };
     }, multiDayContent);
     assert.equal(stressMultiCreated.status, 201);
     await page.reload(); await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Engine tersambung'));
-    await page.evaluate(title => { const button = [...document.querySelectorAll('aside button')].find(item => item.textContent?.includes(title)); if (!button) throw new Error('14-day stress draft not listed'); (button as HTMLButtonElement).click(); }, multiDayContent.brochure.tripTitle);
+    await page.evaluate(title => { const button = [...document.querySelectorAll('aside button')].find(item => item.textContent?.includes(title)); if (!button) throw new Error('14-day stress draft not listed'); (button as HTMLButtonElement).click(); }, multiDayContent.trip.title);
     await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Draft dibuka'));
     await clickButton(page, 'Preview'); await page.waitForFunction(() => document.querySelector('[aria-label="Publish diagnostics"]')?.textContent?.includes('Tidak ada error publish'));
     await clickButton(page, 'Publish itinerary'); await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Itinerary berhasil dipublish'));
@@ -424,29 +419,29 @@ async function main() {
     }
     progress.stressCases.push('multi_day_14');
 
-    stage = 'stress-60-guide-spots-create';
-    const guideContent: any = createContent('destination_guide', 'en');
-    const firstSpot = guideContent.spots[0];
-    guideContent.spots = Array.from({ length: fixtureManifest.stress.guideSpots }, (_, index) => ({ ...structuredClone(firstSpot), id: index === 0 ? firstSpot.id : crypto.randomUUID(), name: index === 0 ? firstSpot.name : `Guide place ${String(index + 1).padStart(2, '0')}`, groupLabel: `Area ${index % 6 + 1}` }));
+    stage = 'stress-60-guide-places-create';
+    const guideContent = createContentV2('destination_guide', 'en'); guideContent.trip.title = 'CP027 60-place stress';
+    const firstPlace = guideContent.places[0];
+    guideContent.places = Array.from({ length: fixtureManifest.stress.guidePlaces }, (_, index) => ({ ...structuredClone(firstPlace), id: index === 0 ? firstPlace.id : crypto.randomUUID(), name: index === 0 ? firstPlace.name : `Guide place ${String(index + 1).padStart(2, '0')}`, group: `Area ${index % 6 + 1}` }));
     const stressGuideCreated = await page.evaluate(async content => {
       const response = await fetch('/api/v1/itineraries', { method: 'POST', headers: { 'content-type': 'application/json', 'x-engine-request': '1' }, body: JSON.stringify({ mode: 'destination_guide', draftContent: content, languageContext: { requestedLanguage: 'en', outputLanguage: 'en', source: 'explicit' }, writingContext: { brief: '', notes: [] } }) });
       return { status: response.status, body: await response.json() };
     }, guideContent);
     assert.equal(stressGuideCreated.status, 201);
     await page.reload(); await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Engine tersambung'));
-    await page.evaluate(title => { const button = [...document.querySelectorAll('aside button')].find(item => item.textContent?.includes(title)); if (!button) throw new Error('60-spot stress draft not listed'); (button as HTMLButtonElement).click(); }, guideContent.brochure.tripTitle);
+    await page.evaluate(title => { const button = [...document.querySelectorAll('aside button')].find(item => item.textContent?.includes(title)); if (!button) throw new Error('60-place stress draft not listed'); (button as HTMLButtonElement).click(); }, guideContent.trip.title);
     await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Draft dibuka'));
     await clickButton(page, 'Preview'); await page.waitForFunction(() => document.querySelector('[aria-label="Publish diagnostics"]')?.textContent?.includes('Tidak ada error publish'));
     await clickButton(page, 'Publish itinerary'); await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Itinerary berhasil dipublish'));
     const stressGuidePublication = await page.evaluate(async id => await (await fetch(`/api/v1/itineraries/${id}/publication`)).json(), stressGuideCreated.body.id);
     await publicPage.goto(stressGuidePublication.shareUrl);
     const guideCount = await publicPage.$$eval('.spot-card', elements => elements.length);
-    assert.equal(guideCount, fixtureManifest.stress.guideSpots);
+    assert.equal(guideCount, fixtureManifest.stress.guidePlaces);
     for (const [size, width, height] of [['desktop', 1440, 1000], ['mobile', 390, 844]] as const) {
       await publicPage.setViewport({ width, height });
       const dimensions = await publicPage.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }));
-      assert.ok(dimensions.document <= dimensions.viewport, `60-spot ${size}: ${JSON.stringify(dimensions)}`);
-      await publicPage.screenshot({ path: path.join(outputDir, `cp027-stress-60-spots-${size}.png`), fullPage: true });
+      assert.ok(dimensions.document <= dimensions.viewport, `60-place ${size}: ${JSON.stringify(dimensions)}`);
+      await publicPage.screenshot({ path: path.join(outputDir, `cp027-stress-60-places-${size}.png`), fullPage: true });
     }
     progress.stressCases.push('destination_guide_60');
     assert.deepEqual(external, []); assert.deepEqual(consoleErrors, []);
@@ -470,9 +465,9 @@ async function main() {
   }
 }
 
-async function clickButton(page: import('puppeteer').Page, text: string) {
-  const clicked = await page.evaluate(text => { const button = [...document.querySelectorAll('button')].find(item => item.textContent?.trim() === text); if (!button) return false; (button as HTMLButtonElement).click(); return true; }, text);
-  assert.ok(clicked, `button not found: ${text}`);
+async function clickButton(page: import('puppeteer').Page, text: string, scope?: string) {
+  const clicked = await page.evaluate(({ text, scope }) => { const root = scope ? document.querySelector(`[data-editor-section="${scope}"]`) : document; const button = [...(root?.querySelectorAll('button') ?? [])].find(item => item.textContent?.trim() === text); if (!button) return false; (button as HTMLButtonElement).click(); return true; }, { text, scope });
+  assert.ok(clicked, `button not found: ${text}${scope ? ` in ${scope}` : ''}`);
 }
 
 await main();

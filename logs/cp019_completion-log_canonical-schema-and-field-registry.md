@@ -133,3 +133,28 @@
 - Derived sync only replaces values whose existing type is already valid; malformed derived types remain visible as schema errors by design.
 - Renderer consumption of authoritative sources (fallback when called without normalization) belongs to the CP020 revision scope.
 - Revision does not add content-quality, money or schedule policy checks; those remain CP024.
+
+## Revision: 2026-11-10 - Guide-centric schema web-2.0.0 (R1)
+
+### Revision Plan
+
+`plans/cp019-cp025_revision-plan_guide-centric-schema-and-editor.md` (stage R1 and its amendment/round-1 sections). Review: `logs/cp019_review-log_r1-guide-centric-schema.md`.
+
+### Changes Made
+
+- Canonical schema rewritten as `web-2.0.0` (`trip`, `guide`, `meeting`, `pickup`, `cover`, `summary`, `days[]`, `places[]`, practical lists, `policies`, `closingNote`, `disclaimer`); generated types regenerated; registry v2 (73 fields: path, control, modes, `requiredOnPublish`); validator per mode (`validateDraft`, `validateForPublish`, span caps 360/720/960 minutes); `upgradeV1ToV2` for existing drafts; label catalogs for the six locales; `createBlankDraft` v2.
+- Commits: `9e14312` (R1), review `a97ca9f`, round-1 fixes `ee2462c`, `65ff9df`, `ee10278`, `e260e92`.
+- R5 consumes the registry: `src/editor/schema-meta.ts` reads labels' keys, modes, required flags and the schema limits; `coverage.ts` (hand-written path list) was deleted in favour of a registry-driven DOM coverage test.
+
+### Verification Performed
+
+Run on 2026-11-10 (full output in `logs/cp019-cp025_stage-log_r6-regression.md`): `npm run check:web-types` (declaration matches the schema), `typecheck:web-contracts` and `typecheck:web-contracts-v2` (0 errors), `test:web-contracts` 42/42, `test:web-editor` test 1 (every applicable registry path renders in each mode, no non-applicable path renders).
+
+### Acceptance Criteria Results
+
+Plan criteria 1 (schema, registry and types agree; DOM coverage per mode): PASS. 4 (new fields stored and validated): PASS. 5 (guide places need name, area, description): PASS (validator and editor required markers). 6 (v1 drafts upgrade with warnings): covered by the `upgradeV1ToV2` tests; real-data migration is CP021. Joint R1+R2 review: pending.
+
+### Remaining Limitations
+
+- `config/web/itinerary.schema.json` has no `maxItems` on `places` although the R1 amendment requires 60 (finding R1-S1). The editor enforces 60 with a constant; the schema should get the limit in an R1 follow-up.
+- CP status in `TODOS.md` is not changed by this section; the reviewer decides after the joint review.

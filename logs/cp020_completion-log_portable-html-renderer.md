@@ -157,3 +157,28 @@ Page-count corrections versus the pre-revision log: `half-day-en` is 3 pages (wa
 - The stranded-heading heuristic relies on PDF text extraction order; coordinate-based split detection covers split elements, but visually identical short repeated lines across a page boundary could in theory be misreported.
 - Canvas glyph measurement can be masked by system font fallback; the harness therefore also asserts loaded font faces, `fonts.check`, and localized DOM content.
 - Palette fields `surface`, `textMuted` and `gradientStops` remain declared but intentionally unused by the renderer; only `primary`, `secondary`, `accent` and `textDark` are mapped into CSS variables (documented, not claimed as mapped).
+
+## Revision: 2026-11-10 - Guide-centric schema web-2.0.0 (R3)
+
+### Revision Plan
+
+`plans/cp019-cp025_revision-plan_guide-centric-schema-and-editor.md` (stages R3 and "R3/R4 execution plan"). Stage log: `logs/cp020_stage-log_r3-renderer-v2.md`.
+
+### Changes Made
+
+- `src/render/render.ts` rewritten against the v2 types: nine sections (hero, trip-info strip with date/time/meeting/pickup/guide, summary, derived route, schedule, guide places with repeated group headings, practical, policies, closing); layouts differ per mode (half: no meals/hotel; full: meals; multi: meals, hotel, transfer); duration and day labels come from the locale catalog; agency comes from the workspace profile; photo credits are collected from the photos in use; a catalog that does not match the draft locale is rejected.
+- `render-fixture.ts` ported (13 fixtures: six locales, four modes, 14 days, 60 places) and `render.test.ts` rewritten (14 tests).
+- Commits: `4a37008`, `f0185da`, audit fixes `ac087dd`.
+
+### Verification Performed
+
+Run on 2026-11-10: `test:web-render` 14/14; `verify:web-render` exit 0 (13 fixtures, no overflow at 390/1280, no external requests, glyph checks for ja/zh-Hans, PDF valid). Published pages per mode were opened and inspected in R6 (see the R6 stage log). R3 screenshots: `output/web-foundation/r3-<mode>-{390,1280}.png`.
+
+### Acceptance Criteria Results
+
+Plan criteria 2 (four modes visibly distinct in output): PASS. 3 (route summary and photo credits derived, agency from profile): PASS. 4 (meeting, pickup, guide, policies, start/end time rendered): PASS. 8 (screenshots inspected): PASS. Joint R3+R4 review: pending.
+
+### Remaining Limitations
+
+- The scope pill and the eyebrow both show the mode (as specified); the reviewer may drop one.
+- CP status in `TODOS.md` is not changed by this section; the reviewer decides after the joint review.

@@ -44,6 +44,6 @@ test('AI output contract rejects malformed, wrong-locale, money and opening-hour
   assert.equal(validateSuggestion(JSON.stringify({ text: 'The venue opens at 09:00 every day.' }), 'en', 'overview').ok, false);
   const legitimate = JSON.stringify({ text: 'Ticket prices are not listed here; morning visits may feel comfortable in the garden.' });
   assert.equal(validateSuggestion(legitimate, 'en', 'overview').ok, true);
-  assert.equal(validateSuggestion(JSON.stringify({ text: '庭園をゆっくり歩き、地元の文化や季節の景色を楽しめます。' }), 'ja', 'spot').ok, true);
+  assert.equal(validateSuggestion(JSON.stringify({ text: '庭園をゆっくり歩き、地元の文化や季節の景色を楽しめます。' }), 'ja', 'place').ok, true);
   assert.equal(validateSuggestion(JSON.stringify({ text: 'Short.' }), 'en', 'overview').ok, true);
 });

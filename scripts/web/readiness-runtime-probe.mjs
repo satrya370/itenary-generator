@@ -28,9 +28,7 @@ if (fixtures.action === 'create') {
   for (const fixture of allFixtures) {
     const content = structuredClone(fixture.content);
     if (fixture.mode === 'full_day') {
-      content.brochure.agencyName = 'CP028 Linux Guide'; content.brochure.agencyContact = 'guide@example.test';
-      content.brochure.agencyLogoAssetId = uploaded.id; content.hero.assetId = uploaded.id; content.hero.gradientOnly = false;
-      content.hero.photoAttribution = { photographer: 'Owned test asset', photographerUrl: 'https://credits.example.test/linux', source: 'Guide-owned' };
+      content.cover = { assetId: uploaded.id, credit: { photographer: 'Owned test asset', url: 'https://credits.example.test/linux', source: 'Guide-owned' } };
     }
     const created = await request('/api/v1/itineraries', { method: 'POST', body: JSON.stringify({ mode: fixture.mode }) });
     if (created.status !== 201) throw new Error(`runtime create failed for ${fixture.mode}`);
@@ -67,7 +65,7 @@ if (fixtures.action === 'create') {
     const record = await request(`/api/v1/itineraries/${fixture.id}`);
     const publication = await request(`/api/v1/itineraries/${fixture.id}/publication`);
     const versions = await request(`/api/v1/itineraries/${fixture.id}/versions`);
-    records.push({ id: record.body.id, revision: record.body.revision, mode: record.body.draftContent.brochure.itineraryMode, active: publication.body.active, currentVersionId: publication.body.currentVersion?.id, shareUrl: publication.body.shareUrl, versionCount: versions.body.items.length });
+    records.push({ id: record.body.id, revision: record.body.revision, mode: record.body.draftContent.trip.mode, active: publication.body.active, currentVersionId: publication.body.currentVersion?.id, shareUrl: publication.body.shareUrl, versionCount: versions.body.items.length });
   }
   console.log(JSON.stringify({ status: 'passed', workspaceId: profile.body.id, agencyName: profile.body.profile.agencyName, credentialState: context.body.capabilities.ai.credentialState, assetPresent: assets.body.items.some(item => item.id === fixtures.assetId), records }));
 } else throw new Error('Unknown readiness probe action');

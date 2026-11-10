@@ -7,7 +7,8 @@ import net from 'node:net';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import sharp from 'sharp';
-import { createContent } from '../../tests/web/fixtures.js';
+import type { ItineraryMode } from '../../src/contracts/types.js';
+import { createContentV2 } from '../../tests/web/fixtures-v2.js';
 
 const repo = process.cwd(); const release = path.resolve('output/releases/standalone');
 const runId = randomKey(); const appA = `cp028-app-${runId}`; const appB = `cp028-upgrade-${runId}`;
@@ -144,16 +145,15 @@ async function main() {
     { mode: 'full_day', locale: 'en' },
     { mode: 'multi_day', locale: 'ja' },
     { mode: 'destination_guide', locale: 'zh-Hans' }
-  ].map(({ mode, locale }) => ({ mode, locale, content: createContent(mode as any, locale) }));
-  const multiDayStress: any = createContent('multi_day', 'ja');
-  while (multiDayStress.schedule.length < 14) {
-    const dayStart = multiDayStress.schedule.length + 1; const block = structuredClone(multiDayStress.schedule[0]);
-    block.id = randomUUID(); block.dayStart = dayStart; block.dayEnd = dayStart; block.title = `Day ${dayStart}`;
-    block.activities = block.activities.map((activity: any) => ({ ...activity, id: randomUUID(), title: `Visit ${dayStart}` })); multiDayStress.schedule.push(block);
+  ].map(({ mode, locale }) => ({ mode, locale, content: createContentV2(mode as ItineraryMode, locale) }));
+  const multiDayStress = createContentV2('multi_day', 'ja');
+  while (multiDayStress.days.length < 14) {
+    const dayNumber = multiDayStress.days.length + 1; const day = structuredClone(multiDayStress.days[0]);
+    day.id = randomUUID(); day.dayNumber = dayNumber; day.title = `Day ${dayNumber}`;
+    day.activities = day.activities.map(activity => ({ ...activity, id: randomUUID(), title: `Visit ${dayNumber}` })); multiDayStress.days.push(day);
   }
-  multiDayStress.brochure.durationDays = 14; multiDayStress.brochure.scopeLabel = '14 days'; multiDayStress.overview.quickFacts.scope = '14 days';
-  const guideStress: any = createContent('destination_guide', 'zh-Hans'); const baseSpot = guideStress.spots[0];
-  guideStress.spots = Array.from({ length: 60 }, (_, index) => ({ ...structuredClone(baseSpot), id: index === 0 ? baseSpot.id : randomUUID(), name: `Linux guide place ${index + 1}` }));
+  const guideStress = createContentV2('destination_guide', 'zh-Hans'); const basePlace = guideStress.places[0];
+  guideStress.places = Array.from({ length: 60 }, (_, index) => ({ ...structuredClone(basePlace), id: index === 0 ? basePlace.id : randomUUID(), name: `Linux guide place ${index + 1}` }));
   const stressFixtures = [{ mode: 'multi_day', locale: 'ja', content: multiDayStress }, { mode: 'destination_guide', locale: 'zh-Hans', content: guideStress }];
   await writeFile(inputPath, JSON.stringify({ action: 'create', modes, stressFixtures, pngBase64: png.toString('base64') }));
   hostPort = await availablePort();

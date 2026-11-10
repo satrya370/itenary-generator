@@ -86,7 +86,7 @@ test('migration 3 upgrades v1 drafts in place, keeps revisions/timestamps/IDs, s
     ops: (db.prepare('SELECT * FROM ai_operations ORDER BY operation_id').all() as unknown[]).map((row) => ({ ...(row as object) })),
     budget: { ...(db.prepare('SELECT * FROM ai_live_budget').get() as object) }
   });
-  const beforeRows = (db.prepare('SELECT id,revision,created_at,updated_at,language_json,writing_json FROM itineraries ORDER BY id').all() as unknown[]).map((row) => ({ ...(row as object) }));
+  const beforeRows = (db.prepare('SELECT id,revision,created_at,updated_at,language_json,writing_json FROM itineraries ORDER BY id').all() as unknown[]).map((row) => ({ ...(row as object) })) as Array<{ id: string; revision: number; created_at: string; updated_at: string; language_json: string; writing_json: string }>;
   db.close();
 
   const store = openStore({ dataDir });

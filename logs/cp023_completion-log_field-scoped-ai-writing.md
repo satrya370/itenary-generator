@@ -130,3 +130,29 @@ CP021, CP022 and CP023 implementation/evidence are complete. Stop before CP024 a
 - No fresh paid inference was used to test missing usage; deterministic HTTP/provider/API doubles verify that branch. The original 12 live outputs remain separate inspected evidence.
 - Future per-request fees/tools require updating the preflight reservation upper bound before enabling them. No web-search/tool request is sent; without usable usage or token pricing the reservation stays uncertain.
 - The browser provider is a deterministic double. The actual live matrix is the earlier inference run; this revision's provider run intentionally verifies replay only, not a second inference.
+
+## Revision: 2026-11-10 - Guide-centric schema web-2.0.0 (AI paths and UI)
+
+### Revision Plan
+
+`plans/cp019-cp025_revision-plan_guide-centric-schema-and-editor.md` (R2 "AI paths v2", R5 and R6).
+
+### Changes Made
+
+- AI targets use v2 paths: overview writes `summary`, activity descriptions are found under `days[].activities[]`, places under `places[]`; the target kind is `place`.
+- Editor: the AI button is now "Buat dengan AI" per field (summary, each activity, each place); the provider check, usage and notes moved into a collapsed "Bantuan AI" panel at the end of the form; the old sidebar box was removed.
+- R6: `verify-ai.ts` (live harness) ported to v2 names and types; `verify-ai-ui.ts` ported to the new UI; `tests/web/ai.test.ts` type fix only (`'spot'` -> `'place'`).
+- Commits: `86ad1f4`, round-1 fixes `ee2462c`..`e260e92`, `73168be`; R6 commit in the R6 stage log.
+
+### Verification Performed
+
+Run on 2026-11-10: `test:web-ai` 28/28; `verify:web-ai-ui` exit 0 (generate does not change the draft, apply is local until Save, discard keeps the draft, stale results are rejected, pending response polled with the same operation ID, daily-limit and auth error paths); `verify:web-e2e` AI apply-and-save steps. `verify:web-ai` runs only with `--live` (paid provider); it was type-checked but **not run**.
+
+### Acceptance Criteria Results
+
+Plan criterion 9 (US$2 ledger, daily quota unchanged): PASS by the unchanged AI server code and tests. One assertion of `verify-ai-ui.ts` changed on purpose: the old check that the sidebar "Penulisan AI" box exists now asserts that it is gone and that "Bantuan AI" exists in the form.
+
+### Remaining Limitations
+
+- No live provider run after the schema change.
+- CP status in `TODOS.md` is not changed by this section; the reviewer decides after the joint review.

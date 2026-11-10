@@ -250,3 +250,29 @@ Only disposable local synthetic data was used; no live AI, external crawler, clo
 | R25-V27-06-operations | PASS | Pending operation becomes failed with `SERVER_RESTARTED`; published pointer, active token and epoch remain unchanged. |
 | R25-V27-06-cleanup | PASS | Existing orphan/stage cleanup and stopped full-root restore regressions pass. |
 | Revision close | PASS | Revision plan/log/TODO agree. **Disposition: ACCEPT (2026-10-08).** CP025 completed; CP027 resumes in progress, CP028 pending its completion. |
+
+## Revision: 2026-11-10 - Guide-centric schema web-2.0.0 (R4/R6)
+
+### Revision Plan
+
+`plans/cp019-cp025_revision-plan_guide-centric-schema-and-editor.md` (stage R4 publication parts, R6).
+
+### Changes Made
+
+- Publication works on v2 snapshots: agency from the workspace profile, the writing brief is not leaked to the public page, published HTML stays immutable; `publication.test.ts` includes a test with the real renderer.
+- R6: `verify-publication.ts` selects the title field by `data-field-path`; `probe-publish-retry.ts`, `probe-recovery-scope.ts`, `probe-cp027-findings.ts`, `verify-e2e.ts` and `tests/web/cp027-fixtures.json` were ported to v2 fixtures and field names (manifest keys: `dayIds`, `firstPlace`, `guidePlaces`; scope labels kept as an independent check against the locale catalog and are matched in the page source, because `innerText` is upper-cased by CSS).
+- Commits: `5b0f183`, `73168be`, R6 commit.
+
+### Verification Performed
+
+Run on 2026-11-10: `test:web-publication` 12/12; `verify:web-publication` (stable link on republish, revoked token permanently denied, rotation, OG image 200 `image/jpeg`, private brief absent); `verify:web-publish-retry` and `probe:web-recovery-scope` (`reproduced: false`); `verify:web-e2e` status `passed`: AI apply and save, preview, publish, crash after artifact promotion with `SERVER_RESTARTED` on replay, graceful restart, republish keeping the link, revoke and rotate, four modes, six locales, long copy (3675 code points), owned asset and OG, 14-day and 60-place stress; `build:web-release` and `validate:web-release` (`valid`, 39 files).
+
+### Acceptance Criteria Results
+
+Plan criterion 8 (verify suites, release build/validation, screenshots inspected): PASS. Criterion 9 (tokens, revocation, immutability unchanged): PASS. Joint review: pending.
+
+### Remaining Limitations
+
+- `verify:web-readiness` (Linux container run) was ported to v2 but **not run**: the Docker daemon is not running on this machine. The CP028 evidence file from 2026-10-09 is unchanged.
+- `verify:web-systemd` was not run (not part of this stage).
+- CP status in `TODOS.md` is not changed by this section; the reviewer decides after the joint review.

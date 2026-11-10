@@ -1,6 +1,6 @@
 # Editor and AI API Contract (CP021–CP023)
 
-API base is same-origin `/api/v1`; versioned canonical content remains `web-1.0.0`. The server selects one local workspace. No browser field may select or override workspace, revision, storage key, provider or model. Management writes require the configured local Origin and `X-Engine-Request: 1`; they are not public share endpoints.
+API base is same-origin `/api/v1`; versioned canonical content is `web-2.0.0`. Existing `web-1.0.0` drafts are upgraded in place by migration 3 (backup by `VACUUM INTO` first, revision unchanged); every lossy change is reported as a warning or kept as a private note. The server selects one local workspace. No browser field may select or override workspace, revision, storage key, provider or model. Management writes require the configured local Origin and `X-Engine-Request: 1`; they are not public share endpoints.
 
 ## Error envelope
 
@@ -24,9 +24,9 @@ Do not expose stack traces, provider bodies, secrets, raw paths or foreign recor
 
 JSON body limit is 2 MiB; image input and processed output are limited to 5 MiB, formats JPEG/PNG/WebP, maximum 8,192 pixels per axis and 16 megapixels. Images are decoded, auto-rotated, re-encoded and stripped of metadata. Storage uses server-generated IDs. Draft save is whole-document optimistic concurrency, never JSON-path mutation. `409` does not overwrite the latest saved document.
 
-Record metadata (`id`, workspace, revision, timestamps), `languageContext` and `writingContext` are stored outside canonical `draftContent`. Profile defaults are copied when creating a draft and do not retroactively alter existing drafts. Blank canonical strings and repeaters are allowed on draft save; publish validation is outside CP021.
+Record metadata (`id`, workspace, revision, timestamps), `languageContext` (`{requestedLanguage,outputLanguage,source}`) and `writingContext` (`{brief,notes:[{targetId,text}]}`) are stored outside canonical `draftContent`. Profile defaults are copied when creating a draft and do not retroactively alter existing drafts. Blank canonical strings and repeaters are allowed on draft save; publish validation is outside CP021.
 
-Cursor pagination currently orders by opaque ID. The response shape is `{items,nextCursor}`. Asset IDs in the draft/profile must refer to uploaded assets belonging to the server workspace; browser URLs/file paths are never fetched by the renderer.
+Draft lists are ordered by last update (newest first) with an opaque cursor; the response shape is `{items,nextCursor}`. Asset IDs in the draft/profile must refer to uploaded assets belonging to the server workspace; browser URLs/file paths are never fetched by the renderer.
 
 ## Added by CP022–CP023
 
@@ -36,7 +36,7 @@ CP022 uses these endpoints and adds no independent persistence source. CP023 add
 |---|---|---|---|
 | POST | `/api/v1/itineraries/{id}/language/resolve` | `{expectedRevision}` | Resolves saved brief/factual notes locally; returns a proposal/reason without changing the record or calling the provider. |
 | POST | `/api/v1/itineraries/{id}/ai/overview` | `{operationId,expectedRevision}` | Proposes only the overview summary for a saved, resolved locale. |
-| POST | `/api/v1/itineraries/{id}/ai/description` | `{operationId,expectedRevision,target:{kind:"activity"\|"spot",id}}` | Proposes only the description for the stable ID and matching itinerary mode. |
+| POST | `/api/v1/itineraries/{id}/ai/description` | `{operationId,expectedRevision,target:{kind:"activity"\|"place",id}}` | Proposes only the description for the stable ID and matching itinerary mode. |
 
 AI endpoints use the server-configured `openai/gpt-6-luna`; clients cannot choose a provider/model, field path or arbitrary context. A completed replay returns the same target and text metadata as the initial response and sets `replayed:true`. Reusing an ID with different input returns `409 AI_OPERATION_CONFLICT`. A duplicate while the operation is running returns `202 {operationId,status:"running",retryAfterMs}`; clients may poll the exact same request/ID until bounded completion and must not start another operation. A suggestion never updates canonical content: the editor must explicitly Apply one field and then manually save the draft. Revision/target changes during generation return a stale-result error.
 
@@ -46,7 +46,7 @@ Default limits are 30 accepted operations per workspace/day, two new operations 
 
 | Method | Path | Request | Behavior |
 |---|---|---|---|
-| POST | `/api/v1/itineraries/{id}/preview` | `{expectedRevision}` | Renders only the server-saved revision with the CP020 renderer; returns `{itineraryId,revision,html,publishReady,errors,warnings,scheduleVerification}`. No draft/artifact is persisted. Dirty/local payloads are not accepted. |
+| POST | `/api/v1/itineraries/{id}/preview` | `{expectedRevision}` | Renders only the server-saved revision with the CP020 renderer; returns `{itineraryId,revision,html,publishReady,errors,warnings,scheduleVerification}`; each diagnostic is `{code,path,message,targetId?}` where `targetId` is the activity ID, else the day ID, else the place ID, so the editor can focus the exact item after a reorder. No draft/artifact is persisted. Dirty/local payloads are not accepted. |
 
 Stale revision returns `409 REVISION_CONFLICT`. Structurally invalid, unresolved-locale or unsafe-resource previews return a structured `422 PREVIEW_BLOCKED`; unavailable renderer resources return `503`. Publish-readiness diagnostics can be errors while safe HTML preview is returned. Ambiguous/missing schedule data is explicitly partial/warning; provable overlaps/cap violations are errors. Preview is displayed in a script-sandboxed iframe. Build the self-contained stylesheet with `npm run build:brochure-css` before previewing.
 

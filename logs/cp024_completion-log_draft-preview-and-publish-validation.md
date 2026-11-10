@@ -174,3 +174,28 @@ All runs used synthetic fixtures and temporary local storage. No live AI inferen
 | R24-V27-02-ui | PASS | Reordered browser case focuses the exact missing activity control by stable ID. |
 | R24-regression | PASS | Preview/editor/contracts suites, typechecks, build and browser regressions pass. |
 | Revision close | PASS | Revision plan, completion log, TODO and this review agree. **Disposition: ACCEPT (2026-10-08).** CP024 is completed with V27-01/V27-02/V27-03 revisions passed. CP027 resumes in progress; CP028 remains pending. |
+
+## Revision: 2026-11-10 - Guide-centric schema web-2.0.0 (R4)
+
+### Revision Plan
+
+`plans/cp019-cp025_revision-plan_guide-centric-schema-and-editor.md` (stage R4, "R3/R4 execution plan" and "R4 amendment"). Stage log: `logs/cp024_stage-log_r4-preview-v2.md`.
+
+### Changes Made
+
+- `src/server/preview.ts` rewritten for v2: span caps 360/720/960 minutes with warnings only for unknown times, overlap detection against the latest measured end, hotel-name warning (multi-day), meeting-point warning when no pickup, locale resolution errors, policy-guard patterns on the v2 field paths (pattern-based, not word lists, per RULES 11c), full raster decode, and `targetId` on diagnostics for editor focusing. `preview.ts` is no longer excluded from `typecheck:web-server`.
+- R6: `verify-preview.ts` now waits for the Preview button to be enabled before clicking. The previous version failed about one run in three because the status text appears before `busy` is cleared.
+- Commits: `6b23be7`, `d02bec9`, `9e2da43`, `5b0f183`, `73168be` (selector changes), R6 commit.
+
+### Verification Performed
+
+Run on 2026-11-10: `test:web-preview` 12/12; `verify:web-preview` 6 consecutive passes after the fix (focus lands on the exact empty activity after a reorder; sandboxed preview; no overflow); `probe-cp027-findings.ts`: V27-01 (7 h half day) now blocked with `DURATION_CAP_EXCEEDED`, V27-03 (corrupt raster) fails closed, all findings `reproduced: false`.
+
+### Acceptance Criteria Results
+
+Plan criterion 7 (mode change cannot leave hidden rendered data; caps; diagnostics focus): PASS. Negative checks from the Verification Plan (guide `startDate` -> `FIELD_NOT_APPLICABLE`, half day 5 h OK / 7 h error / unknown warning only, half-day meals error, "harga" without a number accepted): covered by `contracts.test.ts` (`FIELD_NOT_APPLICABLE`, half-day meals, caps with unknown times) and `preview.test.ts` / `ai.test.ts` (benign wording such as "prices are not listed" is accepted). Joint R3+R4 review: pending.
+
+### Remaining Limitations
+
+- Deviations E1-E4 of the R4 amendment still need the reviewer's decision.
+- CP status in `TODOS.md` is not changed by this section; the reviewer decides after the joint review.
