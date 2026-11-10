@@ -39,3 +39,18 @@ Mutation checks: (1) migration-test dedupe removed → `upgrade` contract test f
 ## Stages S2–S4
 
 Not started in this log entry; see the next section when added.
+
+## Stage S2 — OTA option lists (done)
+
+| Item | Change | Where |
+|---|---|---|
+| Option lists | `config/web/practical-options.json` version 1, `id` and `en` (15/11/16/12/11/10/9 items; parity checked by test 5e) | `config/web/practical-options.json` |
+| Preview-guard check | Every option (168 texts) run through the three guard patterns copied from `preview.ts`: 0 matches, so no option removed | test 5e |
+| Editor lists | `OptionList`: preset checkboxes (checked = exact string in the list) plus typed custom rows; hint "Pilih bahasa konten untuk melihat pilihan umum." when language unset. Duplicate legend hidden inside (`TextList hideLegend`). | `src/editor/sections/OptionList.tsx`, `src/editor/fields.tsx`, `src/editor/practicalOptions.ts` |
+| Terms & conditions | `PolicyOptions`: checking adds the exact line to `policies`, unchecking removes it; the textarea stays editable. | `src/editor/sections/PolicyOptions.tsx`, `Closing.tsx` |
+
+Tests: 5e (parity and guard safety), 5f (policy line handling). Editor 30/30.
+
+Gate S2: build rc 0; typecheck-app rc 0; contracts 43, store 12, api 13, ai 28, render 14, editor 30, preview 12, publication 12 (0 fail); `verify:web-editor`, `-preview`, `-publication`, `-ai-ui`, `-e2e`, `-publish-retry`, `-render` all rc 0.
+
+Screenshots opened (390 px, full_day, language en): `output/web-editor/cp035-s2-practical-390.png` (chips for each group, custom rows, no overflow) and `cp035-s2-closing-390.png` (terms & conditions picker above the textarea).

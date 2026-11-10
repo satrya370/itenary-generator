@@ -1,6 +1,7 @@
 import React from 'react';
 import type { EditorProps } from '../EditorForm.js';
-import { TextField, TextList, buttonClass } from '../fields.js';
+import { TextField, buttonClass } from '../fields.js';
+import { OptionList } from './OptionList.js';
 import { moveIndex } from '../model.js';
 
 export function Practical(props: EditorProps) {
@@ -9,12 +10,12 @@ export function Practical(props: EditorProps) {
     <section data-editor-section="practical" className="space-y-4">
       <h3 className="font-semibold">Info praktis</h3>
       <div className="grid gap-4 sm:grid-cols-2">
-        <TextList id={`${recordId}-included`} meta={meta('included[]', mode)} values={content.included} onChange={(values) => patch((n) => { n.included = values; })} />
-        <TextList id={`${recordId}-not-included`} meta={meta('notIncluded[]', mode)} values={content.notIncluded} onChange={(values) => patch((n) => { n.notIncluded = values; })} />
-        <TextList id={`${recordId}-what-to-bring`} meta={meta('whatToBring[]', mode)} values={content.whatToBring} onChange={(values) => patch((n) => { n.whatToBring = values; })} />
-        <TextList id={`${recordId}-local-tips`} meta={meta('localTips[]', mode)} values={content.localTips} onChange={(values) => patch((n) => { n.localTips = values; })} />
-        <TextList id={`${recordId}-not-suitable`} meta={meta('notSuitableFor[]', mode)} values={content.notSuitableFor} onChange={(values) => patch((n) => { n.notSuitableFor = values; })} />
-        <TextList id={`${recordId}-not-allowed`} meta={meta('notAllowed[]', mode)} values={content.notAllowed} onChange={(values) => patch((n) => { n.notAllowed = values; })} />
+        <OptionList id={`${recordId}-included`} meta={meta('included[]', mode)} group="included" language={content.trip.language} values={content.included} onChange={(values) => patch((n) => { n.included = values; })} />
+        <OptionList id={`${recordId}-not-included`} meta={meta('notIncluded[]', mode)} group="notIncluded" language={content.trip.language} values={content.notIncluded} onChange={(values) => patch((n) => { n.notIncluded = values; })} />
+        <OptionList id={`${recordId}-what-to-bring`} meta={meta('whatToBring[]', mode)} group="whatToBring" language={content.trip.language} values={content.whatToBring} onChange={(values) => patch((n) => { n.whatToBring = values; })} />
+        <OptionList id={`${recordId}-not-suitable`} meta={meta('notSuitableFor[]', mode)} group="notSuitableFor" language={content.trip.language} values={content.notSuitableFor} onChange={(values) => patch((n) => { n.notSuitableFor = values; })} />
+        <OptionList id={`${recordId}-not-allowed`} meta={meta('notAllowed[]', mode)} group="notAllowed" language={content.trip.language} values={content.notAllowed} onChange={(values) => patch((n) => { n.notAllowed = values; })} />
+        <OptionList id={`${recordId}-local-tips`} meta={meta('localTips[]', mode)} group="localTips" language={content.trip.language} values={content.localTips} onChange={(values) => patch((n) => { n.localTips = values; })} />
         <fieldset className="space-y-3 rounded-lg border border-slate-200 p-3">
           <legend className="px-1 text-sm font-semibold">{meta('emergencyContacts[].label', mode).label}</legend>
           {content.emergencyContacts.map((contact, index) => (

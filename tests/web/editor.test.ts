@@ -223,6 +223,27 @@ test('5d. the guide picker lists profile guides; a photo field offers upload', (
   assert.ok(noGuides.includes('data-field-path="guide.name"'));
 });
 
+test('5e. OTA option lists exist for id and en with matching counts and pass the preview content guards', async () => {
+  const { readFileSync } = await import('node:fs');
+  const options = JSON.parse(readFileSync('config/web/practical-options.json', 'utf8')) as { locales: Record<string, Record<string, string[]>> };
+  const groups = ['included', 'notIncluded', 'whatToBring', 'notSuitableFor', 'notAllowed', 'localTips', 'policies'];
+  for (const group of groups) assert.equal(options.locales.id[group].length, options.locales.en[group].length, `parity for ${group}`);
+  const preview = readFileSync('src/server/preview.ts', 'utf8');
+  const guards = ['moneyClaim', 'openingClaim', 'promotionalClaim'].map((name) => {
+    const literal = new RegExp(`const ${name} = (/.*/[a-z]*);`).exec(preview)![1];
+    const end = literal.lastIndexOf('/');
+    return new RegExp(literal.slice(1, end), literal.slice(end + 1));
+  });
+  for (const locale of ['id', 'en']) for (const group of groups) for (const text of options.locales[locale][group])
+    assert.ok(!guards.some((guard) => guard.test(text)), `${locale}/${group}: "${text}" matches a publish guard`);
+});
+
+test('5f. policy options add and remove exact lines and leave other text alone', async () => {
+  const { policyLines } = await import('../../src/editor/sections/PolicyOptions.js');
+  assert.deepEqual(policyLines('A' + String.fromCharCode(10) + String.fromCharCode(10) + 'B' + String.fromCharCode(10) + '  '), ['A', 'B']);
+  assert.deepEqual(policyLines(null), []);
+});
+
 test('6. reordering keeps stable IDs and does not mutate the input', () => {
   const rows = [makeActivity(), makeActivity(), makeActivity()];
   const ids = rows.map((row) => row.id);

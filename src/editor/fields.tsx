@@ -79,8 +79,8 @@ export function SelectField({ id, meta, value, choices, onChange }: {
   );
 }
 
-export function TextList({ id, meta, values, onChange }: {
-  id: string; meta: FieldMeta; values: string[]; onChange: (values: string[]) => void;
+export function TextList({ id, meta, values, onChange, hideLegend = false }: {
+  id: string; meta: FieldMeta; values: string[]; onChange: (values: string[]) => void; hideLegend?: boolean;
 }) {
   const root = useRef<HTMLFieldSetElement>(null);
   const focusIndex = useRef<number | null>(null);
@@ -93,7 +93,7 @@ export function TextList({ id, meta, values, onChange }: {
   }, [values.length]);
   return (
     <fieldset ref={root} className="space-y-2 rounded-lg border border-slate-200 p-3">
-      <legend className="px-1 text-sm font-semibold">{meta.label}</legend>
+      {!hideLegend && <legend className="px-1 text-sm font-semibold">{meta.label}</legend>}
       {values.map((value, index) => (
         <div className="flex items-start gap-2" key={`${id}-${index}`}>
           <label className="sr-only" htmlFor={`${id}-${index}`}>{meta.label}, baris {index + 1}</label>
