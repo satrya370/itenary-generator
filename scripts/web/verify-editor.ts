@@ -238,8 +238,10 @@ async function main() {
     await clickButton('Tambah tidak termasuk');
     await clickButton('Tambah kontak darurat (nama)'); await set('emergencyContacts[].label', 'Police'); await set('emergencyContacts[].value', '110');
     await set('writing.brief', 'A quiet garden trip for two.'); await clickButton('Tambah catatan fakta itinerary'); await set('writing.notes[]', 'Guide confirmed the north entrance.');
-    await set('trip.language', 'zh-Hant');
-    await page.waitForFunction(() => document.body.innerText.includes('Katalog/font render untuk zh-Hant belum tersedia'));
+    assert.equal(await page.$eval('[data-field-path="trip.language"]', element => element.tagName), 'SELECT', 'language is a dropdown');
+    assert.equal(await page.$eval('[data-field-path="trip.language"]', element => (element as HTMLSelectElement).querySelector('option[value="zh-Hant"]')), null, 'zh-Hant is not offered');
+    await set('trip.language', 'zh-Hans');
+    await page.waitForFunction(() => document.querySelector('[data-field-path="trip.language"]')?.getAttribute('value') !== 'zh-Hant');
     await page.evaluate(async () => {
       const canvas = document.createElement('canvas'); canvas.width = 16; canvas.height = 12;
       const context = canvas.getContext('2d')!; context.fillStyle = '#147d92'; context.fillRect(0, 0, 16, 12);

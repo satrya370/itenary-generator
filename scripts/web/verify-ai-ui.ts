@@ -115,7 +115,7 @@ async function main() {
     await save(); await click('Deteksi otomatis'); await status('Bahasa terdeteksi: fr. Konfirmasi sebelum menyimpan.');
     await click('Konfirmasi bahasa'); await save(); assert.equal(await value('Bahasa konten'), 'fr');
     assert.equal(await value('Judul perjalanan'), 'CP023 browser activity');
-    await page.locator(await field('Bahasa konten')).fill('en'); await save();
+    await page.select(await field('Bahasa konten'), 'en'); await save();
 
     const overview = await field('Ringkasan');
     const beforeOverview = await storedDraft();
@@ -145,7 +145,7 @@ async function main() {
 
     await page.setViewport({ width: 390, height: 844 });
     await page.click('[data-mode-card="destination_guide"]'); await status('Draft baru tersimpan');
-    await page.locator(await field('Judul perjalanan')).fill('CP023 browser spot'); await page.locator(await field('Bahasa konten')).fill('en'); await click('Tambah tempat');
+    await page.locator(await field('Judul perjalanan')).fill('CP023 browser spot'); await page.select(await field('Bahasa konten'), 'en'); await click('Tambah tempat');
     await page.locator(await field('Nama tempat')).fill('East Garden'); await page.locator(await field('Area')).fill('East Kyoto'); await save();
     const beforeSpotDescription = await storedDraft();
     await click('Buat dengan AI', 'places'); await status('Usulan AI siap ditinjau; draft belum berubah.'); await click('Terapkan ke field ini');

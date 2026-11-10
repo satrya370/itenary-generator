@@ -47,9 +47,12 @@ async function main() {
       moveUp?.click();
     });
     const activityFieldIds = await page.$$eval(activityTitleSelector, elements => elements.map(element => (element as HTMLInputElement).id));
+    await clickButton('Simpan draft'); await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Tersimpan · revisi'));
+    await clickButton('Preview');
+    await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Preview belum tersedia: Pilih atau deteksi bahasa'));
     const localeId = await page.evaluate(() => [...document.querySelectorAll('label')].find(label => label.textContent?.trim().startsWith('Bahasa konten'))?.htmlFor);
     assert.ok(localeId);
-    await page.locator(`[id="${localeId}"]`).fill('en');
+    await page.select(`[id="${localeId}"]`, 'en');
     await clickButton('Simpan draft');
     await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Tersimpan · revisi'));
     await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent?.trim() === 'Preview' && !(button as HTMLButtonElement).disabled));

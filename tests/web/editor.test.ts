@@ -198,6 +198,19 @@ test('5b. targetIdFor maps an indexed path to the stable ID of its activity, day
   assert.equal(targetIdFor(trip, 'emergencyContacts[0].value'), undefined);
 });
 
+test('5c. the language field is a dropdown of the six content languages plus auto; no free text', () => {
+  const content = createContentV2('full_day');
+  const html = renderToStaticMarkup(React.createElement(EditorForm, editorProps('full_day', content)));
+  const langField = html.match(/<(select|input)[^>]*data-field-path="trip\.language"[^>]*>/)?.[0] ?? '';
+  assert.match(langField, /^<select/, 'trip.language is a select');
+  for (const value of ['auto', 'id', 'en', 'fr', 'ja', 'zh-Hans', 'la']) assert.ok(html.includes(`value="${value}"`), `option ${value}`);
+  const unsupported = { ...content, trip: { ...content.trip, language: 'inggris' } };
+  const badProps = { ...editorProps('full_day', unsupported), localeInput: 'inggris' };
+  const bad = renderToStaticMarkup(React.createElement(EditorForm, badProps));
+  assert.ok(bad.includes('Bahasa tidak didukung: inggris'), 'an unsupported stored tag is shown, not hidden');
+  assert.ok(!bad.includes('list="'), 'no datalist text input');
+});
+
 test('6. reordering keeps stable IDs and does not mutate the input', () => {
   const rows = [makeActivity(), makeActivity(), makeActivity()];
   const ids = rows.map((row) => row.id);

@@ -247,7 +247,8 @@ function App() {
     } catch (caught) { const e = caught as ApiFailure;
       const diagnostics = e.body?.fields;
       setPreviewDiagnostics({ errors: diagnostics?.errors || [{ code: e.body?.code || 'PREVIEW_FAILED', path: '', message: e.body?.message || e.message }], warnings: diagnostics?.warnings || [] });
-      setStatus(e.status === 409 ? 'Draft berubah; simpan lalu buat preview baru.' : `Preview belum tersedia: ${e.body?.message || e.message}`);
+      const firstError = diagnostics?.errors?.[0]?.message;
+      setStatus(e.status === 409 ? 'Draft berubah; simpan lalu buat preview baru.' : `Preview belum tersedia: ${firstError || e.body?.message || e.message}`);
     } finally { setBusy(false); }
   }
   async function publishSaved() {
@@ -342,10 +343,11 @@ function App() {
   const localeNeedsSupport = language.outputLanguage !== null && !localeSupported(language.outputLanguage);
   const pendingLoss = content && pendingMode ? hasModeLoss(content, pendingMode) : [];
   const aiConfigured = capabilities.ai?.credentialState === 'configured';
+  const aiHint = ({ missing: statusCopy.aiMissing, ambiguous: statusCopy.aiAmbiguous, unavailable: statusCopy.aiUnavailable } as Record<string, string>)[capabilities.ai?.credentialState ?? ''];
   const modelText = aiPreflight?.modelId && aiPreflight.modelId !== 'openai/gpt-6-luna' ? `Model: ${aiPreflight.modelId}` : statusCopy.modelLabel;
   const aiExtra = (
     <div className="space-y-2">
-      <p className="text-xs text-slate-600">{aiConfigured ? (aiPreflight ? `${aiPreflight.daily.usedToday}/${aiPreflight.daily.dailyLimit} operasi hari ini.` : 'AI aktif di server.') : statusCopy.aiNotActive}</p>
+      <p className="text-xs text-slate-600">{aiConfigured ? (aiPreflight ? `${aiPreflight.daily.usedToday}/${aiPreflight.daily.dailyLimit} operasi hari ini.` : 'AI aktif di server.') : `${statusCopy.aiNotActive} ${aiHint ?? ''}`}</p>
       <button type="button" disabled={busy} className={buttonClass} onClick={checkProvider}>Periksa model dan koneksi</button>
       <p className="text-xs text-slate-500">{modelText}</p>
       <p className="text-xs text-slate-500">{statusCopy.saveBeforeAi}</p>

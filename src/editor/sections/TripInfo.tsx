@@ -25,7 +25,7 @@ export function TripInfo(props: EditorProps) {
           </select>
         </div>
         <p className="self-end text-sm text-slate-600">Dari profil agensi: {props.agencyName || 'belum diisi'} · <button type="button" className="font-semibold text-teal-800 underline" onClick={props.onFocusProfile}>Ubah profil</button></p>
-        <LocaleField id={`${recordId}-locale`} meta={meta('trip.language', mode)} value={props.localeInput} onChange={props.onLocaleChange} error={props.localeError} help={statusCopy.languageUnresolved} unresolved={props.language.source === 'unresolved'} needsSupport={props.localeNeedsSupport} locale={props.language.outputLanguage} showDetect={props.language.source === 'unresolved'} busy={props.busy} dirty={props.dirty} proposal={props.languageProposal} onDetect={props.onDetectLanguage} onAccept={props.onAcceptLanguage} />
+        <LocaleField id={`${recordId}-locale`} meta={meta('trip.language', mode)} value={props.localeInput} onChange={props.onLocaleChange} error={props.localeError} help={statusCopy.languageUnresolved} unresolved={props.language.source === 'unresolved'} needsSupport={false} locale={props.language.outputLanguage} showDetect={props.language.source === 'unresolved'} busy={props.busy} dirty={props.dirty} proposal={props.languageProposal} onDetect={props.onDetectLanguage} onAccept={props.onAcceptLanguage} />
       </div>
     </section>
   );

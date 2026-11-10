@@ -144,7 +144,6 @@ export function ThemePicker({ id, meta, value, onChange }: {
   );
 }
 
-const localeOptions = ['auto', 'la', 'fr', 'en', 'id', 'ja', 'zh-Hans'];
 
 export function PhotoField({ id, basePath, mode, meta, photo, assets, emptyText, onAsset, onCredit }: {
   id: string; basePath: string; mode: ItineraryMode; meta: MetaFn; photo: Photo | null; assets: AssetDto[]; emptyText: string;
@@ -164,18 +163,30 @@ export function PhotoField({ id, basePath, mode, meta, photo, assets, emptyText,
   );
 }
 
-export function LocaleField({ id, meta, value, onChange, error, help, unresolved, needsSupport, locale, showDetect, busy, dirty, proposal, onDetect, onAccept }: {
+export const contentLanguages = [
+  { value: 'id', label: 'Bahasa Indonesia' },
+  { value: 'en', label: 'English' },
+  { value: 'fr', label: 'Français' },
+  { value: 'ja', label: '日本語' },
+  { value: 'zh-Hans', label: '中文（简体）' },
+  { value: 'la', label: 'Latina' }
+];
+
+export function LocaleField({ id, meta, value, onChange, error, help, unresolved, showDetect, busy, dirty, proposal, onDetect, onAccept }: {
   id: string; meta: FieldMeta; value: string; onChange: (v: string) => void; error: string; help: string; unresolved: boolean; needsSupport: boolean; locale: string | null;
   showDetect: boolean; busy: boolean; dirty: boolean; proposal: LanguageResolutionDto | null; onDetect: () => void; onAccept: () => void;
 }) {
+  const known = value === 'auto' || contentLanguages.some((item) => item.value === value);
   return (
     <div className="min-w-0">
       <label htmlFor={id} className="block text-sm font-medium text-slate-800">{meta.label}{meta.required && <span aria-hidden="true" className="ml-1 text-red-700">*</span>}</label>
-      <input id={id} list={`${id}-options`} value={value} onChange={(e) => onChange(e.target.value)} className={`${inputClass} ${error ? 'border-red-600' : ''}`} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : unresolved ? `${id}-help` : undefined} data-field-path={meta.path} />
-      <datalist id={`${id}-options`}>{localeOptions.map((option) => <option key={option} value={option} />)}</datalist>
-      {unresolved && <p id={`${id}-help`} className="mt-1 text-xs text-slate-500">{help}</p>}
+      <select id={id} value={value} onChange={(event) => onChange(event.target.value)} className={`${inputClass} ${error ? 'border-red-600' : ''}`} aria-invalid={Boolean(error)} aria-describedby={`${id}-help`} data-field-path={meta.path}>
+        <option value="auto">Deteksi otomatis</option>
+        {contentLanguages.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+        {!known && <option value={value} disabled>Bahasa tidak didukung: {value}</option>}
+      </select>
+      <p id={`${id}-help`} className="mt-1 text-xs text-slate-500">{unresolved ? help : !known ? 'Pilih salah satu bahasa yang tersedia.' : ''}</p>
       {error && <p id={`${id}-error`} className="mt-1 text-xs text-red-700">{error}</p>}
-      {needsSupport && <p className="mt-1 text-xs text-amber-800">Katalog/font render untuk {locale} belum tersedia; tidak akan fallback diam-diam.</p>}
       {showDetect && <button type="button" disabled={busy || dirty} className={`${buttonClass} mt-2`} onClick={onDetect}>Deteksi otomatis</button>}
       {proposal?.status === 'resolved' && (
         <div className="mt-2 rounded-md bg-teal-50 p-2 text-sm">Proposal bahasa: {proposal.locale}. <button type="button" className="font-semibold text-teal-900 underline" onClick={onAccept}>Konfirmasi bahasa</button></div>
