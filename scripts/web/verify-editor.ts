@@ -6,6 +6,17 @@ import path from 'node:path';
 import puppeteer from 'puppeteer';
 import { createApp } from '../../src/server/app.js';
 import type { RecordDto } from '../../src/api/client.js';
+import type { ItineraryMode } from '../../src/contracts/types.js';
+import { modeCopy } from '../../src/editor/labels.js';
+
+const SCHEDULED_BASE = ['trip-info', 'time-meeting', 'trip-guide', 'cover', 'summary'];
+const TAIL = ['practical', 'closing', 'ai-assist'];
+const SECTIONS: Record<ItineraryMode, string[]> = {
+  half_day: [...SCHEDULED_BASE, 'schedule', ...TAIL],
+  full_day: [...SCHEDULED_BASE, 'schedule', ...TAIL],
+  multi_day: [...SCHEDULED_BASE, 'days', ...TAIL],
+  destination_guide: ['trip-info', 'trip-guide', 'cover', 'summary', 'places', ...TAIL]
+};
 
 async function availablePort() {
   const server = net.createServer();
@@ -16,7 +27,7 @@ async function availablePort() {
 }
 
 async function main() {
-  const dataDir = await mkdtemp(path.join(os.tmpdir(), 'itinerary-cp022-browser-'));
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), 'itinerary-r5-browser-'));
   const port = await availablePort(); const origin = `http://127.0.0.1:${port}`;
   const app = await createApp({ dataDir, publicOrigin: origin, allowedOrigins: [origin] });
   await app.listen({ host: '127.0.0.1', port });
@@ -28,163 +39,181 @@ async function main() {
   page.on('request', request => { const url = new URL(request.url()); if (['http:', 'https:'].includes(url.protocol) && url.origin !== origin) external.push(request.url()); });
   page.on('dialog', dialog => dialog.accept());
 
-  async function labelId(labelText: string, index = 0) {
-    const id = await page.evaluate(({ labelText, index }) => {
-      const labels = [...document.querySelectorAll('label')].filter(label => label.textContent?.trim().replace(/\s*\*$/, '') === labelText);
-      return labels[index]?.htmlFor || null;
-    }, { labelText, index });
-    assert.ok(id, `field label not found: ${labelText}[${index}]`);
-    return `[id="${id}"]`;
+  const sel = (fieldPath: string) => `[data-field-path="${fieldPath}"]`;
+  async function set(fieldPath: string, value: string, index = 0) {
+    await page.evaluate(({ selector, value, index }) => {
+      const element = document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(selector)[index];
+      if (!element) throw new Error(`field not found: ${selector}[${index}]`);
+      const prototype = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : element instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(prototype, 'value')!.set!.call(element, value);
+      element.dispatchEvent(new Event(element instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }));
+    }, { selector: sel(fieldPath), value, index });
   }
-  async function fill(labelText: string, value: string, index = 0) {
-    const selector = await labelId(labelText, index);
-    const type = await page.$eval(selector, element => (element as HTMLInputElement).type).catch(() => '');
-    if (type === 'date' || /[^\u0000-\u007f]/.test(value)) {
-      await page.evaluate(({ selector, value }) => {
-        const input = document.querySelector<HTMLInputElement | HTMLTextAreaElement>(selector)!;
-        const prototype = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-        Object.getOwnPropertyDescriptor(prototype, 'value')!.set!.call(input, value);
-        input.dispatchEvent(new Event('input', { bubbles: true })); input.dispatchEvent(new Event('change', { bubbles: true }));
-      }, { selector, value });
-    } else await page.locator(selector).fill(value);
-  }
-  async function select(labelText: string, value: string, index = 0) { await page.select(await labelId(labelText, index), value); }
-  async function values(labelText: string) {
-    return await page.evaluate(labelText => [...document.querySelectorAll('label')]
-      .filter(label => label.textContent?.trim().replace(/\s*\*$/, '') === labelText)
-      .map(label => (document.getElementById(label.htmlFor) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement)?.value || ''), labelText);
-  }
-  async function groupValues(title: string) {
-    return await page.evaluate(title => {
-      const group = [...document.querySelectorAll('fieldset')].find(item => item.querySelector('legend')?.textContent?.trim() === title);
-      return [...(group?.querySelectorAll('textarea') || [])].map(item => (item as HTMLTextAreaElement).value);
-    }, title);
-  }
+  const values = (fieldPath: string) => page.evaluate(selector => [...document.querySelectorAll<HTMLInputElement>(selector)].map(element => element.value), sel(fieldPath));
+  const count = (selector: string) => page.evaluate(selector => document.querySelectorAll(selector).length, selector);
   async function clickButton(text: string, index = 0) {
     const found = await page.evaluate(({ text, index }) => {
       const buttons = [...document.querySelectorAll('button')].filter(button => button.textContent?.trim() === text || button.getAttribute('aria-label') === text);
       if (!buttons[index]) return false;
-      (buttons[index] as HTMLButtonElement).click(); return true;
+      buttons[index].click(); return true;
     }, { text, index });
     assert.ok(found, `button not found: ${text}[${index}]`);
   }
-  async function waitStatus(text: string) {
-    await page.waitForFunction(expected => document.querySelector('[role="status"]')?.textContent?.includes(expected), {}, text);
-  }
-  async function createMode(mode: string) {
-    await page.select('#new-mode', mode);
-    await clickButton('Buat');
-    await waitStatus('Draft baru tersimpan');
+  const waitStatus = (text: string) => page.waitForFunction(expected => document.querySelector('[role="status"]')?.textContent?.includes(expected), {}, text);
+  const currentId = () => page.evaluate(() => document.querySelector<HTMLElement>('[data-field-path="trip.title"]')?.id.replace(/-trip-title$/, '') ?? '');
+  const sections = () => page.evaluate(() => [...document.querySelectorAll<HTMLElement>('[data-editor-section]')].map(element => element.dataset.editorSection));
+  async function createMode(mode: ItineraryMode) {
+    const before = await currentId();
+    await page.click(`[data-mode-card="${mode}"]`);
+    await page.waitForFunction(previous => {
+      const id = document.querySelector<HTMLElement>('[data-field-path="trip.title"]')?.id.replace(/-trip-title$/, '');
+      return Boolean(id) && id !== previous && document.querySelector('[role="status"]')?.textContent?.includes('Draft baru tersimpan');
+    }, {}, before);
+    assert.deepEqual(await sections(), SECTIONS[mode], `${mode} sections`);
+    const badge = await page.evaluate(() => document.querySelector('h2.text-xl')?.nextElementSibling?.textContent);
+    assert.equal(badge, modeCopy[mode].title, `${mode} badge`);
+    return currentId();
   }
   async function save() { await clickButton('Simpan draft'); await waitStatus('Tersimpan · revisi'); }
   async function openTitle(title: string) {
     await page.evaluate(text => {
-      const buttons = [...document.querySelectorAll('aside button')];
-      const button = buttons.find(item => item.textContent?.includes(text));
-      if (!button) throw new Error(`draft list item not found: ${text}; rows=${buttons.map(item => item.textContent?.trim()).join(' | ')}`);
+      const button = [...document.querySelectorAll('aside button')].find(item => item.textContent?.includes(text));
+      if (!button) throw new Error(`draft list item not found: ${text}`);
       (button as HTMLButtonElement).click();
     }, title);
     await waitStatus('Draft dibuka');
   }
-  async function captureMode(mode: string) {
-    for (const [name, width, height] of [['mobile', 390, 844], ['desktop', 1440, 1000]] as const) {
+  async function reopen(title: string) { await page.reload(); await waitStatus('Engine tersambung'); await openTitle(title); }
+  async function captureMode(mode: ItineraryMode) {
+    for (const [width, height] of [[390, 844], [1280, 900]] as const) {
       await page.setViewport({ width, height });
       const size = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }));
       viewportResults.push({ mode, ...size });
-      assert.ok(size.document <= size.viewport, `${mode} ${name} overflow: ${JSON.stringify(size)}`);
-      await page.screenshot({ path: path.join(evidenceDir, `cp022-${mode}-${name}.png`), fullPage: true });
+      assert.ok(size.document <= size.viewport, `${mode} ${width}px overflow: ${JSON.stringify(size)}`);
+      await page.screenshot({ path: path.join(evidenceDir, `r5-${mode}-${width}.png`), fullPage: true });
     }
+    await page.setViewport({ width: 1280, height: 900 });
   }
-  async function records() { return await page.evaluate(async () => (await (await fetch('/api/v1/itineraries')).json()).items); }
-  async function getRecord(id: string): Promise<RecordDto> { return await page.evaluate(async id => await (await fetch(`/api/v1/itineraries/${id}`)).json(), id); }
+  const getRecord = (id: string): Promise<RecordDto> => page.evaluate(async id => await (await fetch(`/api/v1/itineraries/${id}`)).json(), id);
 
   try {
-    await page.setViewport({ width: 1440, height: 1000 });
+    await page.setViewport({ width: 1280, height: 900 });
     await page.goto(origin); await waitStatus('Engine tersambung');
 
-    await createMode('half_day');
-    await fill('Judul perjalanan', 'CP022 itinerary'); await fill('Destinasi', 'Kyoto'); await fill('Negara', 'Japan');
-    await fill('Nama agensi', 'Kyoto Guides'); await fill('Kontak agensi', 'guide@example.test');
-    await fill('Bahasa konten', 'ja'); await fill('Ringkasan itinerary', 'A relaxed walk through Kyoto gardens.');
-    await fill('Waktu', '08:30'); await fill('Judul aktivitas', 'Garden visit'); await fill('Deskripsi', 'Learn about the garden with a local guide.');
-    await clickButton('Tambah aktivitas'); await fill('Judul aktivitas', 'Tea ceremony', 1); await fill('Waktu', '10:00', 1);
-    await page.evaluate(() => [...document.querySelectorAll('button')].filter(button => button.textContent?.trim() === 'Naikkan')[1]?.focus());
-    await page.keyboard.press('Enter');
-    assert.deepEqual(await values('Judul aktivitas'), ['Tea ceremony', 'Garden visit']);
-    const halfId = await page.evaluate(() => document.querySelector<HTMLInputElement>('input[id$="-tripTitle"]')!.id.replace(/-tripTitle$/, ''));
+    // 1-2. Half day: sections, save/reopen identical, reorder keeps IDs, 409 conflict flow.
+    const halfId = await createMode('half_day');
+    await set('trip.title', 'R5 half day'); await set('trip.destination', 'Kyoto'); await set('trip.country', 'Japan'); await set('trip.language', 'ja');
+    await set('summary', 'A relaxed walk through Kyoto gardens.');
+    await set('days[].activities[].title', 'Garden visit', 0); await set('days[].activities[].time', '08:30', 0);
+    await clickButton('Tambah aktivitas');
+    await set('days[].activities[].title', 'Tea ceremony', 1); await set('days[].activities[].time', '10:00', 1);
+    await clickButton('Naikkan', 1);
+    assert.deepEqual(await values('days[].activities[].title'), ['Tea ceremony', 'Garden visit']);
     await save();
     const halfSaved = await getRecord(halfId);
-    const activityIds = halfSaved.draftContent.schedule[0].activities.map(item => item.id);
-    await captureMode('half-day');
-    await page.reload(); await waitStatus('Engine tersambung'); await openTitle('CP022 itinerary');
-    assert.deepEqual(await values('Judul aktivitas'), ['Tea ceremony', 'Garden visit']);
-    assert.deepEqual((await getRecord(halfId)).draftContent.schedule[0].activities.map(item => item.id), activityIds);
-    await fill('Musim terbaik', 'Local conflict copy');
-    const conflictRequest = await page.evaluate(async id => {
+    const activityIds = halfSaved.draftContent.days[0].activities.map(item => item.id);
+    assert.deepEqual(halfSaved.draftContent.days[0].activities.map(item => item.title), ['Tea ceremony', 'Garden visit']);
+    await captureMode('half_day');
+    await reopen('R5 half day');
+    assert.deepEqual(await values('days[].activities[].title'), ['Tea ceremony', 'Garden visit']);
+    assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('[data-editor-section="schedule"] fieldset[data-target-id]')].map(element => element.dataset.targetId)), activityIds);
+    assert.equal((await values('trip.title'))[0], 'R5 half day');
+    assert.equal((await values('summary'))[0], 'A relaxed walk through Kyoto gardens.');
+    assert.deepEqual((await getRecord(halfId)).draftContent, halfSaved.draftContent, 'reopen does not change the saved draft');
+
+    await set('summary', 'Local conflict copy');
+    const conflictStatus = await page.evaluate(async id => {
       const current = await (await fetch(`/api/v1/itineraries/${id}`)).json();
-      const content = structuredClone(current.draftContent); content.overview.quickFacts.bestSeason = 'Server latest copy';
+      const content = structuredClone(current.draftContent); content.summary = 'Server latest copy';
       return (await fetch(`/api/v1/itineraries/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json', 'x-engine-request': '1' }, body: JSON.stringify({ expectedRevision: current.revision, draftContent: content, languageContext: current.languageContext, writingContext: current.writingContext }) })).status;
     }, halfId);
-    assert.equal(conflictRequest, 200);
+    assert.equal(conflictStatus, 200);
     await clickButton('Simpan draft'); await waitStatus('Konflik:');
-    assert.equal((await values('Musim terbaik'))[0], 'Local conflict copy');
-    await clickButton('Muat revisi terbaru');
-    await waitStatus('Versi terbaru dimuat');
-    assert.equal((await values('Musim terbaik'))[0], 'Server latest copy');
+    assert.equal((await values('summary'))[0], 'Local conflict copy');
+    await clickButton('Muat revisi terbaru'); await waitStatus('Versi terbaru dimuat');
+    assert.equal((await values('summary'))[0], 'Server latest copy');
 
-    await createMode('full_day');
-    assert.equal(await page.$$eval('input[id*="accommodation-name"]', inputs => inputs.length), 0);
-    await fill('Judul perjalanan', 'CP022 full-day fixture'); await fill('Destinasi', 'Kyoto');
-    const fullId = await page.evaluate(() => document.querySelector<HTMLInputElement>('input[id$="-tripTitle"]')!.id.replace(/-tripTitle$/, ''));
-    await save(); assert.equal((await getRecord(fullId)).draftContent.schedule.length, 1);
-    await captureMode('full-day');
-    await page.reload(); await waitStatus('Engine tersambung'); await openTitle('CP022 full-day fixture');
-    assert.equal((await values('Judul perjalanan'))[0], 'CP022 full-day fixture');
-    await page.reload(); await waitStatus('Engine tersambung'); await openTitle('CP022 full-day fixture');
-    assert.equal((await values('Judul perjalanan'))[0], 'CP022 full-day fixture');
-    await createMode('multi_day');
-    await fill('Judul perjalanan', 'CP022 multi-day fixture');
-    await clickButton('Tambah hari'); await page.waitForFunction(() => [...document.querySelectorAll('label')].filter(label => label.textContent?.trim() === 'Judul blok').length === 1);
-    await clickButton('Tambah hari'); await page.waitForFunction(() => [...document.querySelectorAll('label')].filter(label => label.textContent?.trim() === 'Judul blok').length === 2);
-    await fill('Judul blok', 'Day one', 0); await fill('Judul blok', 'Day two', 1);
-    await fill('Tanggal blok', '2026-10-07', 0); await fill('Tanggal blok', '2026-10-08', 1);
-    assert.deepEqual(await values('Tanggal blok'), ['2026-10-07', '2026-10-08']);
-    await select('Hari selesai (rentang)', '2', 0); await clickButton('Konfirmasi rentang');
-    await fill('Bahasa konten', 'en');
-    const multiId = await page.evaluate(() => document.querySelector<HTMLInputElement>('input[id$="-tripTitle"]')!.id.replace(/-tripTitle$/, ''));
+    // 3. Mode change: cancel changes nothing; confirm clears start/end time and gives two days.
+    await set('trip.startTime', '09:00');
+    await set('trip.mode', 'multi_day');
+    await page.waitForSelector('[role="dialog"] ul li');
+    assert.deepEqual(await page.$$eval('[role="dialog"] ul li', items => items.map(item => item.textContent)), ['jam mulai/selesai']);
+    await clickButton('Batal');
+    assert.equal(await page.$('[role="dialog"]'), null);
+    assert.equal((await values('trip.mode'))[0], 'half_day');
+    assert.equal((await values('trip.startTime'))[0], '09:00');
+    assert.deepEqual(await sections(), SECTIONS.half_day);
+    await set('trip.mode', 'multi_day'); await clickButton('Ganti tipe');
+    assert.deepEqual(await sections(), SECTIONS.multi_day);
+    assert.equal(await count('[data-editor-section="days"] div[data-target-id]'), 2);
+    assert.equal(await count(sel('trip.startTime')), 0);
+    await save();
+    const converted = await getRecord(halfId);
+    assert.equal(converted.draftContent.trip.mode, 'multi_day');
+    assert.equal(converted.draftContent.trip.startTime, null);
+    assert.equal(converted.draftContent.days.length, 2);
+
+    // Full day.
+    const fullId = await createMode('full_day');
+    assert.equal(await count(sel('days[].hotel.name')), 0);
+    assert.equal(await count(sel('days[].meals.lunch')), 1);
+    await set('trip.title', 'R5 full day'); await set('trip.destination', 'Kyoto');
+    await save();
+    assert.equal((await getRecord(fullId)).draftContent.days.length, 1);
+    await captureMode('full_day');
+    await reopen('R5 full day');
+    assert.equal((await values('trip.title'))[0], 'R5 full day');
+
+    // 4. Multi day: reorder keeps IDs, 14-day limit, reopen.
+    const multiId = await createMode('multi_day');
+    assert.equal(await count(sel('days[].hotel.name')), 2);
+    await set('trip.title', 'R5 multi day'); await set('trip.language', 'en');
+    await set('days[].title', 'Day one', 0); await set('days[].title', 'Day two', 1);
     await save();
     const beforeReorder = await getRecord(multiId);
     await clickButton('Naikkan hari', 1);
-    assert.deepEqual(await values('Judul blok'), ['Day two', 'Day one']);
+    assert.deepEqual(await values('days[].title'), ['Day two', 'Day one']);
     await save();
-    const multiSaved = await getRecord(multiId);
-    assert.deepEqual(multiSaved.draftContent.schedule.map(block => [block.dayStart, block.dayEnd]), [[1, 1], [2, 3]]);
-    assert.deepEqual(multiSaved.draftContent.schedule.map(block => block.date), ['2026-10-08', '2026-10-07']);
-    assert.deepEqual(multiSaved.draftContent.schedule.map(block => block.id).sort(), beforeReorder.draftContent.schedule.map(block => block.id).sort());
-    await captureMode('multi-day');
-    await page.reload(); await waitStatus('Engine tersambung'); await openTitle('CP022 multi-day fixture');
-    assert.deepEqual(await values('Judul blok'), ['Day two', 'Day one']);
+    const afterReorder = await getRecord(multiId);
+    assert.deepEqual(afterReorder.draftContent.days.map(day => day.dayNumber), [1, 2]);
+    assert.deepEqual(afterReorder.draftContent.days.map(day => day.title), ['Day two', 'Day one']);
+    assert.deepEqual(afterReorder.draftContent.days.map(day => day.id).sort(), beforeReorder.draftContent.days.map(day => day.id).sort());
+    await captureMode('multi_day');
+    for (let days = 3; days <= 14; days++) {
+      await clickButton('Tambah hari');
+      await page.waitForFunction(expected => document.querySelectorAll('[data-editor-section="days"] div[data-target-id]').length === expected, {}, days);
+    }
+    assert.equal(await page.evaluate(() => [...document.querySelectorAll('button')].find(button => button.textContent?.trim() === 'Tambah hari')?.disabled), true);
+    await save();
+    const fourteen = await getRecord(multiId);
+    assert.equal(fourteen.draftContent.days.length, 14);
+    assert.deepEqual(fourteen.draftContent.days.map(day => day.dayNumber), Array.from({ length: 14 }, (_, index) => index + 1));
+    assert.equal(new Set(fourteen.draftContent.days.map(day => day.id)).size, 14);
+    await reopen('R5 multi day');
+    assert.equal(await count('[data-editor-section="days"] div[data-target-id]'), 14);
 
-    await createMode('destination_guide'); await clickButton('Tambah tempat');
-    await fill('Judul perjalanan', 'CP022 guide fixture');
-    await fill('Nama tempat', 'East Garden'); await fill('Grup/tema area', 'Eastern Kyoto'); await fill('Area', 'Higashiyama');
-    await fill('Deskripsi', 'Quiet paths and local heritage.'); await fill('Durasi yang disarankan', '90 minutes');
-    await fill('Waktu kunjungan yang disarankan', 'Morning'); await fill('Cara menuju lokasi', 'Take the local bus.');
-    await fill('Tips lokal *, baris 1', 'Wear comfortable shoes.');
-    await clickButton('Tambah termasuk'); await fill('Termasuk, baris 1', 'Local guide');
-    await clickButton('Tambah termasuk'); await fill('Termasuk, baris 2', 'Entrance fee');
-    assert.deepEqual(await groupValues('Termasuk'), ['Local guide', 'Entrance fee']);
+    // 5. Guide: details, lists, photo credit, language note, mode change, then the 60-place limit.
+    const guideId = await createMode('destination_guide');
+    assert.equal(await count(sel('places[].name')), 0);
+    await clickButton('Tambah tempat');
+    await set('trip.title', 'R5 guide');
+    await set('places[].name', 'East Garden'); await set('places[].group', 'Eastern Kyoto'); await set('places[].area', 'Higashiyama');
+    await set('places[].description', 'Quiet paths and local heritage.');
+    await set('places[].suggestedDuration', '90 minutes'); await set('places[].bestTime', 'Morning'); await set('places[].gettingThere', 'Take the local bus.');
+    await clickButton('Tambah tips'); await set('places[].tips[]', 'Wear comfortable shoes.');
+    await clickButton('Tambah termasuk'); await set('included[]', 'Local guide', 0);
+    await clickButton('Tambah termasuk'); await set('included[]', 'Entrance fee', 1);
+    assert.deepEqual(await values('included[]'), ['Local guide', 'Entrance fee']);
     page.removeAllListeners('dialog'); page.once('dialog', dialog => { void dialog.dismiss(); });
     await clickButton('Hapus Termasuk 2');
-    assert.deepEqual(await groupValues('Termasuk'), ['Local guide', 'Entrance fee']);
+    assert.deepEqual(await values('included[]'), ['Local guide', 'Entrance fee']);
     page.removeAllListeners('dialog'); page.on('dialog', dialog => dialog.accept());
     await clickButton('Hapus Termasuk 2');
-    assert.deepEqual(await groupValues('Termasuk'), ['Local guide']);
-    await clickButton('Tambah kontak darurat'); await fill('Label kontak darurat 1', 'Police'); await fill('Nilai kontak darurat 1', '110');
-    await fill('Brief perjalanan', 'A quiet garden trip for two.'); await clickButton('Tambah catatan fakta itinerary'); await fill('Catatan fakta itinerary, baris 1', 'Guide confirmed the north entrance.');
-    await fill('Bahasa konten', 'zh-Hant');
+    assert.deepEqual(await values('included[]'), ['Local guide']);
+    await clickButton('Tambah kontak darurat (nama)'); await set('emergencyContacts[].label', 'Police'); await set('emergencyContacts[].value', '110');
+    await set('writing.brief', 'A quiet garden trip for two.'); await clickButton('Tambah catatan fakta itinerary'); await set('writing.notes[]', 'Guide confirmed the north entrance.');
+    await set('trip.language', 'zh-Hant');
     await page.waitForFunction(() => document.body.innerText.includes('Katalog/font render untuk zh-Hant belum tersedia'));
-
     await page.evaluate(async () => {
       const canvas = document.createElement('canvas'); canvas.width = 16; canvas.height = 12;
       const context = canvas.getContext('2d')!; context.fillStyle = '#147d92'; context.fillRect(0, 0, 16, 12);
@@ -193,71 +222,80 @@ async function main() {
       const input = document.querySelector<HTMLInputElement>('#asset-upload')!; input.files = transfer.files; input.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await waitStatus('Aset tersimpan');
-    const assetList = await page.evaluate(async () => await (await fetch('/api/v1/assets')).json());
-    const assetId = assetList.items[0].id as string;
-    await select('Foto wilayah', assetId);
-    await fill('Fotografer', 'Fixture photographer', 1); await fill('Sumber foto', 'Synthetic guide photo', 1);
-    await fill('Judul perjalanan', 'CP022 guide fixture');
-    const guideId = await page.evaluate(() => document.querySelector<HTMLInputElement>('input[id$="-tripTitle"]')!.id.replace(/-tripTitle$/, ''));
-    await save(); const guide = await getRecord(guideId);
-    assert.equal(guide.draftContent.spots[0].name, 'East Garden');
-    assert.equal(guide.draftContent.spots[0].description, 'Quiet paths and local heritage.');
-    assert.equal(guide.draftContent.spots[0].assetId, assetId);
-    assert.equal(guide.draftContent.practical.emergencyContacts[0].value, '110');
+    const assetId = (await page.evaluate(async () => await (await fetch('/api/v1/assets')).json())).items[0].id as string;
+    assert.equal(await count(sel('cover.credit.photographer')), 0, 'credit fields appear only after a photo is chosen');
+    await set('cover.assetId', assetId);
+    await set('cover.credit.photographer', 'Fixture photographer'); await set('cover.credit.source', 'Synthetic guide photo');
+    await save();
+    const guide = await getRecord(guideId);
+    assert.equal(guide.draftContent.places[0].name, 'East Garden');
+    assert.equal(guide.draftContent.places[0].description, 'Quiet paths and local heritage.');
+    assert.deepEqual(guide.draftContent.places[0].tips, ['Wear comfortable shoes.']);
+    assert.equal(guide.draftContent.cover?.assetId, assetId);
+    assert.equal(guide.draftContent.cover?.credit?.photographer, 'Fixture photographer');
+    assert.equal(guide.draftContent.emergencyContacts[0].value, '110');
+    assert.deepEqual(guide.draftContent.included, ['Local guide']);
     assert.equal(guide.writingContext.brief, 'A quiet garden trip for two.');
     assert.equal(guide.writingContext.notes[0].targetId, 'itinerary');
-    await captureMode('destination-guide');
-    await page.reload(); await waitStatus('Engine tersambung'); await openTitle('CP022 guide fixture');
-    assert.equal((await values('Nama tempat'))[0], 'East Garden');
+    await captureMode('destination_guide');
+    await reopen('R5 guide');
+    assert.equal((await values('places[].name'))[0], 'East Garden');
 
-    await select('Mode perjalanan', 'full_day');
+    await set('trip.mode', 'full_day');
+    await page.waitForSelector('[role="dialog"] ul li');
+    assert.deepEqual(await page.$$eval('[role="dialog"] ul li', items => items.map(item => item.textContent)), ['1 tempat']);
     await clickButton('Batal');
-    assert.equal(await values('Nama tempat').then(items => items[0]), 'East Garden');
-    await select('Mode perjalanan', 'full_day'); await clickButton('Konfirmasi dan ubah mode');
-    assert.equal(await values('Nama tempat').then(items => items.length), 0);
-    await page.reload(); await waitStatus('Engine tersambung'); await openTitle('destination guide');
+    assert.equal((await values('places[].name'))[0], 'East Garden');
+    await set('trip.mode', 'full_day'); await clickButton('Ganti tipe');
+    assert.equal(await count(sel('places[].name')), 0);
+    assert.deepEqual(await sections(), SECTIONS.full_day);
 
-    await createMode('multi_day');
-    await fill('Judul perjalanan', 'CP022 14-day fixture');
-    for (let day = 1; day <= 14; day++) {
-      await clickButton('Tambah hari');
-      await page.waitForFunction(expected => [...document.querySelectorAll('label')].filter(label => label.textContent?.trim() === 'Judul blok').length === expected, {}, day);
-    }
-    assert.equal(await page.evaluate(() => [...document.querySelectorAll('button')].find(button => button.textContent?.trim() === 'Tambah hari')?.disabled), true);
-    const fourteenDayId = await page.evaluate(() => document.querySelector<HTMLInputElement>('input[id$="-tripTitle"]')!.id.replace(/-tripTitle$/, ''));
-    await save();
-    const fourteenDay = await getRecord(fourteenDayId);
-    assert.equal(fourteenDay.draftContent.schedule.length, 14);
-    assert.equal(fourteenDay.draftContent.brochure.durationDays, 14);
-    assert.equal(new Set(fourteenDay.draftContent.schedule.map(block => block.id)).size, 14);
-    await page.reload(); await waitStatus('Engine tersambung'); await openTitle('CP022 14-day fixture');
-    assert.equal(await values('Judul blok').then(items => items.length), 14);
-
-    await openTitle('CP022 guide fixture');
-    for (let index = 1; index < 60; index++) {
+    const manyId = await createMode('destination_guide');
+    await set('trip.title', 'R5 60 places');
+    for (let places = 1; places <= 60; places++) {
       await clickButton('Tambah tempat');
-      await page.waitForFunction(expected => [...document.querySelectorAll('legend')].filter(legend => legend.textContent?.startsWith('Tempat ')).length === expected, {}, index + 1);
+      await page.waitForFunction(expected => document.querySelectorAll('[data-editor-section="places"] fieldset[data-target-id]').length === expected, {}, places);
     }
+    assert.equal(await page.evaluate(() => [...document.querySelectorAll('button')].find(button => button.textContent?.trim() === 'Tambah tempat')?.disabled), true);
     const longJapanese = '静かな庭園を歩き、地域の文化と景色を楽しみます。'.repeat(12);
-    await fill('Nama tempat', '庭園入口', 0);
-    await fill('Nama tempat', '茶室', 1); await clickButton('Turunkan', 0);
-    assert.deepEqual(await values('Nama tempat').then(items => items.slice(0, 2)), ['茶室', '庭園入口']);
-    await fill('Deskripsi', longJapanese, 1);
-    const manySpotId = await page.evaluate(() => document.querySelector<HTMLInputElement>('input[id$="-tripTitle"]')!.id.replace(/-tripTitle$/, ''));
+    await page.evaluate(({ longJapanese }) => {
+      const writes: Array<[string, number, string]> = [];
+      for (let index = 0; index < 60; index++) {
+        writes.push(['[data-field-path="places[].name"]', index, index === 0 ? '茶室' : `Place ${index + 1}`]);
+        writes.push(['[data-field-path="places[].area"]', index, 'Kyoto']);
+        writes.push(['[data-field-path="places[].group"]', index, index < 30 ? 'Eastern Kyoto' : 'Western Kyoto']);
+        writes.push(['[data-field-path="places[].description"]', index, index === 1 ? longJapanese : 'Short description.']);
+      }
+      for (const [selector, index, value] of writes) {
+        const element = document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(selector)[index];
+        const prototype = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+        Object.getOwnPropertyDescriptor(prototype, 'value')!.set!.call(element, value);
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }, { longJapanese });
+    assert.equal(await count('[data-editor-section="places"] h4'), 2, 'one group heading per run of equal groups');
     await save();
-    const manySpots = await getRecord(manySpotId);
-    assert.equal(manySpots.draftContent.spots.length, 60);
-    assert.equal(manySpots.draftContent.spots[0].name, '茶室');
-    assert.equal(manySpots.draftContent.spots[1].description, longJapanese);
-    assert.equal(new Set(manySpots.draftContent.spots.map(spot => spot.id)).size, 60);
-    await page.reload(); await waitStatus('Engine tersambung'); await openTitle('CP022 guide fixture');
-    assert.equal(await values('Nama tempat').then(items => items.length), 60);
+    const many = await getRecord(manyId);
+    assert.equal(many.draftContent.places.length, 60);
+    assert.equal(many.draftContent.places[0].name, '茶室');
+    assert.equal(many.draftContent.places[1].description, longJapanese);
+    assert.equal(new Set(many.draftContent.places.map(place => place.id)).size, 60);
+    await clickButton('Turunkan', 0);
+    assert.deepEqual((await values('places[].name')).slice(0, 2), ['Place 2', '茶室']);
+    await save();
+    assert.deepEqual((await getRecord(manyId)).draftContent.places.slice(0, 2).map(place => place.name), ['Place 2', '茶室']);
+    await reopen('R5 60 places');
+    assert.equal(await count(sel('places[].name')), 60);
 
-    const mobileWidth = viewportResults.filter(result => result.viewport === 390).every(result => result.document <= result.viewport);
-    const desktopWidth = viewportResults.filter(result => result.viewport === 1440).every(result => result.document <= result.viewport);
+    // 6-7. No overflow at 390/1280, no console errors, no external requests.
+    assert.deepEqual(['half_day', 'full_day', 'multi_day', 'destination_guide'].filter(mode => viewportResults.filter(result => result.mode === mode).length !== 2), []);
     assert.deepEqual(external, []);
     assert.deepEqual(failures, []);
-    const summary = { modes: ['half_day', 'full_day', 'multi_day', 'destination_guide'], activityOrder: ['Tea ceremony', 'Garden visit'], scheduleRanges: [[1, 1], [2, 3]], scheduleIdsPreserved: true, fourteenDayBlocks: fourteenDay.draftContent.schedule.length, guideSpots: manySpots.draftContent.spots.length, desktopWidth, mobileWidth, viewports: viewportResults, externalRequests: external.length, consoleErrors: failures.length };
+    const summary = {
+      modes: Object.keys(SECTIONS), sections: SECTIONS, activityOrder: ['Tea ceremony', 'Garden visit'], reorderedDayTitles: ['Day two', 'Day one'],
+      fourteenDays: fourteen.draftContent.days.length, sixtyPlaces: many.draftContent.places.length, modeChangeLosses: { toMultiDay: ['jam mulai/selesai'], fromGuide: ['1 tempat'] },
+      viewportResults, externalRequests: external.length, consoleErrors: failures.length
+    };
     await writeFile(path.join(evidenceDir, 'verification-summary.json'), JSON.stringify(summary, null, 2));
     console.log(JSON.stringify(summary));
   } finally {

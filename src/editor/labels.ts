@@ -119,10 +119,11 @@ export const statusCopy = {
   draftSaved: 'Tersimpan · revisi',
   engineConnected: 'Engine tersambung',
   publishSucceeded: 'Itinerary berhasil dipublish',
-  languageUnresolved: 'Bahasa belum dipilih. Pilih bahasa atau klik ‘Deteksi otomatis’. Teks Anda tidak akan diterjemahkan.',
+  languageUnresolved: "Bahasa belum dipilih. Pilih bahasa atau klik 'Deteksi otomatis'. Teks Anda tidak akan diterjemahkan.",
   aiNotActive: 'AI belum aktif: kunci API belum diatur di server. Semua field tetap bisa diisi manual.',
   modelLabel: 'Model: GPT-6 Luna',
   assetCount: '1 foto tersedia.',
   noCover: 'Belum ada foto sampul — halaman memakai warna tema.',
+  noPhoto: 'Belum ada foto.',
   saveBeforeAi: 'Simpan draft dan pilih bahasa dulu untuk memakai AI.'
 };

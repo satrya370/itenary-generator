@@ -37,7 +37,8 @@ function deref(node: unknown): unknown {
     const record = current as Rec;
     if (typeof record.$ref === 'string') {
       const name = record.$ref.split('/').pop();
-      current = (schema as Rec).$defs ? (schema as unknown as Rec).$defs[name as string] : undefined;
+      const defs = (schema as unknown as { $defs: Record<string, unknown> }).$defs;
+      current = defs[name as string];
       continue;
     }
     if (Array.isArray(record.anyOf)) {
@@ -52,6 +53,7 @@ function deref(node: unknown): unknown {
   return current;
 }
 
+// maxItems is the limit of the nearest enclosing array (e.g. activities for days[].activities[].title).
 function extractLimits(template: string): { maxLength?: number; maxItems?: number } {
   const result: { maxLength?: number; maxItems?: number } = {};
   let node: unknown = schema;
@@ -109,3 +111,5 @@ export function fieldMeta(path: string, mode: ItineraryMode): FieldMeta {
     ...limits
   };
 }
+
+export const MAX_PLACES = 60;

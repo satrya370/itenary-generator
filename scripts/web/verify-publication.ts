@@ -67,7 +67,7 @@ async function main() {
     await publicPage.setViewport({ width: 1440, height: 1000 }); await publicPage.screenshot({ path: path.join(evidenceDir, 'cp025-public-desktop.png'), fullPage: true });
     await publicPage.close();
 
-    const titleId = await page.evaluate(() => document.querySelector<HTMLInputElement>('input[id$="-tripTitle"]')!.id);
+    const titleId = await page.evaluate(() => document.querySelector<HTMLInputElement>('[data-field-path="trip.title"]')!.id);
     await page.locator(`[id="${titleId}"]`).fill('CP025 Updated Fixture'); await clickButton('Simpan draft'); await waitStatus('Tersimpan · revisi');
     await clickButton('Publish ulang'); await waitStatus('Itinerary berhasil dipublish');
     const updated = await readStatus(); assert.equal(updated.shareUrl, stableUrl); assert.equal(updated.draftDiffers, false);

@@ -1,8 +1,10 @@
 import React, { useEffect, useRef } from 'react';
 import type { FieldMeta } from './schema-meta.js';
 import { moveIndex } from './model.js';
-import type { AssetDto } from '../api/client.js';
-import { themeNames } from './labels.js';
+import type { AssetDto, LanguageResolutionDto } from '../api/client.js';
+import type { ItineraryMode, Photo } from '../contracts/types.js';
+import type { MetaFn } from './EditorForm.js';
+import { statusCopy, themeNames } from './labels.js';
 import palettes from '../../config/palettes.json' with { type: 'json' };
 
 export const inputClass = 'mt-1 block w-full rounded-md border border-slate-300 bg-white p-2 text-sm focus-visible:outline-2 focus-visible:outline-teal-700 disabled:bg-slate-100';
@@ -108,37 +110,6 @@ export function TextList({ id, meta, values, onChange }: {
   );
 }
 
-export function ObjectList({ id, meta, rows, fields, makeRow, onChange }: {
-  id: string; meta: FieldMeta; rows: Array<Record<string, any>>; fields: Array<{ key: string; label: string; type?: string; maxLength?: number }>; makeRow: () => Record<string, any>; onChange: (rows: Array<Record<string, any>>) => void;
-}) {
-  return (
-    <fieldset className="space-y-3 rounded-lg border border-slate-200 p-3">
-      <legend className="px-1 text-sm font-semibold">{meta.label}</legend>
-      {rows.map((row, index) => (
-        <div className="rounded-md bg-slate-50 p-3" key={String(row.id ?? `${id}-${index}`)}>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {fields.map((field) => {
-              const fieldMeta = { ...meta, label: field.label, path: `${meta.path}.${field.key}` } as FieldMeta;
-              return (
-                <div key={field.key} className="min-w-0">
-                  <label htmlFor={`${id}-${index}-${field.key}`} className="block text-sm font-medium text-slate-800">{field.label} {index + 1}</label>
-                  <input id={`${id}-${index}-${field.key}`} value={String(row[field.key] ?? '')} maxLength={field.maxLength} onChange={(event) => onChange(rows.map((item, i) => (i === index ? { ...item, [field.key]: event.target.value } : item)))} className={inputClass} data-field-path={fieldMeta.path} />
-                </div>
-              );
-            })}
-          </div>
-          <div className="mt-2 flex gap-2">
-            <button type="button" className={buttonClass} aria-label={`Naikkan ${meta.label} ${index + 1}`} disabled={index === 0} onClick={() => onChange(moveIndex(rows, index, -1))}>Naikkan</button>
-            <button type="button" className={buttonClass} aria-label={`Turunkan ${meta.label} ${index + 1}`} disabled={index === rows.length - 1} onClick={() => onChange(moveIndex(rows, index, 1))}>Turunkan</button>
-            <button type="button" className={buttonClass} onClick={() => { if (globalThis.confirm(`Hapus ${meta.label.toLowerCase()} ${index + 1}?`)) onChange(rows.filter((_, i) => i !== index)); }}>Hapus {meta.label.toLowerCase()} {index + 1}</button>
-          </div>
-        </div>
-      ))}
-      <button type="button" disabled={meta.maxItems !== undefined && rows.length >= meta.maxItems} className={buttonClass} onClick={() => onChange([...rows, makeRow()])}>Tambah {meta.label.toLowerCase()}</button>
-    </fieldset>
-  );
-}
-
 export function AssetSelect({ id, meta, value, assets, onChange }: {
   id: string; meta: FieldMeta; value: string | null; assets: AssetDto[]; onChange: (value: string | null) => void;
 }) {
@@ -170,5 +141,45 @@ export function ThemePicker({ id, meta, value, onChange }: {
         ))}
       </div>
     </fieldset>
+  );
+}
+
+const localeOptions = ['auto', 'la', 'fr', 'en', 'id', 'ja', 'zh-Hans'];
+
+export function PhotoField({ id, basePath, mode, meta, photo, assets, emptyText, onAsset, onCredit }: {
+  id: string; basePath: string; mode: ItineraryMode; meta: MetaFn; photo: Photo | null; assets: AssetDto[]; emptyText: string;
+  onAsset: (value: string | null) => void; onCredit: (key: 'photographer' | 'url' | 'source', value: string | null) => void;
+}) {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2">
+      <AssetSelect id={id} meta={meta(`${basePath}.assetId`, mode)} value={photo?.assetId ?? null} assets={assets} onChange={onAsset} />
+      {photo === null ? <p className="self-end text-sm text-slate-600">{emptyText}</p> : (
+        <>
+          <TextField id={`${id}-photographer`} meta={meta(`${basePath}.credit.photographer`, mode)} value={photo.credit?.photographer ?? ''} onChange={(v) => onCredit('photographer', v)} />
+          <TextField id={`${id}-url`} meta={meta(`${basePath}.credit.url`, mode)} value={photo.credit?.url ?? ''} type="url" onChange={(v) => onCredit('url', v)} />
+          <TextField id={`${id}-source`} meta={meta(`${basePath}.credit.source`, mode)} value={photo.credit?.source ?? ''} onChange={(v) => onCredit('source', v)} />
+        </>
+      )}
+    </div>
+  );
+}
+
+export function LocaleField({ id, meta, value, onChange, error, help, unresolved, needsSupport, locale, showDetect, busy, dirty, proposal, onDetect, onAccept }: {
+  id: string; meta: FieldMeta; value: string; onChange: (v: string) => void; error: string; help: string; unresolved: boolean; needsSupport: boolean; locale: string | null;
+  showDetect: boolean; busy: boolean; dirty: boolean; proposal: LanguageResolutionDto | null; onDetect: () => void; onAccept: () => void;
+}) {
+  return (
+    <div className="min-w-0">
+      <label htmlFor={id} className="block text-sm font-medium text-slate-800">{meta.label}{meta.required && <span aria-hidden="true" className="ml-1 text-red-700">*</span>}</label>
+      <input id={id} list={`${id}-options`} value={value} onChange={(e) => onChange(e.target.value)} className={`${inputClass} ${error ? 'border-red-600' : ''}`} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : unresolved ? `${id}-help` : undefined} data-field-path={meta.path} />
+      <datalist id={`${id}-options`}>{localeOptions.map((option) => <option key={option} value={option} />)}</datalist>
+      {unresolved && <p id={`${id}-help`} className="mt-1 text-xs text-slate-500">{help}</p>}
+      {error && <p id={`${id}-error`} className="mt-1 text-xs text-red-700">{error}</p>}
+      {needsSupport && <p className="mt-1 text-xs text-amber-800">Katalog/font render untuk {locale} belum tersedia; tidak akan fallback diam-diam.</p>}
+      {showDetect && <button type="button" disabled={busy || dirty} className={`${buttonClass} mt-2`} onClick={onDetect}>Deteksi otomatis</button>}
+      {proposal?.status === 'resolved' && (
+        <div className="mt-2 rounded-md bg-teal-50 p-2 text-sm">Proposal bahasa: {proposal.locale}. <button type="button" className="font-semibold text-teal-900 underline" onClick={onAccept}>Konfirmasi bahasa</button></div>
+      )}
+    </div>
   );
 }

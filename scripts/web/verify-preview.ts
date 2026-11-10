@@ -35,10 +35,10 @@ async function main() {
   try {
     await page.setViewport({ width: 1440, height: 1000 });
     await page.goto(origin); await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Engine tersambung'));
-    await page.select('#new-mode', 'half_day'); await clickButton('Buat');
+    await page.click('[data-mode-card="half_day"]');
     await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Draft baru tersimpan'));
     await clickButton('Tambah aktivitas');
-    const activityTitleSelector = 'input[id*="-activity-title-"]';
+    const activityTitleSelector = '[data-field-path="days[].activities[].title"]';
     const activityTitleFields = await page.$$(activityTitleSelector);
     await activityTitleFields[0].type('Known activity one');
     await page.evaluate(() => {
@@ -54,7 +54,7 @@ async function main() {
     await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Tersimpan · revisi'));
     await clickButton('Preview');
     await page.waitForFunction(() => document.querySelector('iframe[title="Preview itinerary tersimpan"]') !== null);
-    await page.waitForFunction(() => document.querySelector('[aria-label="Publish diagnostics"]')?.textContent?.includes('days[0].activities[0].title'));
+    await page.waitForFunction(() => document.querySelector('[aria-label="Publish diagnostics"] [data-diagnostic-path="days[0].activities[0].title"]') !== null);
     const frame = page.frames().find(candidate => candidate.url() === 'about:srcdoc');
     assert.ok(frame, 'sandboxed srcdoc preview frame exists');
     await frame!.waitForFunction(() => Boolean(document.body?.innerText.trim()));
@@ -63,10 +63,9 @@ async function main() {
     assert.ok(previewText.trim().length > 0, 'rendered preview displays visible itinerary content');
     await (await page.$('iframe[title="Preview itinerary tersimpan"]'))!.screenshot({ path: path.join(evidenceDir, 'cp024-preview-frame.png') });
     assert.equal(await page.$eval('iframe[title="Preview itinerary tersimpan"]', element => (element as HTMLIFrameElement).getAttribute('sandbox')), '');
-    const diagnostics = await page.$eval('[aria-label="Publish diagnostics"]', element => element.textContent || '');
-    assert.match(diagnostics, /days\[0\]\.activities\[0\]\.title/);
+    assert.ok(await page.$('[aria-label="Publish diagnostics"] [data-diagnostic-path="days[0].activities[0].title"]'), 'activity title diagnostic is listed');
     const focusProbe = await page.evaluate(() => {
-      const button = [...document.querySelectorAll('[aria-label="Publish diagnostics"] button')].find(item => item.textContent?.startsWith('days[0].activities[0].title')) as HTMLButtonElement | undefined;
+      const button = document.querySelector<HTMLButtonElement>('[aria-label="Publish diagnostics"] [data-diagnostic-path="days[0].activities[0].title"]');
       button?.click(); return (document.activeElement as HTMLElement)?.id || '';
     });
     const exactActivityFocus = focusProbe === activityFieldIds[0];

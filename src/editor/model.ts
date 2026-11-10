@@ -1,7 +1,8 @@
-import type { Activity, Day, ItineraryMode, Photo, Place, WebItineraryContent } from '../contracts/types.js';
-import { validateDraft } from '../contracts/validator.js';
+import type { Activity, Day, Hotel, ItineraryMode, Photo, Place, WebItineraryContent } from '../contracts/types.js';
 
 const newId = () => globalThis.crypto.randomUUID();
+const emptyMeals = () => ({ breakfast: false, lunch: false, dinner: false });
+const emptyMeeting = () => ({ place: null, mapsUrl: null, time: null, note: null });
 
 export function blankToNull(value: string | null | undefined): string | null {
   return value === null || value === undefined || value.trim() === '' ? null : value;
@@ -20,7 +21,7 @@ export function makeDay(mode: ItineraryMode, dayNumber: number): Day {
     photo: null,
     activities: [makeActivity()],
     hotel: null,
-    meals: mode === 'half_day' ? null : { breakfast: false, lunch: false, dinner: false },
+    meals: mode === 'half_day' ? null : emptyMeals(),
     transferNote: null
   };
 }
@@ -31,6 +32,10 @@ export function makePlace(): Place {
 
 export function renumberDays(days: Day[]): Day[] {
   return days.map((day, index) => ({ ...day, dayNumber: index + 1 }));
+}
+
+export function ensureMeals(day: Day): Day {
+  return day.meals ? day : { ...day, meals: emptyMeals() };
 }
 
 export function moveById<T extends { id: string }>(rows: T[], id: string, delta: number): T[] {
@@ -57,38 +62,81 @@ export function normalizeDuration(raw: number | null | undefined): number | null
 }
 
 export function setPhotoCredit(photo: Photo | null, key: 'photographer' | 'url' | 'source', value: string | null): Photo | null {
-  if (photo === null) {
-    return { assetId: '', credit: { photographer: '', url: null, source: '' } };
-  }
+  if (photo === null) return null;
   const credit = photo.credit ?? { photographer: '', url: null, source: '' };
-  const nextCredit = { ...credit, [key]: value };
-  if (key === 'url') nextCredit.url = blankToNull(typeof value === 'string' ? value : null);
-  const allBlank = nextCredit.photographer.trim() === '' && nextCredit.url === null && nextCredit.source.trim() === '';
-  return { ...photo, credit: allBlank ? null : nextCredit };
+  const next = { ...credit };
+  if (key === 'url') next.url = blankToNull(value);
+  else next[key] = value ?? '';
+  const allBlank = next.photographer.trim() === '' && next.url === null && next.source.trim() === '';
+  return { ...photo, credit: allBlank ? null : next };
 }
 
 export function setPhotoAsset(photo: Photo | null, assetId: string | null): Photo | null {
   return assetId ? { assetId, credit: photo?.credit ?? null } : null;
 }
 
-export function normalizeHotel(name: string, area: string | null, note: string | null) {
-  if (name.trim() === '' && (area === null || area.trim() === '') && (note === null || note.trim() === '')) return null;
+export function normalizeHotel(name: string, area: string | null, note: string | null): Hotel | null {
+  if (name.trim() === '' && blankToNull(area) === null && blankToNull(note) === null) return null;
   return { name, area: blankToNull(area), note: blankToNull(note) };
-}
-
-export function normalizeMeals(breakfast: boolean, lunch: boolean, dinner: boolean) {
-  if (!breakfast && !lunch && !dinner) return null;
-  return { breakfast, lunch, dinner };
 }
 
 export function pickupOff() {
   return { offered: false as const, area: null, time: null, dropoffNote: null };
 }
 
-function hasText(value: unknown): boolean {
+export function normalizeBlanks(content: WebItineraryContent): WebItineraryContent {
+  const next = structuredClone(content);
+  const photoBlanks = (photo: Photo | null) => {
+    if (photo?.credit) photo.credit.url = blankToNull(photo.credit.url);
+  };
+  next.trip.region = blankToNull(next.trip.region);
+  next.trip.startDate = blankToNull(next.trip.startDate);
+  next.trip.startTime = blankToNull(next.trip.startTime);
+  next.trip.endTime = blankToNull(next.trip.endTime);
+  next.guide.name = blankToNull(next.guide.name);
+  next.guide.phone = blankToNull(next.guide.phone);
+  next.meeting.place = blankToNull(next.meeting.place);
+  next.meeting.mapsUrl = blankToNull(next.meeting.mapsUrl);
+  next.meeting.time = blankToNull(next.meeting.time);
+  next.meeting.note = blankToNull(next.meeting.note);
+  next.pickup.area = blankToNull(next.pickup.area);
+  next.pickup.time = blankToNull(next.pickup.time);
+  next.pickup.dropoffNote = blankToNull(next.pickup.dropoffNote);
+  next.policies = blankToNull(next.policies);
+  next.closingNote = blankToNull(next.closingNote);
+  next.disclaimer = blankToNull(next.disclaimer);
+  photoBlanks(next.cover);
+  for (const day of next.days) {
+    day.location = blankToNull(day.location);
+    day.transferNote = blankToNull(day.transferNote);
+    if (day.hotel) day.hotel = normalizeHotel(day.hotel.name, day.hotel.area, day.hotel.note);
+    photoBlanks(day.photo);
+    for (const activity of day.activities) {
+      activity.time = blankToNull(activity.time);
+      activity.place = blankToNull(activity.place);
+      activity.tip = blankToNull(activity.tip);
+      activity.durationMinutes = normalizeDuration(activity.durationMinutes);
+    }
+  }
+  for (const place of next.places) {
+    place.group = blankToNull(place.group);
+    place.gettingThere = blankToNull(place.gettingThere);
+    place.suggestedDuration = blankToNull(place.suggestedDuration);
+    place.bestTime = blankToNull(place.bestTime);
+    place.nearby = blankToNull(place.nearby);
+    photoBlanks(place.photo);
+  }
+  return next;
+}
+
+const IGNORED_KEYS = new Set(['id', 'dayNumber', 'kind']);
+
+function hasContent(value: unknown): boolean {
   if (typeof value === 'string') return value.trim() !== '';
-  if (Array.isArray(value)) return value.length > 0;
-  if (value && typeof value === 'object') return Object.values(value).some(hasText);
+  if (Array.isArray(value)) return value.some(hasContent);
+  if (value && typeof value === 'object') {
+    return Object.entries(value).some(([key, item]) => !IGNORED_KEYS.has(key) && hasContent(item));
+  }
   return value === true;
 }
 
@@ -103,77 +151,60 @@ export function changeMode(content: WebItineraryContent, mode: ItineraryMode): W
     next.trip.startDate = null;
     next.trip.startTime = null;
     next.trip.endTime = null;
-    next.meeting = { place: null, mapsUrl: null, time: null, note: null };
+    next.meeting = emptyMeeting();
     next.pickup = pickupOff();
-    if (current !== 'destination_guide') next.places = [];
   } else if (mode === 'half_day' || mode === 'full_day') {
     next.places = [];
-    const first = next.days[0];
-    const day = first ? structuredClone(first) : makeDay(mode, 1);
+    const day = next.days[0] ? structuredClone(next.days[0]) : makeDay(mode, 1);
     day.hotel = null;
     day.transferNote = null;
-    if (mode === 'half_day') day.meals = null;
-    else if (!day.meals) day.meals = { breakfast: false, lunch: false, dinner: false };
-    next.days = [renumberDays([day])[0]];
-    next.trip.startDate = next.trip.startDate ?? null;
-    next.trip.startTime = next.trip.startTime ?? null;
-    next.trip.endTime = next.trip.endTime ?? null;
-    next.meeting = current === 'destination_guide' ? { place: null, mapsUrl: null, time: null, note: null } : next.meeting;
-    next.pickup = current === 'destination_guide' ? pickupOff() : next.pickup;
+    next.days = renumberDays([mode === 'half_day' ? { ...day, meals: null } : ensureMeals(day)]);
   } else {
     next.places = [];
     next.trip.startTime = null;
     next.trip.endTime = null;
-    if (current === 'half_day' || current === 'full_day') {
-      const first = next.days[0] ? structuredClone(next.days[0]) : makeDay(mode, 1);
-      if (!first.meals) first.meals = { breakfast: false, lunch: false, dinner: false };
-      next.days = renumberDays([first, makeDay(mode, 2)]);
-    } else if (current === 'destination_guide') {
+    if (current === 'destination_guide') {
       next.days = renumberDays([makeDay(mode, 1), makeDay(mode, 2)]);
     } else {
-      next.days = renumberDays(next.days);
+      next.days = renumberDays([ensureMeals(next.days[0] ?? makeDay(mode, 1)), makeDay(mode, 2)]);
     }
-    next.meeting = current === 'destination_guide' ? { place: null, mapsUrl: null, time: null, note: null } : next.meeting;
-    next.pickup = current === 'destination_guide' ? pickupOff() : next.pickup;
   }
-
-  const checked = validateDraft(next);
-  return checked.value;
+  return next;
 }
 
 export function hasModeLoss(content: WebItineraryContent, mode: ItineraryMode): string[] {
-  if (content.trip.mode === mode) return [];
+  const current = content.trip.mode;
+  if (current === mode) return [];
   const losses: string[] = [];
 
+  if (current === 'destination_guide') {
+    const places = content.places.filter(hasContent).length;
+    if (places) losses.push(`${places} tempat`);
+    return losses;
+  }
+
   if (mode === 'destination_guide') {
-    if (content.days.length) losses.push(`${content.days.length} hari beserta aktivitasnya`);
+    const days = content.days.filter(hasContent).length;
+    if (days) losses.push(`${days} hari beserta aktivitasnya`);
     if (content.trip.startDate) losses.push('tanggal mulai');
     if (content.trip.startTime || content.trip.endTime) losses.push('jam mulai/selesai');
-    if (hasText(content.meeting)) losses.push('titik kumpul');
+    if (hasContent(content.meeting)) losses.push('titik kumpul');
     if (content.pickup.offered) losses.push('penjemputan');
     return losses;
   }
 
-  if (content.trip.mode === 'destination_guide' && mode !== 'destination_guide') {
-    const placesWithText = content.places.filter((place) => hasText(place.name) || hasText(place.area) || hasText(place.description) || hasText(place.group) || place.tips.length);
-    if (placesWithText.length) losses.push(`${placesWithText.length} tempat`);
-    return losses;
-  }
-
-  if (mode === 'half_day' || mode === 'full_day') {
-    if (content.days.length > 1) losses.push(`${content.days.length - 1} hari selain hari pertama`);
-    const first = content.days[0];
-    if (first) {
-      if (first.hotel && hasText(first.hotel)) losses.push('info hotel');
-      if (first.transferNote && first.transferNote.trim() !== '') losses.push('catatan perpindahan');
-      if (mode === 'half_day' && first.meals && (first.meals.breakfast || first.meals.lunch || first.meals.dinner)) losses.push('pilihan makan');
-    }
-    return losses;
-  }
-
   if (mode === 'multi_day') {
+    if (content.trip.startTime || content.trip.endTime) losses.push('jam mulai/selesai');
     return losses;
   }
 
+  const extra = content.days.slice(1).filter(hasContent).length;
+  if (extra) losses.push(`${extra} hari selain hari pertama`);
+  const first = content.days[0];
+  if (first) {
+    if (first.hotel && hasContent(first.hotel)) losses.push('info hotel');
+    if (blankToNull(first.transferNote)) losses.push('catatan perpindahan');
+    if (mode === 'half_day' && first.meals && hasContent(first.meals)) losses.push('pilihan makan');
+  }
   return losses;
 }

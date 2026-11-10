@@ -292,3 +292,62 @@ Open questions for reviewer (non-blocking):
 - Plan says app typecheck counts include `verify-ai.ts` 14 errors — `verify-ai.ts` is R6 scope; R5 gate uses scoped check per plan. Confirmed tsconfig.app.json includes verify-ai.ts and verify-editor.ts.
 - `schema-meta.ts` at 23d88e9: `templatePath` replaces [].id — verify against registry; `extractLimits` needs schema walking incl. anyOf/$ref. Will review in R5.1 step.
 - AGENTS.md was absent; created it at repo root and will keep untracked (do not commit).
+
+---
+
+## R5 completion (plan section H1-H9), 2026-11-10
+
+Executor: Claude Sonnet 5.5 (the owner switched models; the plan was written for Haiku). Starting point: OpenCode WIP, snapshot commit `407c0c5`; review in `logs/cp022_review-log_r5-editor-wip.md`.
+
+### What changed
+
+- H2 `schema-meta.ts`: S1 type error fixed, `MAX_PLACES = 60` added (PR-15).
+- H3 `labels.ts` (L1 straight quotes, `noPhoto`), `model.ts` rewritten: M1 no validator call in `changeMode`, M2 `ensureMeals`, M3 `setPhotoCredit(null)` returns `null`, M4/M5 `hasModeLoss` rewritten, M6 `normalizeBlanks` (used by `save()`).
+- H4 `sections/TripInfo.tsx` split into `EditorForm.tsx` + 13 files in `sections/` (code moved, not rewritten); `PhotoField`/`LocaleField` moved to `fields.tsx`, `ObjectList` deleted. Fixes F1-F8 applied.
+- H5 `main.tsx` rewritten (398 lines): orchestration kept from the v1 file; all v1 field code removed; `focusDiagnostic` per plan; new `sections/Profile.tsx`; `coverage.ts` deleted; no `any`.
+- H6 `tsconfig.web.json`: `"jsx": "react-jsx"`.
+- H7 `tests/web/editor.test.ts` rewritten (25 tests). H8 `verify-editor.ts` rewritten; `verify-preview.ts` and `verify-publication.ts` selectors only.
+
+### Gate (all run in this session, after `npm run build:web-app`)
+
+| # | Command | Result |
+|---|---|---|
+| 1 | `npm run build:brochure-css && npm run build:web-app` | success |
+| 2 | `typecheck-scope tsconfig.app.json src scripts/web/verify-editor.ts` | 0 errors |
+| 3 | `typecheck-scope tsconfig.web.json src/editor tests/web/editor.test.ts scripts/web/verify-{editor,preview,publication}.ts` | 0 errors |
+| 4 | `npm run test:web-editor` | 25 pass, 0 fail |
+| 5 | `verify:web-editor`, `verify:web-preview`, `verify:web-publication` | exit 0 each (0 console errors, 0 external requests) |
+| 6 | contracts / store / api / ai / render / preview / publication | 42 / 11 / 12 / 28 / 14 / 12 / 12 pass, 0 fail |
+| 7 | `typecheck:web-server`, `check:web-types`, `verify:web-render` | 0 errors / matches / exit 0 |
+| 8 | grep v1 names in `src/editor` | no output |
+| 9 | grep `@ts-*`, `as any`, `: any`, `<any>` in `src/editor`, `tests/web/editor.test.ts` | no output |
+| 10 | `git diff --stat 8dd31c3 -- config src/contracts src/server src/render src/api package.json` | no output |
+| 11 | `ls src/editor/coverage.ts` | No such file |
+
+### H7 mutation check
+
+- Removed `data-field-path` from `TextField`: test 1 failed in all 4 modes (21 pass / 4 fail). Restored.
+- Made `changeMode` keep `places` for half/full: test 4 failed for guide -> half_day and guide -> full_day (23 pass / 2 fail). Restored; 25/25 again.
+
+### Screenshots (`output/web-editor/r5-<mode>-{390,1280}.png`)
+
+Opened: all four 1280 shots, and cropped slices of the multi_day and destination_guide 390 shots. The half_day and full_day 390 shots were only checked by the automated no-overflow assertion and a thumbnail glance (too tall to read in full).
+
+- `half_day-1280`: sections Informasi trip, Waktu & titik kumpul, Guide trip, Foto sampul, Ringkasan, Jadwal (2 activities, reordered), Info praktis, Ketentuan & penutup, Bantuan AI collapsed; amber badge; Indonesian labels; no hotel/meals.
+- `full_day-1280`: same plus Sarapan/Makan siang/Makan malam toggles; teal badge; the language help text and "Deteksi otomatis" show because the language is unresolved.
+- `multi_day-1280`: "Hari demi hari" with day cards (hotel, transfer note, meals, activities), move/remove buttons disabled at the ends; indigo badge.
+- `destination_guide-1280`: no time/meeting section; "Tempat" with the group heading "Eastern Kyoto" above the card, "Detail tambahan" collapsed; cover photo with credit fields; rose badge.
+- `multi_day-390`, `destination_guide-390` (slices): single column, header with badge, theme swatches wrap, no horizontal overflow.
+
+### Deviations and notes
+
+- Day move/remove buttons are hidden for half/full day (only one day), via a `showDayControls` prop; the plan only said "disabled at the ends".
+- `verify-editor.ts` keeps the older checks (409 conflict flow, asset upload, unsupported-locale note, list delete with cancel/confirm, writing notes) in addition to the H8 scenarios.
+- Named inner functions inside `page.evaluate` break under tsx (`__name is not defined`); the bulk write in the 60-place scenario uses an array loop instead.
+- `build:brochure-css` output is 27989 bytes (R3 log: 27263); `.runtime/` is gitignored, not investigated.
+
+### Open questions for the reviewer
+
+- R1-S1: `config/web/itinerary.schema.json` has no `places.maxItems`; the editor limits to 60 with a constant.
+- The unsupported-language note "Katalog/font render untuk zh-Hant belum tersedia; tidak akan fallback diam-diam." is developer-style wording, kept from v1 (not in the plain-language table).
+- Time inputs show 12-hour format in this Chromium locale; the stored value is `HH:MM`.
