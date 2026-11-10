@@ -1106,6 +1106,21 @@ Follow R6.1–R6.6 above, with these additions:
 - **PR-17:** `hasModeLoss` counts only days/places with content and ignores `id`, `dayNumber` and `kind`.
 - **PR-18:** Review stop between R5 and R6 (Haiku → review → Haiku workflow).
 
+### R5 review round 1 (reviewer, 2026-11-10) — must pass before CP022 is completed
+
+Review: `logs/cp019-cp025_review-log_r3-r6.md` (R3, R4, R6 accepted; R5 REVISE). **PR-15 is withdrawn**: ruling R1 D2 accepted no place cap, so 60 places is a stress case, not a limit. Rules H0 above still apply (repo root, stage files by name, no `any`, no weakened assertions, paste real output). Work only in the files named below.
+
+- **RF1 (M1) Blank rows are dropped at save.** In `src/editor/model.ts` `normalizeBlanks`: remove entries that are blank after `trim()` from `included`, `notIncluded`, `whatToBring`, `localTips`, `healthSafety` and every `places[].tips`; remove emergency contacts whose `label` and `value` are both blank. Keep non-blank text exactly as typed (do not trim it). Tests: extend test 5 in `tests/web/editor.test.ts` with these cases (blank, whitespace-only, contact with one side filled is kept). Browser: in `scripts/web/verify-editor.ts` guide scenario, click "Tambah tidak termasuk" and leave the row empty before saving; assert the saved `notIncluded` is `[]`.
+- **RF2 (L1) No place cap.** Delete `MAX_PLACES` from `src/editor/schema-meta.ts` and the `disabled` condition on "Tambah tempat" in `sections/Places.tsx`. In `verify-editor.ts` replace the assertion that "Tambah tempat" is disabled at 60 with an assertion that the button is still enabled at 60; keep the 60-place save/reopen checks.
+- **RF3 (L2) Readable save errors.** In `main.tsx`, render each `sectionErrors` item as `labelFor(item.path, activeMode): item.message` (same helper as the publish diagnostics), and make each item a button with `data-diagnostic-path` that calls `focusDiagnostic(item)`.
+- **RF4 (L3) Visible focus on theme swatches.** In `fields.tsx` `ThemePicker`, give the `<label>` a visible focus style when its radio has keyboard focus (for example Tailwind `has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-teal-700`). Check it by tabbing in a 1280 screenshot added to `verify-editor.ts` (`output/web-editor/r5-theme-focus.png`).
+- **RF5 (L4) Doc wording.** In `docs/engine-runtime-contract.md`, change "mirrors" to "must equal" for `trip.language` vs `languageContext.outputLanguage`, and mention that a mismatch returns `422 INVALID_LANGUAGE_CONTEXT`. Same wording in the line under "Locale detection boundary".
+- **RF6 Log corrections (append only).** Append a dated "Review correction 2026-11-10" paragraph to the CP019 and CP022 revision sections in their completion logs stating that R1-S1 / `MAX_PLACES` were withdrawn per ruling D2. Do not edit earlier text.
+
+Not in this round (follow-ups recorded in the review log): F-R3-1 duplicate mode label in the hero, F-R3-2 renderer-side blank filtering, P1 language select with names.
+
+**Gate:** `npm run build:web-app`; full `npm run typecheck:web-app` and `npm run typecheck:web-contracts` (0 errors); `npm run test:web-editor` (all pass, at least 25 tests); `npm run verify:web-editor`, `verify:web-preview`, `verify:web-publication` (exit 0); `test:web-render` 14 and `test:web-preview` 12 unchanged. Open `r5-theme-focus.png` and say what you see. Append a "Round 1" section to `logs/cp022_stage-log_r5-editor-v2.md` with the commands and counts. Commit `CP022 revision: R5 review round 1 fixes (pending review)`. Stop and report.
+
 ## Impact and Regression Risk
 
 - About 1,500 of 2,300 source lines are touched (audit). The store, publication state machine, share tokens, revocation and the AI ledger are preserved and must keep passing their existing tests.

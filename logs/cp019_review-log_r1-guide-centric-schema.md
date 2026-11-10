@@ -213,3 +213,22 @@ Real data impact: the 6 drafts in `.runtime/` use simple labels (`""`, `"10:00"`
 ### Process
 
 Running R2 before R1 acceptance was owner-authorized. CP019, CP021 and CP023 stay `in_progress` until this round passes re-review. Revision instructions for the executor are in the plan under "R1/R2 revision round 1".
+
+## Re-review round 1 — 2026-11-10 (Claude Opus 5.5, reviewer)
+
+**Verdict: ACCEPT (R1 and R2).** Checked against disk state at commit `6366ecd`, not the executor summaries.
+
+| Finding | Result | Evidence |
+|---|---|---|
+| F1 time/duration parsing | Fixed. Labels are mapped whole or kept as a private note with `TIME_UNPARSED` / `DURATION_UNPARSED`; `1h30m` gives 90; `2-3 hours`, `1–2 jam`, `Pagi 8.30 - 11.00` become notes; `10:00 - 12:00` gives 10:00 and 120 minutes. | `contracts.test.ts` "label parsing is exact-match" and "time and duration text is parsed" |
+| F2 double meals | Fixed. Meal entries are matched independently; unmatched entries become notes. | `contracts.test.ts` "meal entries are matched independently" |
+| F3 start without AI tables | Fixed. | `store-migration.test.ts` (asserts `ai_operations` exists after start) |
+| F4 handle leak | Fixed: `createApp` closes the store when initialization fails (`app.ts` catch block). | code |
+| F5 broad conflict catch | Fixed: only `SQLITE_CONSTRAINT_PRIMARYKEY` / `UNIQUE` (errcode 1555/2067) count as an operation-ID conflict. | `publication.ts` `isUniqueViolation` |
+| F6 migration text | Fixed per owner decision: leftovers go to private notes; day-range titles use the catalog `dayRange`. | contracts and store tests |
+
+Reproduced on 2026-11-10: `check:web-types`, `typecheck:web-contracts`, `typecheck:web-contracts-v2`, full `typecheck:web-app` (0 errors); `test:web-contracts` 42, `test:web-store` 11, `test:web-api` 12, `test:web-ai` 28, all pass.
+
+Correction: finding R1-S1 in `logs/cp022_review-log_r5-editor-wip.md` ("schema lacks `places.maxItems: 60`") is **withdrawn**. Ruling R1 D2 above accepted no place cap and kept 60 places as a stress case only. The editor's 60-place limit therefore contradicts D2 and is removed in "R5 review round 1".
+
+CP019, CP021 and CP023 may be set to `completed`.
