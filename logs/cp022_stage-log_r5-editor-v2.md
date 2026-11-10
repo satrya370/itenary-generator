@@ -351,3 +351,39 @@ Opened: all four 1280 shots, and cropped slices of the multi_day and destination
 - R1-S1: `config/web/itinerary.schema.json` has no `places.maxItems`; the editor limits to 60 with a constant.
 - The unsupported-language note "Katalog/font render untuk zh-Hant belum tersedia; tidak akan fallback diam-diam." is developer-style wording, kept from v1 (not in the plain-language table).
 - Time inputs show 12-hour format in this Chromium locale; the stored value is `HH:MM`.
+
+## Round 1 (R5 review round 1, RF1-RF6), 2026-11-10
+
+Executor: Claude Haiku 5.5. Plan: "R5 review round 1" in `plans/cp019-cp025_revision-plan_guide-centric-schema-and-editor.md`. Review: `logs/cp019-cp025_review-log_r3-r6.md`.
+
+| RF | Change | Where |
+|---|---|---|
+| RF1 (M1) | Blank list rows and blank emergency contacts dropped at save; kept text is not trimmed; contacts with one side filled are kept; `places[].tips` blanks dropped | `src/editor/model.ts` `normalizeBlanks`; test 5 in `tests/web/editor.test.ts`; guide scenario in `verify-editor.ts` (empty "Tambah tidak termasuk" row not saved) |
+| RF2 (L1) | Place cap removed: `MAX_PLACES` deleted; "Tambah tempat" stays enabled at 60 | `schema-meta.ts`, `sections/Places.tsx`, `verify-editor.ts` (assertion inverted) |
+| RF3 (L2) | Save-error list shows Indonesian labels and focuses the field (`data-diagnostic-path`) | `src/editor/main.tsx` |
+| RF4 (L3) | Visible focus outline on theme swatch labels (`has-[:focus-visible]`); checked by a DOM focus assertion and a 1280 screenshot | `src/editor/fields.tsx`, `verify-editor.ts` |
+| RF5 (L4) | "mirrors" replaced by "must equal" for `trip.language`; `422 INVALID_LANGUAGE_CONTEXT` stated | `docs/engine-runtime-contract.md` (both places) |
+| RF6 | Append-only "Review correction 2026-11-10" in the CP019 and CP022 completion logs (R1-S1 / `MAX_PLACES` withdrawn) | `logs/cp019_completion-log_*.md`, `logs/cp022_completion-log_*.md` |
+
+### Gate (run in this session)
+
+| Command | Result |
+|---|---|
+| `npm run build:web-app` | rc 0 |
+| `npm run typecheck:web-app` | rc 0 (0 errors) |
+| `npm run typecheck:web-contracts` | rc 0 (0 errors) |
+| `npm run test:web-editor` | 25 tests, 25 pass, 0 fail |
+| `npm run test:web-render` | 14 pass |
+| `npm run test:web-preview` | 12 pass |
+| `npm run verify:web-editor` | rc 0; 60 places saved and reopened; consoleErrors 0; externalRequests 0 |
+| `npm run verify:web-preview` | rc 0 |
+| `npm run verify:web-publication` | rc 0 |
+
+### Focus screenshot
+
+`output/web-editor/r5-theme-focus.png` (1280 x 900). Opened and inspected: the "Biru tua (bawaan)" swatch has a clear teal outline around its pill, distinct from the normal grey border; keyboard focus came from the field before the swatches (`trip.region`) by Tab.
+
+### Notes
+
+- A first attempt of the focus check used Shift+Tab from the first radio. That started from the wrong element and failed (`trip.region` got focus). The check was changed to start at `trip.region` and press Tab. The assertion itself is unchanged.
+- Not run in this round: the full `verify:web-e2e` and `verify:web-ai-ui` (neither touches the changed code paths; both ran green on the R6 commit). Reviewer may ask for them.

@@ -112,4 +112,3 @@ export function fieldMeta(path: string, mode: ItineraryMode): FieldMeta {
   };
 }
 
-export const MAX_PLACES = 60;

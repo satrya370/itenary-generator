@@ -102,6 +102,18 @@ async function main() {
 
     // 1-2. Half day: sections, save/reopen identical, reorder keeps IDs, 409 conflict flow.
     const halfId = await createMode('half_day');
+    await page.setViewport({ width: 1280, height: 900 });
+    await page.evaluate(() => { document.querySelector<HTMLInputElement>('[data-field-path="trip.region"]')?.focus(); });
+    await page.keyboard.press('Tab');
+    const focusRing = await page.evaluate(() => {
+      const radio = document.activeElement as HTMLInputElement | null;
+      const label = radio?.closest('label');
+      return { focused: radio?.dataset.fieldPath ?? null, outlineWidth: label ? getComputedStyle(label).outlineWidth : '0px' };
+    });
+    assert.equal(focusRing.focused, 'trip.colorTheme', 'keyboard focus reaches a theme swatch');
+    assert.notEqual(focusRing.outlineWidth, '0px', 'focused theme swatch shows a visible outline');
+    await page.evaluate(() => document.querySelector<HTMLInputElement>('[data-field-path="trip.colorTheme"]')?.closest('fieldset')?.scrollIntoView({ block: 'center' }));
+    await page.screenshot({ path: path.join(evidenceDir, 'r5-theme-focus.png') });
     await set('trip.title', 'R5 half day'); await set('trip.destination', 'Kyoto'); await set('trip.country', 'Japan'); await set('trip.language', 'ja');
     await set('summary', 'A relaxed walk through Kyoto gardens.');
     await set('days[].activities[].title', 'Garden visit', 0); await set('days[].activities[].time', '08:30', 0);
@@ -210,6 +222,7 @@ async function main() {
     page.removeAllListeners('dialog'); page.on('dialog', dialog => dialog.accept());
     await clickButton('Hapus Termasuk 2');
     assert.deepEqual(await values('included[]'), ['Local guide']);
+    await clickButton('Tambah tidak termasuk');
     await clickButton('Tambah kontak darurat (nama)'); await set('emergencyContacts[].label', 'Police'); await set('emergencyContacts[].value', '110');
     await set('writing.brief', 'A quiet garden trip for two.'); await clickButton('Tambah catatan fakta itinerary'); await set('writing.notes[]', 'Guide confirmed the north entrance.');
     await set('trip.language', 'zh-Hant');
@@ -228,6 +241,7 @@ async function main() {
     await set('cover.credit.photographer', 'Fixture photographer'); await set('cover.credit.source', 'Synthetic guide photo');
     await save();
     const guide = await getRecord(guideId);
+    assert.deepEqual(guide.draftContent.notIncluded, [], 'an empty list row is not saved');
     assert.equal(guide.draftContent.places[0].name, 'East Garden');
     assert.equal(guide.draftContent.places[0].description, 'Quiet paths and local heritage.');
     assert.deepEqual(guide.draftContent.places[0].tips, ['Wear comfortable shoes.']);
@@ -256,7 +270,7 @@ async function main() {
       await clickButton('Tambah tempat');
       await page.waitForFunction(expected => document.querySelectorAll('[data-editor-section="places"] fieldset[data-target-id]').length === expected, {}, places);
     }
-    assert.equal(await page.evaluate(() => [...document.querySelectorAll('button')].find(button => button.textContent?.trim() === 'Tambah tempat')?.disabled), true);
+    assert.equal(await page.evaluate(() => [...document.querySelectorAll('button')].find(button => button.textContent?.trim() === 'Tambah tempat')?.disabled), false, 'no place cap: the button stays enabled at 60');
     const longJapanese = '静かな庭園を歩き、地域の文化と景色を楽しみます。'.repeat(12);
     await page.evaluate(({ longJapanese }) => {
       const writes: Array<[string, number, string]> = [];

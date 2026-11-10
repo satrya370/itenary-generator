@@ -96,3 +96,5 @@ Plan criteria 1 (every applicable registry path rendered, none that do not apply
 - The places limit is a constant (`MAX_PLACES = 60`) until the schema carries `places.maxItems`.
 - The unsupported-language note ("Katalog/font render ... fallback diam-diam") is developer-style wording kept from v1.
 - CP status in `TODOS.md` is not changed by this section; the reviewer decides after the joint review.
+
+**Review correction 2026-11-10:** the place limit `MAX_PLACES = 60` and the planner finding R1-S1 (`places.maxItems` missing from the schema) are **withdrawn**. Ruling R1 D2 (no place cap; 60 places is a stress case only) governs. The editor no longer limits places; the schema is unchanged.

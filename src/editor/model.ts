@@ -118,8 +118,16 @@ export function normalizeBlanks(content: WebItineraryContent): WebItineraryConte
       activity.durationMinutes = normalizeDuration(activity.durationMinutes);
     }
   }
+  const keepFilled = (values: string[]) => values.filter((value) => value.trim() !== '');
+  next.included = keepFilled(next.included);
+  next.notIncluded = keepFilled(next.notIncluded);
+  next.whatToBring = keepFilled(next.whatToBring);
+  next.localTips = keepFilled(next.localTips);
+  next.healthSafety = keepFilled(next.healthSafety);
+  next.emergencyContacts = next.emergencyContacts.filter((contact) => contact.label.trim() !== '' || contact.value.trim() !== '');
   for (const place of next.places) {
     place.group = blankToNull(place.group);
+    place.tips = keepFilled(place.tips);
     place.gettingThere = blankToNull(place.gettingThere);
     place.suggestedDuration = blankToNull(place.suggestedDuration);
     place.bestTime = blankToNull(place.bestTime);

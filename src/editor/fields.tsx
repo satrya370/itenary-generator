@@ -133,7 +133,7 @@ export function ThemePicker({ id, meta, value, onChange }: {
       <legend className="text-sm font-medium text-slate-800">{meta.label}{meta.required && <span aria-hidden="true" className="ml-1 text-red-700">*</span>}</legend>
       <div className="mt-2 flex flex-wrap gap-2">
         {Object.keys(themeNames).map((key) => (
-          <label key={key} className={`flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1 text-sm ${value === key ? 'border-teal-700 bg-teal-50 font-medium' : 'border-slate-300'}`}>
+          <label key={key} className={`flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1 text-sm has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-teal-700 ${value === key ? 'border-teal-700 bg-teal-50 font-medium' : 'border-slate-300'}`}>
             <input type="radio" name={id} value={key} checked={value === key} onChange={() => onChange(key)} className="sr-only" data-field-path={meta.path} />
             <span className="inline-block h-4 w-4 rounded-full border border-slate-300" style={{ background: `linear-gradient(135deg, ${palettesMap[key]?.primary ?? '#333'}, ${palettesMap[key]?.secondary ?? '#666'})` }} aria-hidden="true" />
             {themeNames[key]}

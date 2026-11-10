@@ -156,6 +156,23 @@ test('5. model helpers normalise blanks, photos, hotels and meals', () => {
   assert.equal(normalized.days[0].hotel, null);
   assert.equal(content.trip.region, '  ', 'input is not mutated');
   assert.equal(blankToNull('x'), 'x');
+  const listed = createContentV2('full_day');
+  listed.included = ['Local guide', '', '   ', ' Entrance fee '];
+  listed.notIncluded = ['  '];
+  listed.whatToBring = [];
+  listed.localTips = ['', 'Carry change'];
+  listed.healthSafety = [' '];
+  listed.places = [];
+  listed.emergencyContacts = [{ label: '', value: '' }, { label: 'Police', value: '' }, { label: '', value: '110' }, { label: ' ', value: ' ' }];
+  const tidied = normalizeBlanks(listed);
+  assert.deepEqual(tidied.included, ['Local guide', ' Entrance fee '], 'kept text is not trimmed');
+  assert.deepEqual(tidied.notIncluded, []);
+  assert.deepEqual(tidied.localTips, ['Carry change']);
+  assert.deepEqual(tidied.healthSafety, []);
+  assert.deepEqual(tidied.emergencyContacts, [{ label: 'Police', value: '' }, { label: '', value: '110' }], 'contacts with one side filled are kept');
+  const withTips = createContentV2('destination_guide');
+  withTips.places = [{ ...withTips.places[0], tips: ['  ', 'Wear shoes'] }];
+  assert.deepEqual(normalizeBlanks(withTips).places[0].tips, ['Wear shoes']);
 
   assert.equal(setPhotoCredit(null, 'photographer', 'P'), null);
   const photo: Photo = { assetId: 'a1', credit: null };

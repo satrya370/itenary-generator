@@ -3,7 +3,6 @@ import type { EditorProps } from '../EditorForm.js';
 import { PhotoField, TextArea, TextField, TextList, buttonClass } from '../fields.js';
 import { blankToNull, makePlace, moveById, setPhotoAsset, setPhotoCredit } from '../model.js';
 import { statusCopy } from '../labels.js';
-import { MAX_PLACES } from '../schema-meta.js';
 
 export function Places(props: EditorProps) {
   const { content, mode, recordId, assets, meta, patch } = props;
@@ -11,7 +10,7 @@ export function Places(props: EditorProps) {
       <section data-editor-section="places" className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-semibold">Tempat</h3>
-          <button type="button" className={buttonClass} disabled={content.places.length >= MAX_PLACES} onClick={() => patch((n) => { n.places.push(makePlace()); })}>Tambah tempat</button>
+          <button type="button" className={buttonClass} onClick={() => patch((n) => { n.places.push(makePlace()); })}>Tambah tempat</button>
         </div>
         {content.places.map((place, index) => {
           const showHeading = place.group !== null && (index === 0 || place.group !== content.places[index - 1].group);
