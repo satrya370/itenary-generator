@@ -64,7 +64,7 @@
 | CP026 | removed-pdf-export | — | removed from product scope |
 | CP027 | standalone-end-to-end-verification | CP025 | completed |
 | CP028 | standalone-deployment-readiness | CP027 | completed (standalone-ready / not deployed) |
-| CP033 | language-preview-and-ai-key-fixes | revisi `web-2.0.0` selesai | pending |
+| CP033 | language-preview-and-ai-key-fixes | revisi `web-2.0.0` selesai | in_progress (gate run 2026-11-10: pass; awaiting review) |
 | CP034 | agency-setup-profile-defaults-and-photo-upload | CP033 | in_progress (gate run 2026-11-10: pass; awaiting review) |
 | CP035 | ota-practical-fields-wizard-and-validation | CP034 | in_progress (S1-S4 gate run 2026-11-11: pass; deviations listed in stage log; awaiting review) |
 | CP036 | google-places-autocomplete | CP035 | pending |
