@@ -1,7 +1,9 @@
-/** Server-only Google Places (New) Autocomplete client. The key never leaves the server and is never logged. */
+/** Server-only place search. Photon (OpenStreetMap data, no key, no card) is the default; Google Places (New) is optional. A key never leaves the server and is never logged. */
+export type PlacesSource = 'osm' | 'google';
 export interface PlaceSuggestion { placeId: string; mainText: string; secondaryText: string }
 export interface PlacesAutocompleteInput { text: string; sessionToken: string; languageCode: string | null }
 export interface PlacesProvider {
+  readonly source: PlacesSource;
   readonly configured: boolean;
   autocomplete(input: PlacesAutocompleteInput): Promise<PlaceSuggestion[]>;
 }
@@ -44,6 +46,7 @@ export function parseGoogleSuggestions(body: unknown): PlaceSuggestion[] {
 }
 
 export class GooglePlacesProvider implements PlacesProvider {
+  readonly source = 'google' as const;
   readonly configured: boolean;
   constructor(private readonly apiKey: string | undefined, private readonly fetchImpl: typeof fetch = fetch) {
     this.configured = Boolean(apiKey && apiKey.trim());
@@ -60,4 +63,82 @@ export class GooglePlacesProvider implements PlacesProvider {
     if (!response.ok) throw new Error(`Places request failed with HTTP ${response.status}.`);
     return parseGoogleSuggestions(await response.json());
   }
+}
+
+const PHOTON_ENDPOINT = 'https://photon.komoot.io/api/';
+/** Photon only answers these languages (id, ja and the rest give HTTP 400), so the others are not sent. */
+export function photonLanguage(tag: string | null): string | undefined {
+  return tag === 'en' || tag === 'fr' ? tag : undefined;
+}
+
+function photonText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+/** Parses Photon GeoJSON: no places without a name, no repeated OSM objects, no repeated "Kuta, Kuta" parts. */
+export function parsePhotonSuggestions(body: unknown): PlaceSuggestion[] {
+  const features = body && typeof body === 'object' ? (body as { features?: unknown }).features : undefined;
+  if (!Array.isArray(features)) return [];
+  const seenIds = new Set<string>();
+  const seenLabels = new Set<string>();
+  const result: PlaceSuggestion[] = [];
+  for (const feature of features) {
+    const properties = feature && typeof feature === 'object' ? (feature as { properties?: unknown }).properties : undefined;
+    if (!properties || typeof properties !== 'object') continue;
+    const props = properties as Record<string, unknown>;
+    const type = photonText(props.osm_type);
+    const id = typeof props.osm_id === 'number' || typeof props.osm_id === 'string' ? String(props.osm_id) : null;
+    const name = photonText(props.name);
+    if (!type || !/^[NWR]$/.test(type) || !id || !/^\d+$/.test(id) || !name) continue;
+    const placeId = `${type}${id}`;
+    const parts: string[] = [];
+    for (const key of ['district', 'city', 'state', 'country']) {
+      const part = photonText(props[key]);
+      if (part && part !== name && !parts.includes(part)) parts.push(part);
+    }
+    const secondaryText = parts.join(', ');
+    const label = `${name}|${secondaryText}`;
+    if (seenIds.has(placeId) || seenLabels.has(label)) continue;
+    seenIds.add(placeId); seenLabels.add(label);
+    result.push({ placeId, mainText: name, secondaryText });
+    if (result.length === MAX_SUGGESTIONS) break;
+  }
+  return result;
+}
+
+export class PhotonPlacesProvider implements PlacesProvider {
+  readonly source = 'osm' as const;
+  readonly configured = true;
+  constructor(private readonly fetchImpl: typeof fetch = fetch, private readonly endpoint: string = PHOTON_ENDPOINT) {}
+  async autocomplete(input: PlacesAutocompleteInput): Promise<PlaceSuggestion[]> {
+    const url = new URL(this.endpoint);
+    url.searchParams.set('q', input.text);
+    url.searchParams.set('limit', '8'); // asked for more than shown so duplicates can be dropped
+    url.searchParams.append('osm_tag', '!highway'); // no bus stops or roads in a tour itinerary
+    const lang = photonLanguage(input.languageCode);
+    if (lang) url.searchParams.set('lang', lang);
+    const response = await this.fetchImpl(url, { headers: { 'user-agent': 'itinerary-engine' }, signal: AbortSignal.timeout(TIMEOUT_MS) });
+    if (!response.ok) throw new Error(`Photon request failed with HTTP ${response.status}.`);
+    return parsePhotonSuggestions(await response.json());
+  }
+}
+
+/** Turned off on purpose with PLACES_PROVIDER=off: the route answers 503 and the fields stay plain text. */
+export const disabledPlacesProvider: PlacesProvider = {
+  source: 'osm', configured: false,
+  async autocomplete() { throw new Error('Place search is turned off.'); }
+};
+
+/** PLACES_PROVIDER: photon (default), google (needs GOOGLE_PLACES_API_KEY), or off. */
+export function createPlacesProvider(env: NodeJS.ProcessEnv): PlacesProvider {
+  const choice = (env.PLACES_PROVIDER || 'photon').trim().toLowerCase();
+  if (choice === 'off') return disabledPlacesProvider;
+  if (choice === 'google') return new GooglePlacesProvider(env.GOOGLE_PLACES_API_KEY);
+  if (choice === 'photon') return new PhotonPlacesProvider();
+  throw new Error('PLACES_PROVIDER must be photon, google or off.');
+}
+
+/** Google is metered (free monthly allowance), so it stays at 300; Photon only needs a polite ceiling. */
+export function defaultDailyLimit(source: PlacesSource): number {
+  return source === 'google' ? 300 : 1000;
 }

@@ -15,7 +15,7 @@ export interface LanguageResolutionDto { itineraryId: string; revision: number; 
 export interface AiPreflightDto { credentialState: string; authenticated: boolean; modelState: string; modelId: string; pricing: { prompt: number; completion: number; webSearch: number } | null; contextLength: number | null; maxCompletionTokens: number | null; supportedParameters: string[]; daily: { dailyLimit: number; usedToday: number; remainingToday: number; activeOperations: number }; liveTestBudget?: { limitUsd: number; committedUsd: number; remainingUsd: number }; }
 export interface PreviewDto { itineraryId: string; revision: number; html: string; publishReady: boolean; errors: Array<{ code: string; path: string; message: string; targetId?: string }>; warnings: Array<{ code: string; path: string; message: string; targetId?: string }>; scheduleVerification: 'complete' | 'partial' | 'not_applicable'; }
 export interface PublicationDto { itineraryId: string; active: boolean; epoch: number; currentVersion: { id: string; sourceRevision: number; createdAt: string } | null; shareUrl: string | null; draftRevision: number; draftDiffers: boolean; }
-export interface PlacesAutocompleteDto { suggestions: Array<{ placeId: string; mainText: string; secondaryText: string }>; remainingToday: number; }
+export interface PlacesAutocompleteDto { suggestions: Array<{ placeId: string; mainText: string; secondaryText: string }>; source: 'osm' | 'google'; remainingToday: number; }
 export interface PublishedVersionDto { id: string; sourceRevision: number; createdAt: string; }
 
 async function request<T>(url: string, init: RequestInit = {}): Promise<T> {

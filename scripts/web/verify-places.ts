@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import puppeteer from 'puppeteer';
 import { createApp } from '../../src/server/app.js';
-import type { PlaceSuggestion, PlacesAutocompleteInput, PlacesProvider } from '../../src/server/places/provider.js';
+import type { PlaceSuggestion, PlacesAutocompleteInput, PlacesProvider, PlacesSource } from '../../src/server/places/provider.js';
 import { completeSetup } from './complete-setup.js';
 
 // Provider double: records every call and answers without any network access.
@@ -15,14 +15,15 @@ const CATALOG: Record<string, PlaceSuggestion[]> = {
   sanur: [{ placeId: 'PLACE-SANUR', mainText: 'Sanur Beach', secondaryText: 'Sanur, Bali' }]
 };
 const calls: PlacesAutocompleteInput[] = [];
-const doubleProvider: PlacesProvider = {
+const doubleProviderFor = (source: PlacesSource): PlacesProvider => ({
+  source,
   configured: true,
   async autocomplete(input) {
     calls.push(input);
     const key = Object.keys(CATALOG).find((name) => input.text.toLowerCase().includes(name));
     return key ? CATALOG[key] : [];
   }
-};
+});
 
 async function availablePort() {
   const server = net.createServer();
@@ -32,14 +33,15 @@ async function availablePort() {
   return port;
 }
 
-async function main() {
+async function main(source: PlacesSource) {
+  calls.length = 0;
   const dataDir = await mkdtemp(path.join(os.tmpdir(), 'itinerary-cp036-browser-'));
   const port = await availablePort(); const origin = `http://127.0.0.1:${port}`;
-  const app = await createApp({ dataDir, publicOrigin: origin, allowedOrigins: [origin], placesProvider: doubleProvider, placesDailyLimit: 4 });
+  const app = await createApp({ dataDir, publicOrigin: origin, allowedOrigins: [origin], placesProvider: doubleProviderFor(source), placesDailyLimit: 4 });
   await completeSetup(app, origin);
   await app.listen({ host: '127.0.0.1', port });
   const browser = await puppeteer.launch({ headless: 'shell', args: ['--disable-background-networking', '--no-first-run'] });
-  const evidenceDir = path.resolve('output/web-places'); await mkdir(evidenceDir, { recursive: true });
+  const evidenceDir = path.resolve('output/web-places', source); await mkdir(evidenceDir, { recursive: true });
   const page = await browser.newPage(); const failures: string[] = []; const external: string[] = [];
   page.on('console', message => { if (message.type() === 'error' && !message.text().includes('Failed to load resource')) failures.push(message.text()); });
   page.on('request', request => { const url = new URL(request.url()); if (['http:', 'https:'].includes(url.protocol) && url.origin !== origin) external.push(request.url()); });
@@ -100,7 +102,11 @@ async function main() {
     await page.screenshot({ path: path.join(evidenceDir, 'cp036-dropdown-390.png') });
     await page.setViewport({ width: 1280, height: 900 });
     assert.equal(await page.evaluate(() => document.querySelector('[data-field-path="days[].activities[].place"]')?.getAttribute('aria-expanded')), 'true', 'list still open at 1280');
-    assert.ok(await page.evaluate(() => document.querySelector('[data-places-attribution]') !== null), 'Google attribution is shown with the suggestions');
+    const attribution = await page.evaluate(() => { const element = document.querySelector('[data-places-attribution]'); return element ? { source: element.getAttribute('data-places-attribution'), text: element.textContent?.trim() ?? '', link: element.querySelector('a')?.getAttribute('href') ?? null } : null; });
+    assert.ok(attribution, 'attribution is shown with the suggestions');
+    assert.equal(attribution!.source, source);
+    assert.equal(attribution!.text, source === 'google' ? 'Powered by Google' : '© OpenStreetMap contributors');
+    assert.equal(attribution!.link, source === 'google' ? null : 'https://www.openstreetmap.org/copyright');
     await page.evaluate(() => document.querySelector<HTMLElement>('[data-field-path="days[].activities[].place"]')?.scrollIntoView({ block: 'center' }));
     await page.screenshot({ path: path.join(evidenceDir, 'cp036-dropdown-1280.png') });
     await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter');
@@ -134,9 +140,9 @@ async function main() {
     const mapsUrl = await valueOf('meeting.mapsUrl');
     assert.ok(mapsUrl, 'meeting Maps link is filled from the pick');
     const link = new URL(mapsUrl!);
-    assert.equal(link.searchParams.get('query_place_id'), 'PLACE-KUTA-SQUARE');
+    assert.equal(link.searchParams.get('query_place_id'), source === 'google' ? 'PLACE-KUTA-SQUARE' : null, 'only Google picks carry a Maps place ID');
     assert.equal(link.searchParams.get('query'), 'Kuta Square, Kuta, Bali');
-    assert.ok((await valueOf('meeting.mapsUrl'))?.includes('query_place_id='), 'Maps link keeps the place ID after the pick');
+    assert.equal((await valueOf('meeting.mapsUrl'))?.includes('query_place_id='), source === 'google', 'Maps link keeps the place ID after a Google pick only');
 
     // Escape closes the list without picking.
     await set('meeting.place', '');
@@ -169,11 +175,12 @@ async function main() {
     const record = (await app.inject({ url: `/api/v1/itineraries/${list.items[0].id}` })).json();
     assert.equal(record.draftContent.days[0].activities[0].place, 'Ubud Palace', 'saved activity place');
     assert.equal(record.draftContent.meeting.place, 'Sanura', 'saved meeting place is the typed free text');
-    assert.ok(String(record.draftContent.meeting.mapsUrl).includes('query_place_id=PLACE-KUTA-SQUARE'), 'saved Maps link keeps the picked place ID');
+    assert.equal(String(record.draftContent.meeting.mapsUrl).includes('query_place_id=PLACE-KUTA-SQUARE'), source === 'google', 'saved Maps link matches the source');
+    assert.ok(String(record.draftContent.meeting.mapsUrl).startsWith('https://www.google.com/maps/search/?api=1&query=Kuta%20Square'), 'saved Maps link is a plain search link');
     assert.equal(external.length, 0, 'the browser never calls Google directly');
     assert.equal(failures.length, 0, `console errors: ${failures.join(' | ')}`);
 
-    const summary = { provider: 'double', calls: calls.length, dailyLimit: 4, externalRequests: external.length, consoleErrors: failures.length, cap: 'checked', keyboardPick: 'checked', screenshots: ['cp036-dropdown-390.png', 'cp036-dropdown-1280.png'] };
+    const summary = { provider: 'double', source, calls: calls.length, dailyLimit: 4, externalRequests: external.length, consoleErrors: failures.length, cap: 'checked', keyboardPick: 'checked', screenshots: ['cp036-dropdown-390.png', 'cp036-dropdown-1280.png'] };
     await writeFile(path.join(evidenceDir, 'verification-summary.json'), JSON.stringify(summary, null, 2));
     console.log(JSON.stringify(summary));
   } finally {
@@ -181,4 +188,5 @@ async function main() {
   }
 }
 
-await main();
+await main('osm');
+await main('google');

@@ -5,6 +5,7 @@ import { IssueText, useIssue } from '../issues.js';
 import { fieldClass } from '../fields.js';
 
 export interface PlaceSuggestion { placeId: string; mainText: string; secondaryText: string }
+export type PlaceSource = 'osm' | 'google';
 
 const DEBOUNCE_MS = 300;
 const MIN_CHARS = 3;
@@ -16,16 +17,17 @@ export function placeLanguageOf(tag: string | null | undefined): string | null {
   return tag && SUPPORTED.has(tag) ? tag : null;
 }
 
-/** Maps search link that keeps the Places ID (PD-1). The Maps link field stays editable. */
-export function mapsUrlFor(suggestion: PlaceSuggestion): string {
+/** Google Maps search link (a plain link, no key). Only Google suggestions carry a Maps place ID; OpenStreetMap ones search by name and area. The Maps link field stays editable. */
+export function mapsUrlFor(suggestion: PlaceSuggestion, source: PlaceSource): string {
   const query = suggestion.secondaryText ? `${suggestion.mainText}, ${suggestion.secondaryText}` : suggestion.mainText;
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}&query_place_id=${encodeURIComponent(suggestion.placeId)}`;
+  const base = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+  return source === 'google' ? `${base}&query_place_id=${encodeURIComponent(suggestion.placeId)}` : base;
 }
 
 /** Keyboard-first combobox. The input is free text at all times; a suggestion only fills it. */
 export function PlaceAutocomplete({ id, meta, value, onChange, onPick, languageCode }: {
   id: string; meta: FieldMeta; value: string | null | undefined; onChange: (value: string | null) => void;
-  onPick?: (suggestion: PlaceSuggestion) => void; languageCode: string | null;
+  onPick?: (suggestion: PlaceSuggestion, source: PlaceSource) => void; languageCode: string | null;
 }) {
   const issue = useIssue(meta.path);
   const { onBlur: touch, ...issueProps } = issue.inputProps;
@@ -35,6 +37,7 @@ export function PlaceAutocomplete({ id, meta, value, onChange, onPick, languageC
   const [focused, setFocused] = useState(false);
   const [disabled, setDisabled] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [source, setSource] = useState<PlaceSource>('osm');
   const sessionRef = useRef<string | null>(null);
   const requestRef = useRef(0);
   const skipRef = useRef<string | null>(null);
@@ -55,7 +58,7 @@ export function PlaceAutocomplete({ id, meta, value, onChange, onPick, languageC
       try {
         const result = await api.placesAutocomplete(text, sessionRef.current, languageCode);
         if (current !== requestRef.current) return;
-        setItems(result.suggestions); setOpen(result.suggestions.length > 0); setActive(-1);
+        setSource(result.source); setItems(result.suggestions); setOpen(result.suggestions.length > 0); setActive(-1);
         setNote(result.suggestions.length > 0 ? null : 'Tidak ada tempat yang cocok; tetap bisa diketik manual.');
       } catch (cause) {
         if (current !== requestRef.current) return;
@@ -73,7 +76,7 @@ export function PlaceAutocomplete({ id, meta, value, onChange, onPick, languageC
     sessionRef.current = null;
     skipRef.current = suggestion.mainText;
     onChange(suggestion.mainText);
-    onPick?.(suggestion);
+    onPick?.(suggestion, source);
     setItems([]); setOpen(false); setActive(-1); setNote(null);
   }
 
@@ -117,7 +120,9 @@ export function PlaceAutocomplete({ id, meta, value, onChange, onPick, languageC
               </li>
             ))}
           </ul>
-          <p className="border-t border-slate-200 px-3 py-1 text-right text-[11px] text-slate-500" data-places-attribution>Powered by Google</p>
+          <p className="border-t border-slate-200 px-3 py-1 text-right text-[11px] text-slate-500" data-places-attribution={source}>
+            {source === 'google' ? 'Powered by Google' : <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer" className="underline">© OpenStreetMap contributors</a>}
+          </p>
         </div>
       )}
       {note && <p id={noteId} aria-live="polite" className="mt-1 text-xs text-slate-600">{note}</p>}

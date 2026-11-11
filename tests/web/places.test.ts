@@ -5,15 +5,16 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { test, type TestContext } from 'node:test';
 import { createApp } from '../../src/server/app.js';
-import { GooglePlacesProvider, googleLanguageCode, parseGoogleSuggestions, type PlaceSuggestion, type PlacesAutocompleteInput, type PlacesProvider } from '../../src/server/places/provider.js';
+import { GooglePlacesProvider, PhotonPlacesProvider, createPlacesProvider, defaultDailyLimit, disabledPlacesProvider, googleLanguageCode, parseGoogleSuggestions, parsePhotonSuggestions, photonLanguage, type PlaceSuggestion, type PlacesAutocompleteInput, type PlacesProvider, type PlacesSource } from '../../src/server/places/provider.js';
 
 const headers = { origin: 'http://127.0.0.1:3000', 'x-engine-request': '1', 'content-type': 'application/json' };
 const SECRET = 'AIza-test-secret-key-value';
 const suggestion: PlaceSuggestion = { placeId: 'ChIJ-test-place', mainText: 'Kiyomizu-dera', secondaryText: 'Kyoto, Japan' };
 
-function double(overrides: { configured?: boolean; result?: PlaceSuggestion[]; fail?: boolean } = {}) {
+function double(overrides: { configured?: boolean; result?: PlaceSuggestion[]; fail?: boolean; source?: PlacesSource } = {}) {
   const calls: PlacesAutocompleteInput[] = [];
   const provider: PlacesProvider = {
+    source: overrides.source ?? 'osm',
     configured: overrides.configured ?? true,
     async autocomplete(input) {
       calls.push(input);
@@ -41,7 +42,7 @@ test('autocomplete returns suggestions and the remaining count, and counts one r
   const app = await fixture(t, { placesProvider: provider, placesDailyLimit: 3 });
   const response = await search(app, body({ languageCode: 'ja' }));
   assert.equal(response.statusCode, 200);
-  assert.deepEqual(response.json(), { suggestions: [suggestion], remainingToday: 2 });
+  assert.deepEqual(response.json(), { suggestions: [suggestion], source: 'osm', remainingToday: 2 });
   assert.equal(calls.length, 1);
   assert.equal(calls[0].languageCode, 'ja');
   assert.equal(calls[0].text, 'kiyomi');

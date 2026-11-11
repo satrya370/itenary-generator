@@ -37,3 +37,7 @@ Reviewer: Claude Sonnet 5.5. Date: 2026-11-11. Reviewed: commit `f69c914` (execu
 ## Verdict
 
 CP036: **ACCEPT after fixes P1-P5**, with the logo decision and the live key check pending on the owner.
+
+## Addendum: provider switched to Photon (2026-11-11)
+
+Owner decision: no credit card, so no Google by default. See the "Provider change" section of `logs/cp036_stage-log_google-places-autocomplete.md`. The Google logo item above now only applies when `PLACES_PROVIDER=google`. Gate re-run after the switch: all typechecks, unit suites (places 16, editor 33, others unchanged), `verify:web-places` for both sources, the other seven browser checks, release build and validation: green. Opt-in live check against the real Photon: passed.

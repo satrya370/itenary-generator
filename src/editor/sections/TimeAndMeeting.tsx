@@ -16,7 +16,7 @@ export function TimeAndMeeting(props: EditorProps) {
               <TimeField id={`${recordId}-end-time`} meta={meta('trip.endTime', mode)} value={content.trip.endTime} onChange={(v) => patch((n) => { n.trip.endTime = v; })} />
             </>
           )}
-          <PlaceAutocomplete id={`${recordId}-meeting-place`} meta={meta('meeting.place', mode)} value={content.meeting.place} languageCode={placeLanguageOf(content.trip.language)} onChange={(v) => patch((n) => { n.meeting.place = blankToNull(v); })} onPick={(suggestion) => patch((n) => { n.meeting.mapsUrl = mapsUrlFor(suggestion); })} />
+          <PlaceAutocomplete id={`${recordId}-meeting-place`} meta={meta('meeting.place', mode)} value={content.meeting.place} languageCode={placeLanguageOf(content.trip.language)} onChange={(v) => patch((n) => { n.meeting.place = blankToNull(v); })} onPick={(suggestion, source) => patch((n) => { n.meeting.mapsUrl = mapsUrlFor(suggestion, source); })} />
           <TextField id={`${recordId}-meeting-maps`} meta={meta('meeting.mapsUrl', mode)} value={content.meeting.mapsUrl} type="url" onChange={(v) => patch((n) => { n.meeting.mapsUrl = blankToNull(v); })} />
           <TimeField id={`${recordId}-meeting-time`} meta={meta('meeting.time', mode)} value={content.meeting.time} onChange={(v) => patch((n) => { n.meeting.time = v; })} />
           <TextArea id={`${recordId}-meeting-note`} meta={meta('meeting.note', mode)} value={content.meeting.note} onChange={(v) => patch((n) => { n.meeting.note = blankToNull(v); })} />

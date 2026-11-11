@@ -53,3 +53,15 @@ Problems found and fixed during the run:
 ## Review fixes (2026-11-11)
 
 Reviewer changes after the executor's gate (details in `logs/cp036_review-log.md`): the 503/429 explanation note no longer disappears; the editor stops searching after the daily cap is reported and for queries over 100 characters; docs for the key, cap and route added; two server tests and two browser assertions added. Places suite 12 tests; all gates re-run green.
+
+## Provider change: Photon (OpenStreetMap) by default, Google optional (2026-11-11)
+
+The owner does not want to give a credit card to Google Cloud, so the default provider is now Photon (`photon.komoot.io`, OpenStreetMap data, no key, no account). Google stays in the code behind `PLACES_PROVIDER=google` (needs billing and `GOOGLE_PLACES_API_KEY`); `PLACES_PROVIDER=off` keeps the fields plain text.
+
+- Server: `PhotonPlacesProvider`, `createPlacesProvider(env)`, `defaultDailyLimit` (1000 for Photon, 300 for Google), env `PLACES_DAILY_LIMIT` (replaces `GOOGLE_PLACES_DAILY_LIMIT`). The response now carries `source` (`osm` or `google`). 503 and 502 messages are provider-neutral.
+- Photon facts checked against the live service before coding: `lang` accepts only `en` and `fr` (`id`, `ja` give HTTP 400, so other languages are not sent); `osm_tag=!highway` removes bus stops and roads; the same OSM object can appear twice (parser drops repeats by OSM ID and by name plus area); the public service is fair-use with no guarantee (docs recommend self-hosting for heavy use).
+- Editor: attribution follows the source ("© OpenStreetMap contributors" linked to the OSM copyright page, or "Powered by Google"). The meeting Maps link is a plain Google Maps search link (`query=name, area`); only Google suggestions add `query_place_id`.
+- Tests: `tests/web/places-sources.test.ts` (Photon parsing, provider request shape, provider choice, route source and 503 when off); `verify:web-places` now runs once per source; opt-in `scripts/web/verify-places-live.ts` hits the real Photon through the real route (passed: Ubud, Tanah Lot, Kiyomizu with Japanese names, Kuta Beach; all `source: osm`, no repeated places).
+- The Google logo question only matters if `PLACES_PROVIDER=google` is chosen.
+
+Known limits (owner should know): results are worldwide with no location bias, so a vague name such as "kuta beach" without a language can list a place in Italy before Bali. A bias from the trip's country or destination is a possible follow-up (needs a hint field in the request). The public Photon service can throttle or change without notice.

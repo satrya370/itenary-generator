@@ -285,12 +285,15 @@ test('5h. a missing required field is marked red with its message, scoped to the
 
 test('5i. place autocomplete: Maps link keeps the place ID, language maps to supported tags only, combobox markup is accessible', async () => {
   const { mapsUrlFor, placeLanguageOf, PlaceAutocomplete } = await import('../../src/editor/fields/PlaceAutocomplete.js');
-  const url = new URL(mapsUrlFor({ placeId: 'ChIJ abc', mainText: 'Ubud Palace', secondaryText: 'Ubud, Bali' }));
+  const url = new URL(mapsUrlFor({ placeId: 'ChIJ abc', mainText: 'Ubud Palace', secondaryText: 'Ubud, Bali' }, 'google'));
   assert.equal(url.origin + url.pathname, 'https://www.google.com/maps/search/');
   assert.equal(url.searchParams.get('api'), '1');
   assert.equal(url.searchParams.get('query'), 'Ubud Palace, Ubud, Bali');
   assert.equal(url.searchParams.get('query_place_id'), 'ChIJ abc');
-  assert.equal(new URL(mapsUrlFor({ placeId: 'P', mainText: 'Ubud', secondaryText: '' })).searchParams.get('query'), 'Ubud');
+  assert.equal(new URL(mapsUrlFor({ placeId: 'P', mainText: 'Ubud', secondaryText: '' }, 'google')).searchParams.get('query'), 'Ubud');
+  const osm = new URL(mapsUrlFor({ placeId: 'W260605192', mainText: 'Kuta Beach', secondaryText: 'Kuta, Bali' }, 'osm'));
+  assert.equal(osm.searchParams.get('query'), 'Kuta Beach, Kuta, Bali');
+  assert.equal(osm.searchParams.has('query_place_id'), false, 'an OpenStreetMap ID is not a Google place ID');
   assert.equal(placeLanguageOf('auto'), null);
   assert.equal(placeLanguageOf(null), null);
   assert.equal(placeLanguageOf('zh-Hans'), 'zh-Hans');
