@@ -34,6 +34,7 @@ export function importError(code: ImportErrorCode): ImportError { return new Imp
 
 /** Plain text intake: NFC, newline and invisible-character cleanup. Rejects blank and too long input; never truncates. */
 export function normalizeText(raw: string): string {
+  if (typeof raw !== 'string') throw importError('IMPORT_EMPTY');
   const cleaned = raw.normalize('NFC').replace(/\r\n?/g, '\n').replace(/[​-‍﻿]/g, '').split('\n').map((line) => line.replace(/[ \t]+$/g, '')).join('\n').trim();
   if (!cleaned) throw importError('IMPORT_EMPTY');
   if ([...cleaned].length > MAX_TEXT_CHARS) throw importError('IMPORT_TEXT_TOO_LONG');

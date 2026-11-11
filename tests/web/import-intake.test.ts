@@ -110,6 +110,15 @@ test('the PDF worker has a hard deadline: a 1 ms deadline ends with IMPORT_TIMEO
   await assert.rejects(readPdfPages(new Uint8Array(bytes), 1), (cause: unknown) => cause instanceof ImportError && cause.code === 'IMPORT_TIMEOUT');
 });
 
+test('a source whose text file was removed answers 404 with a clear message, not a server error', async (t) => {
+  const f = await fixture(t);
+  const created = (await f.app.inject({ method: 'POST', url: '/api/v1/imports/sources', headers, payload: { text: 'Tur Bali\n09:00 Ubud Palace' } })).json();
+  await rm(path.join(f.dataDir, 'imports', `${created.sourceId}.txt`));
+  const response = await f.app.inject({ url: `/api/v1/imports/sources/${created.sourceId}` });
+  assert.equal(response.statusCode, 404);
+  assert.equal(response.json().error.code, 'NOT_FOUND');
+});
+
 test('sources survive a server restart and are scoped to the workspace', async (t) => {
   const f = await fixture(t);
   const created = (await f.app.inject({ method: 'POST', url: '/api/v1/imports/sources', headers, payload: { text: 'Tur Bali\n09:00 Ubud Palace' } })).json();

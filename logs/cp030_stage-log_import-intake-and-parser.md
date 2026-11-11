@@ -63,7 +63,8 @@ Temporary line added at the end of `parseDocument` (`trip.country = 'Indonesia'`
 2. **Period words.** "pagi/siang/sore/malam" count as a clock marker only without minutes ("8 pagi"), not with minutes ("09:00 Pagi" is an activity named Pagi). Found by a test; plan wording left this open.
 3. **Dictionary file** `import-headings.json` also holds the kind keywords and key-value labels (the plan named the file for headings only).
 4. **Option synonyms** table exists but is empty (`optionSynonyms.entries: {}`); `matchOption` uses exact folded matches only. Synonyms are a later step, not invented here.
-5. **Release file count** rose from 41 to 51 (new config and import files are packaged). `validate:web-release` is valid. This is the only packaging change; no packager script was modified.
+5. **Mode at source creation.** Plan step 3 said POST sources validates `mode` and returns it. Mode is chosen at the parse step instead (I2: mode is chosen before the import). Accepted in review R4.
+6. **Release file count** rose from 41 to 51 (new config and import files are packaged). `validate:web-release` is valid. This is the only packaging change; no packager script was modified.
 
 ## Known gaps
 

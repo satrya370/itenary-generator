@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { rm } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import type { openStore } from '../store.js';
 import type { ItineraryMode } from '../../contracts/types.js';
@@ -31,10 +32,15 @@ export function registerImportRoutes(app: FastifyInstance, { store, dataDir }: {
         intake = intakeText(body.text);
       }
       const id = randomUUID();
-      await storeSourceText(dataDir, id, intake.text);
+      const file = await storeSourceText(dataDir, id, intake.text);
       const createdAt = new Date().toISOString();
-      store.db.prepare('INSERT INTO import_sources(id,workspace_id,kind,sha256,byte_size,page_count,char_count,language_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)')
-        .run(id, store.workspaceId, intake.kind, intake.sha256, intake.byteSize, intake.pageCount, intake.charCount, JSON.stringify(intake.languageProposal), createdAt);
+      try {
+        store.db.prepare('INSERT INTO import_sources(id,workspace_id,kind,sha256,byte_size,page_count,char_count,language_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)')
+          .run(id, store.workspaceId, intake.kind, intake.sha256, intake.byteSize, intake.pageCount, intake.charCount, JSON.stringify(intake.languageProposal), createdAt);
+      } catch (cause) {
+        await rm(file, { force: true }); // no orphan text file when the row was not written
+        throw cause;
+      }
       return reply.code(201).send({ sourceId: id, kind: intake.kind, pageCount: intake.pageCount, charCount: intake.charCount, languageProposal: intake.languageProposal, excerpt: excerptOf(intake.text) });
     } catch (cause) {
       if (cause instanceof ImportError) return reply.code(cause.status).send(errorBody(cause.code, cause.message, request.id));
@@ -47,7 +53,10 @@ export function registerImportRoutes(app: FastifyInstance, { store, dataDir }: {
   app.get<{ Params: { id: string } }>('/api/v1/imports/sources/:id', async (request, reply) => {
     const row = sourceRow(request.params.id);
     if (!row) return reply.code(404).send(errorBody('NOT_FOUND', 'Sumber import tidak ditemukan.', request.id));
-    const text = await readSourceText(dataDir, row.id);
+    let text: string;
+    try { text = await readSourceText(dataDir, row.id); } catch {
+      return reply.code(404).send(errorBody('NOT_FOUND', 'Teks sumber tidak tersedia; upload ulang atau tempel teksnya.', request.id));
+    }
     return { sourceId: row.id, kind: row.kind, sha256: row.sha256, byteSize: row.byte_size, pageCount: row.page_count, charCount: row.char_count, languageProposal: JSON.parse(row.language_json), createdAt: row.created_at, text };
   });
 
