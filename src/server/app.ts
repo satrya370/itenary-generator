@@ -15,6 +15,7 @@ import { loadOpenRouterCredential } from './ai/credentials.js';
 import { OpenRouterProvider, type AiProvider } from './ai/provider.js';
 import { AiService, registerAiRoutes, type AiServiceLimits } from './ai/service.js';
 import { createPlacesProvider, defaultDailyLimit, type PlacesProvider } from './places/provider.js';
+import { registerImportRoutes } from './import/routes.js';
 
 export interface AppOptions {
   dataDir?: string; publicOrigin?: string; shareOrigin?: string; allowedOrigins?: string[]; renderStylesheetPath?: string;
@@ -308,6 +309,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
       return reply.code(502).send(error('PLACES_FAILED', 'Autocomplete tempat gagal; ketik manual.', undefined, request.id));
     }
   });
+  registerImportRoutes(app, { store, dataDir });
   app.get('/api/health', async () => ({ status: 'ok' }));
   registerAiRoutes(app, ai);
   return app;

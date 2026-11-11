@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "note": "Dictionary for the deterministic import parser (CP030). Matching ignores case, accents and a trailing colon. Add entries here; no code change needed.",
+  "headings": {
+    "included": ["Termasuk", "Harga termasuk", "Sudah termasuk", "Include", "Included", "Inclusions", "What's included", "Whats included"],
+    "notIncluded": ["Tidak termasuk", "Belum termasuk", "Exclude", "Excluded", "Not included", "Exclusions", "What's not included"],
+    "whatToBring": ["Yang perlu dibawa", "Bawa", "Perlengkapan", "What to bring", "Bring", "Packing list"],
+    "notSuitableFor": ["Tidak cocok untuk", "Not suitable for", "Not recommended for"],
+    "notAllowed": ["Tidak diperbolehkan", "Dilarang", "Not allowed", "Not permitted", "Prohibited"],
+    "localTips": ["Yang perlu diketahui", "Info penting", "Tips", "Catatan", "Good to know", "Important information", "Notes", "Things to know"],
+    "emergencyContacts": ["Kontak darurat", "Emergency contact", "Emergency contacts"],
+    "policies": ["Syarat & ketentuan", "Syarat dan ketentuan", "Ketentuan", "Kebijakan pembatalan", "Terms", "Terms & conditions", "Terms and conditions", "Cancellation policy"],
+    "meeting": ["Titik kumpul", "Meeting point", "Tempat berkumpul", "Meeting place"],
+    "pickup": ["Penjemputan", "Jemput", "Pickup", "Pick-up", "Pick up"],
+    "guide": ["Guide", "Pemandu", "Tour guide"],
+    "summary": ["Ringkasan", "Deskripsi", "Tentang trip", "Overview", "About", "Highlights"],
+    "closingNote": ["Penutup", "Catatan penutup", "Closing", "Closing note"],
+    "hotel": ["Hotel", "Penginapan", "Akomodasi", "Accommodation"],
+    "places": ["Tempat", "Destinasi", "Places", "Spots"]
+  },
+  "keyValue": {
+    "destination": ["Destinasi", "Tujuan", "Destination"],
+    "country": ["Negara", "Country"],
+    "date": ["Tanggal", "Date"],
+    "duration": ["Durasi", "Duration"],
+    "guide": ["Guide", "Pemandu"],
+    "phone": ["No HP", "No. HP", "Nomor HP", "Telp", "Telepon", "WA", "Phone", "Contact"],
+    "meetingPlace": ["Titik kumpul", "Meeting point"],
+    "meetingTime": ["Jam kumpul", "Meeting time"]
+  },
+  "dayMarkers": {
+    "patterns": ["^(?:hari|day)\\s*(?:ke-?\\s*)?(\\d{1,2})\\b", "^(?:h|d)(\\d{1,2})\\b"],
+    "words": { "pertama": 1, "kedua": 2, "ketiga": 3, "keempat": 4, "kelima": 5, "keenam": 6, "ketujuh": 7, "kedelapan": 8, "kesembilan": 9, "kesepuluh": 10, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10 }
+  },
+  "kinds": {
+    "food": ["makan", "sarapan", "makan siang", "makan malam", "kuliner", "lunch", "dinner", "breakfast", "cafe", "restoran", "restaurant"],
+    "transport": ["jemput", "antar", "transfer", "perjalanan ke", "drive to", "pickup", "pick up", "bandara", "airport", "kereta", "train", "ferry", "kapal", "boat"],
+    "free": ["waktu bebas", "acara bebas", "free time", "istirahat", "rest"],
+    "activity": ["snorkeling", "snorkelling", "trekking", "hiking", "rafting", "kelas", "class", "workshop", "spa", "diving", "menyelam"]
+  },
+  "optionSynonyms": {
+    "note": "Maps a practical item to a built-in OTA option only when meaning is the same. Keys are option IDs from practical-options.json.",
+    "entries": {}
+  }
+}

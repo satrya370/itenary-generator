@@ -6,6 +6,7 @@ import { AI_SCHEMA_DDL, recoverInterruptedAiOperations } from './ai/schema.js';
 import { LEGACY_SCHEMA_VERSION, PREVIOUS_SCHEMA_VERSION, SCHEMA_VERSION } from '../contracts/types.js';
 import { upgradeV1ToV2, upgradeV20ToV21 } from '../contracts/upgrade-v1.js';
 import { validateDraft } from '../contracts/validator.js';
+import { IMPORT_SCHEMA_DDL } from './import/schema.js';
 
 export interface StoreOptions { dataDir: string; }
 export interface ItineraryRecord {
@@ -138,7 +139,8 @@ export const MIGRATIONS: Migration[] = [
   { version: 2, name: 'ai-schema', up: (db) => db.exec(AI_SCHEMA_DDL) },
   { version: 3, name: 'guide-centric-schema-web-2.0.0', before: backupBeforeV2Upgrade, up: (db) => upgradeDraftsToV2(db) },
   { version: 4, name: 'schema-web-2.1.0-practical-lists', before: backupBeforeV21Upgrade, up: (db) => upgradeDraftsToV21(db) },
-  { version: 5, name: 'places-daily-usage', up: (db) => db.exec('CREATE TABLE IF NOT EXISTS places_usage (day TEXT PRIMARY KEY, count INTEGER NOT NULL)') }
+  { version: 5, name: 'places-daily-usage', up: (db) => db.exec('CREATE TABLE IF NOT EXISTS places_usage (day TEXT PRIMARY KEY, count INTEGER NOT NULL)') },
+  { version: 6, name: 'import-sources', up: (db) => db.exec(IMPORT_SCHEMA_DDL) }
 ];
 
 export function runMigrations(db: DatabaseSync, context: MigrationContext, migrations: Migration[] = MIGRATIONS) {

@@ -1,0 +1,49 @@
+Trip panjang 15 hari
+Destinasi: Indonesia
+Negara: Indonesia
+
+Hari 1: Lokasi 1
+09:00 Kegiatan pagi 1 (1 jam)
+
+Hari 2: Lokasi 2
+09:00 Kegiatan pagi 2 (1 jam)
+
+Hari 3: Lokasi 3
+09:00 Kegiatan pagi 3 (1 jam)
+
+Hari 4: Lokasi 4
+09:00 Kegiatan pagi 4 (1 jam)
+
+Hari 5: Lokasi 5
+09:00 Kegiatan pagi 5 (1 jam)
+
+Hari 6: Lokasi 6
+09:00 Kegiatan pagi 6 (1 jam)
+
+Hari 7: Lokasi 7
+09:00 Kegiatan pagi 7 (1 jam)
+
+Hari 8: Lokasi 8
+09:00 Kegiatan pagi 8 (1 jam)
+
+Hari 9: Lokasi 9
+09:00 Kegiatan pagi 9 (1 jam)
+
+Hari 10: Lokasi 10
+09:00 Kegiatan pagi 10 (1 jam)
+
+Hari 11: Lokasi 11
+09:00 Kegiatan pagi 11 (1 jam)
+
+Hari 12: Lokasi 12
+09:00 Kegiatan pagi 12 (1 jam)
+
+Hari 13: Lokasi 13
+09:00 Kegiatan pagi 13 (1 jam)
+
+Hari 14: Lokasi 14
+09:00 Kegiatan pagi 14 (1 jam)
+
+Hari 15: Lokasi 15
+09:00 Kegiatan pagi 15 (1 jam)
+
