@@ -4,11 +4,12 @@ import type { AssetDto } from '../../api/client.js';
 import type { ItineraryMode, WebItineraryContent } from '../../contracts/types.js';
 import type { AiAction, MetaFn, Patch } from '../EditorForm.js';
 import { NumberField, PhotoField, SelectField, TextArea, TextField, TimeField, Toggle, buttonClass } from '../fields.js';
+import { PlaceAutocomplete } from '../fields/PlaceAutocomplete.js';
 import { blankToNull, makeActivity, moveById, normalizeHotel, setPhotoAsset, setPhotoCredit } from '../model.js';
 import { kindLabels, statusCopy } from '../labels.js';
 
-function ActivityList({ dayId, day, mode, recordId, assets, meta, patch, aiAction }: {
-  dayId: string; day: NonNullable<WebItineraryContent['days'][number]>; mode: ItineraryMode; recordId: string; assets: AssetDto[]; meta: MetaFn; patch: Patch; aiAction: AiAction;
+function ActivityList({ dayId, day, mode, recordId, assets, meta, patch, aiAction, placeLanguage }: {
+  dayId: string; day: NonNullable<WebItineraryContent['days'][number]>; mode: ItineraryMode; recordId: string; assets: AssetDto[]; meta: MetaFn; patch: Patch; aiAction: AiAction; placeLanguage: string | null;
 }) {
   const kindChoices: Array<[string, string]> = Object.entries(kindLabels).map(([k, v]) => [k, v]);
   return (
@@ -30,7 +31,7 @@ function ActivityList({ dayId, day, mode, recordId, assets, meta, patch, aiActio
             <NumberField id={`${recordId}-activity-duration-${activity.id}`} meta={meta('days[].activities[].durationMinutes', mode)} value={activity.durationMinutes} onChange={(v) => patch((next) => { const a = next.days.find((x) => x.id === dayId)?.activities.find((x) => x.id === activity.id); if (a) a.durationMinutes = v; })} />
             <SelectField id={`${recordId}-activity-kind-${activity.id}`} meta={meta('days[].activities[].kind', mode)} value={activity.kind} choices={kindChoices} onChange={(v) => patch((next) => { const a = next.days.find((x) => x.id === dayId)?.activities.find((x) => x.id === activity.id); if (a) a.kind = v as typeof a.kind; })} />
             <TextField id={`${recordId}-activity-title-${activity.id}`} meta={meta('days[].activities[].title', mode)} value={activity.title} onChange={(v) => patch((next) => { const a = next.days.find((x) => x.id === dayId)?.activities.find((x) => x.id === activity.id); if (a) a.title = v ?? ''; })} />
-            <TextField id={`${recordId}-activity-place-${activity.id}`} meta={meta('days[].activities[].place', mode)} value={activity.place} onChange={(v) => patch((next) => { const a = next.days.find((x) => x.id === dayId)?.activities.find((x) => x.id === activity.id); if (a) a.place = blankToNull(v); })} />
+            <PlaceAutocomplete id={`${recordId}-activity-place-${activity.id}`} meta={meta('days[].activities[].place', mode)} value={activity.place} languageCode={placeLanguage} onChange={(v) => patch((next) => { const a = next.days.find((x) => x.id === dayId)?.activities.find((x) => x.id === activity.id); if (a) a.place = blankToNull(v); })} />
             <TextArea id={`${recordId}-activity-description-${activity.id}`} meta={meta('days[].activities[].description', mode)} value={activity.description} onChange={(v) => patch((next) => { const a = next.days.find((x) => x.id === dayId)?.activities.find((x) => x.id === activity.id); if (a) a.description = v ?? ''; })} />
             <TextArea id={`${recordId}-activity-tip-${activity.id}`} meta={meta('days[].activities[].tip', mode)} value={activity.tip} onChange={(v) => patch((next) => { const a = next.days.find((x) => x.id === dayId)?.activities.find((x) => x.id === activity.id); if (a) a.tip = blankToNull(v); })} />
             {aiAction(`activity:${activity.id}`, 'Buat dengan AI', 'description', { kind: 'activity', id: activity.id }, (text) => patch((next) => { const a = next.days.find((x) => x.id === dayId)?.activities.find((x) => x.id === activity.id); if (a) a.description = text; }))}
@@ -41,11 +42,11 @@ function ActivityList({ dayId, day, mode, recordId, assets, meta, patch, aiActio
   );
 }
 
-export function DayCard({ day, mode, recordId, assets, meta, patch, aiAction, showHotel, showTransfer, showDayControls, isFirst, isLast, onUploadAsset, onMove, onRemove }: {
+export function DayCard({ day, mode, recordId, assets, meta, patch, aiAction, showHotel, showTransfer, showDayControls, isFirst, isLast, onUploadAsset, onMove, onRemove, placeLanguage }: {
   day: NonNullable<WebItineraryContent['days'][number]>; mode: ItineraryMode; recordId: string; assets: AssetDto[]; meta: MetaFn; patch: Patch; aiAction: AiAction;
   showHotel: boolean; showTransfer: boolean; showDayControls: boolean; isFirst: boolean; isLast: boolean;
   onUploadAsset: (file: File) => Promise<AssetDto | null>;
-  onMove: (delta: number) => void; onRemove: () => void;
+  onMove: (delta: number) => void; onRemove: () => void; placeLanguage: string | null;
 }) {
   return (
     <ItemScope id={day.id}><div className="space-y-4 rounded-xl border border-slate-300 p-4" data-target-id={day.id} tabIndex={-1}>
@@ -78,7 +79,7 @@ export function DayCard({ day, mode, recordId, assets, meta, patch, aiAction, sh
           <Toggle id={`${recordId}-meal-dinner-${day.id}`} meta={meta('days[].meals.dinner', mode)} value={day.meals?.dinner ?? false} onChange={(v) => patch((next) => { const d = next.days.find((x) => x.id === day.id); if (d) { const m = d.meals ?? { breakfast: false, lunch: false, dinner: false }; d.meals = { ...m, dinner: v }; if (!d.meals.breakfast && !d.meals.lunch && !d.meals.dinner) d.meals = null; } })} />
         </div>
       )}
-      <ActivityList dayId={day.id} day={day} mode={mode} recordId={recordId} assets={assets} meta={meta} patch={patch} aiAction={aiAction} />
+      <ActivityList dayId={day.id} day={day} mode={mode} recordId={recordId} assets={assets} meta={meta} patch={patch} aiAction={aiAction} placeLanguage={placeLanguage} />
     </div></ItemScope>
   );
 }

@@ -14,6 +14,7 @@ import { listPublishedVersions, publicationStatus, publishSavedRevision, readPub
 import { loadOpenRouterCredential } from './ai/credentials.js';
 import { OpenRouterProvider, type AiProvider } from './ai/provider.js';
 import { AiService, registerAiRoutes, type AiServiceLimits } from './ai/service.js';
+import { GooglePlacesProvider, type PlacesProvider } from './places/provider.js';
 
 export interface AppOptions {
   dataDir?: string; publicOrigin?: string; shareOrigin?: string; allowedOrigins?: string[]; renderStylesheetPath?: string;
@@ -22,6 +23,8 @@ export interface AppOptions {
   /** Test-only crash seam after artifacts are promoted but before the publication transaction. */
   afterPublicationPromote?: () => Promise<void>;
   aiProvider?: AiProvider; liveAiTest?: boolean; aiLimits?: AiServiceLimits;
+  /** Test-only Places seam; production uses Google with GOOGLE_PLACES_API_KEY. */
+  placesProvider?: PlacesProvider; placesDailyLimit?: number;
   /** Test-only renderer seam; production always uses the saved-draft preview renderer. */
   renderPreview?: typeof renderSavedDraftPreview;
 }
@@ -280,6 +283,31 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     return reply.header('content-type', asset.mime).header('content-length', String(bytes.length)).header('x-content-type-options', 'nosniff').send(bytes);
   });
 
+  const places = options.placesProvider ?? new GooglePlacesProvider(process.env.GOOGLE_PLACES_API_KEY);
+  const placesDailyLimit = options.placesDailyLimit ?? envLimit('GOOGLE_PLACES_DAILY_LIMIT', 300, 0, 5000);
+  app.post<{ Body: unknown }>('/api/v1/places/autocomplete', async (request, reply) => {
+    const body = object(request.body) ? request.body : {};
+    const keys = Object.keys(body);
+    const text = typeof body.text === 'string' ? body.text.trim() : '';
+    const sessionToken = typeof body.sessionToken === 'string' ? body.sessionToken : '';
+    const languageCode = body.languageCode === undefined || body.languageCode === null ? null : body.languageCode;
+    if (keys.some((key) => !['text', 'sessionToken', 'languageCode'].includes(key)) || text.length < 3 || text.length > 100 || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sessionToken) || (languageCode !== null && (typeof languageCode !== 'string' || !profileLanguages.has(languageCode)))) {
+      return reply.code(400).send(error('INVALID_REQUEST', 'Tulis minimal 3 huruf untuk mencari tempat.'));
+    }
+    if (!places.configured) return reply.code(503).send(error('PLACES_UNAVAILABLE', 'Autocomplete Google belum diatur; ketik manual.'));
+    // Reserve one request for the UTC day before calling Google; the conditional upsert returns no row at the limit.
+    const day = new Date().toISOString().slice(0, 10);
+    // A zero limit never reaches the insert: the conditional clause only guards the conflict branch.
+    const reserved = placesDailyLimit < 1 ? undefined : store.db.prepare('INSERT INTO places_usage(day,count) VALUES(?,1) ON CONFLICT(day) DO UPDATE SET count=count+1 WHERE count < ? RETURNING count').get(day, placesDailyLimit) as { count: number } | undefined;
+    if (!reserved) return reply.code(429).send(error('PLACES_DAILY_LIMIT', 'Batas harian autocomplete tercapai; ketik manual sampai besok.'));
+    try {
+      const suggestions = await places.autocomplete({ text, sessionToken, languageCode });
+      return { suggestions, remainingToday: Math.max(0, placesDailyLimit - reserved.count) };
+    } catch (cause) {
+      request.log.error({ requestId: request.id, code: 'PLACES_FAILED', kind: cause instanceof Error ? cause.name : 'unknown' });
+      return reply.code(502).send(error('PLACES_FAILED', 'Autocomplete Google gagal; ketik manual.', undefined, request.id));
+    }
+  });
   app.get('/api/health', async () => ({ status: 'ok' }));
   registerAiRoutes(app, ai);
   return app;

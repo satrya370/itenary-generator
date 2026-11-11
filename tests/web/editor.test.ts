@@ -8,6 +8,7 @@ import registry from '../../config/web/field-registry.json' with { type: 'json' 
 import { validateDraft } from '../../src/contracts/validator.js';
 import type { ItineraryMode, Photo, WebItineraryContent } from '../../src/contracts/types.js';
 import { EditorForm, type EditorProps } from '../../src/editor/EditorForm.js';
+import type { FieldMeta } from '../../src/editor/schema-meta.js';
 import { fieldLabels, pathLabels } from '../../src/editor/labels.js';
 import { blankToNull, changeMode, ensureMeals, hasModeLoss, makeActivity, makeDay, makePlace, moveById, moveIndex, normalizeBlanks, normalizeHotel, setPhotoCredit, targetIdFor } from '../../src/editor/model.js';
 import { appliesTo, fieldMeta } from '../../src/editor/schema-meta.js';
@@ -280,6 +281,27 @@ test('5h. a missing required field is marked red with its message, scoped to the
   assert.ok(!flagged.some((id) => id.includes(content.days[0].activities[0].id)), 'the same field on another activity is not flagged');
   const clean = renderToStaticMarkup(React.createElement(EditorForm, editorProps('multi_day', content)));
   assert.ok(!clean.includes('aria-invalid="true"'), 'no issues without a provider');
+});
+
+test('5i. place autocomplete: Maps link keeps the place ID, language maps to supported tags only, combobox markup is accessible', async () => {
+  const { mapsUrlFor, placeLanguageOf, PlaceAutocomplete } = await import('../../src/editor/fields/PlaceAutocomplete.js');
+  const url = new URL(mapsUrlFor({ placeId: 'ChIJ abc', mainText: 'Ubud Palace', secondaryText: 'Ubud, Bali' }));
+  assert.equal(url.origin + url.pathname, 'https://www.google.com/maps/search/');
+  assert.equal(url.searchParams.get('api'), '1');
+  assert.equal(url.searchParams.get('query'), 'Ubud Palace, Ubud, Bali');
+  assert.equal(url.searchParams.get('query_place_id'), 'ChIJ abc');
+  assert.equal(new URL(mapsUrlFor({ placeId: 'P', mainText: 'Ubud', secondaryText: '' })).searchParams.get('query'), 'Ubud');
+  assert.equal(placeLanguageOf('auto'), null);
+  assert.equal(placeLanguageOf(null), null);
+  assert.equal(placeLanguageOf('zh-Hans'), 'zh-Hans');
+  assert.equal(placeLanguageOf('xx'), null);
+  const meta: FieldMeta = { path: 'meeting.place', labelKey: 'meeting.place', label: 'Tempat', control: 'text', required: false, applies: true, maxLength: 160 };
+  const markup = renderToStaticMarkup(React.createElement(PlaceAutocomplete, { id: 'p1', meta, value: 'Ubud', onChange: () => {}, languageCode: null }));
+  assert.match(markup, /role="combobox"/);
+  assert.match(markup, /aria-autocomplete="list"/);
+  assert.match(markup, /aria-expanded="false"/);
+  assert.doesNotMatch(markup, /role="listbox"/);
+  assert.match(markup, /data-field-path="meeting.place"/);
 });
 
 test('6. reordering keeps stable IDs and does not mutate the input', () => {

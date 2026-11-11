@@ -15,6 +15,7 @@ export interface LanguageResolutionDto { itineraryId: string; revision: number; 
 export interface AiPreflightDto { credentialState: string; authenticated: boolean; modelState: string; modelId: string; pricing: { prompt: number; completion: number; webSearch: number } | null; contextLength: number | null; maxCompletionTokens: number | null; supportedParameters: string[]; daily: { dailyLimit: number; usedToday: number; remainingToday: number; activeOperations: number }; liveTestBudget?: { limitUsd: number; committedUsd: number; remainingUsd: number }; }
 export interface PreviewDto { itineraryId: string; revision: number; html: string; publishReady: boolean; errors: Array<{ code: string; path: string; message: string; targetId?: string }>; warnings: Array<{ code: string; path: string; message: string; targetId?: string }>; scheduleVerification: 'complete' | 'partial' | 'not_applicable'; }
 export interface PublicationDto { itineraryId: string; active: boolean; epoch: number; currentVersion: { id: string; sourceRevision: number; createdAt: string } | null; shareUrl: string | null; draftRevision: number; draftDiffers: boolean; }
+export interface PlacesAutocompleteDto { suggestions: Array<{ placeId: string; mainText: string; secondaryText: string }>; remainingToday: number; }
 export interface PublishedVersionDto { id: string; sourceRevision: number; createdAt: string; }
 
 async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
@@ -42,6 +43,7 @@ export const api = {
   publish: (id: string, operationId: string, expectedRevision: number) => request<{ status: 'published' | 'pending'; operationId: string; itineraryId?: string; versionId?: string; sourceRevision?: number; createdAt?: string; shareUrl?: string | null; replayed?: boolean }>(`/api/v1/itineraries/${encodeURIComponent(id)}/publish`, { method: 'POST', body: JSON.stringify({ operationId, expectedRevision }) }),
   unpublish: (id: string, expectedPublicationEpoch: number) => request<{ itineraryId: string; active: false; epoch: number }>(`/api/v1/itineraries/${encodeURIComponent(id)}/unpublish`, { method: 'POST', body: JSON.stringify({ expectedPublicationEpoch }) }),
   versions: (id: string) => request<{ items: PublishedVersionDto[]; nextCursor: string | null }>(`/api/v1/itineraries/${encodeURIComponent(id)}/versions`),
+  placesAutocomplete: (text: string, sessionToken: string, languageCode: string | null) => request<PlacesAutocompleteDto>('/api/v1/places/autocomplete', { method: 'POST', body: JSON.stringify({ text, sessionToken, languageCode }) }),
   resolveLanguage: (id: string, expectedRevision: number) => request<LanguageResolutionDto>(`/api/v1/itineraries/${encodeURIComponent(id)}/language/resolve`, { method: 'POST', body: JSON.stringify({ expectedRevision }) }),
   aiPreflight: () => request<AiPreflightDto>('/api/v1/itinerary-engine/ai/preflight'),
   generateOverview: (id: string, operationId: string, expectedRevision: number) => request<AiGenerationResponseDto>(`/api/v1/itineraries/${encodeURIComponent(id)}/ai/overview`, { method: 'POST', body: JSON.stringify({ operationId, expectedRevision }) }),

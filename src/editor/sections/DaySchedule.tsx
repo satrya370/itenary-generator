@@ -1,4 +1,5 @@
 import React from 'react';
+import { placeLanguageOf } from '../fields/PlaceAutocomplete.js';
 import type { EditorProps } from '../EditorForm.js';
 import { DayCard } from './DayCard.js';
 
@@ -8,7 +9,7 @@ export function DaySchedule(props: EditorProps) {
       <section data-editor-section="schedule" className="space-y-4">
         <h3 className="font-semibold">Jadwal</h3>
         {content.days.map((day) => (
-          <DayCard key={day.id} onUploadAsset={props.onUploadAsset} day={day} mode={mode} recordId={recordId} assets={assets} meta={meta} patch={patch} aiAction={props.aiAction} showHotel={false} showTransfer={false} showDayControls={false} isFirst isLast
+          <DayCard key={day.id} onUploadAsset={props.onUploadAsset} placeLanguage={placeLanguageOf(props.content.trip.language)} day={day} mode={mode} recordId={recordId} assets={assets} meta={meta} patch={patch} aiAction={props.aiAction} showHotel={false} showTransfer={false} showDayControls={false} isFirst isLast
             onMove={() => {}} onRemove={() => {}} />
         ))}
       </section>

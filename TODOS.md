@@ -67,7 +67,7 @@
 | CP033 | language-preview-and-ai-key-fixes | revisi `web-2.0.0` selesai | in_progress (gate run 2026-11-10: pass; awaiting review) |
 | CP034 | agency-setup-profile-defaults-and-photo-upload | CP033 | in_progress (gate run 2026-11-10: pass; awaiting review) |
 | CP035 | ota-practical-fields-wizard-and-validation | CP034 | in_progress (S1-S4 gate run 2026-11-11: pass; deviations listed in stage log; awaiting review) |
-| CP036 | google-places-autocomplete | CP035 | pending |
+| CP036 | google-places-autocomplete | CP035 | in_progress (gate run 2026-11-11: pass; awaiting review; owner decisions: Google logo asset, live key check) |
 | CP030 | import-source-intake | CP036 + revisi `web-2.0.0` (R1–R6) selesai | pending (plan perlu revisi ke v2) |
 | CP031 | ai-structured-itinerary-extraction | CP030 | pending |
 | CP032 | import-review-editor-and-e2e | CP031 | pending |

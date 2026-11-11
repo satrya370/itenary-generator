@@ -1,4 +1,5 @@
 import React from 'react';
+import { placeLanguageOf } from '../fields/PlaceAutocomplete.js';
 import type { EditorProps } from '../EditorForm.js';
 import { DayCard } from './DayCard.js';
 import { buttonClass } from '../fields.js';
@@ -13,7 +14,7 @@ export function MultiDay(props: EditorProps) {
           <button type="button" className={buttonClass} disabled={content.days.length >= (meta('days[].title', mode).maxItems ?? 14)} onClick={() => patch((n) => { n.days.push(makeDay('multi_day', n.days.length + 1)); })}>Tambah hari</button>
         </div>
         {content.days.map((day, index) => (
-          <DayCard key={day.id} onUploadAsset={props.onUploadAsset} day={day} mode={mode} recordId={recordId} assets={assets} meta={meta} patch={patch} aiAction={props.aiAction} showHotel showTransfer showDayControls isFirst={index === 0} isLast={index === content.days.length - 1}
+          <DayCard key={day.id} onUploadAsset={props.onUploadAsset} placeLanguage={placeLanguageOf(content.trip.language)} day={day} mode={mode} recordId={recordId} assets={assets} meta={meta} patch={patch} aiAction={props.aiAction} showHotel showTransfer showDayControls isFirst={index === 0} isLast={index === content.days.length - 1}
             onMove={(delta) => patch((n) => { n.days = renumberDays(moveById(n.days, day.id, delta)); })}
             onRemove={() => { if (content.days.length > 2 && globalThis.confirm('Hapus hari ini beserta aktivitasnya?')) patch((n) => { n.days = renumberDays(n.days.filter((x) => x.id !== day.id)); }); }} />
         ))}

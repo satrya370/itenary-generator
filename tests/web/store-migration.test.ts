@@ -45,10 +45,10 @@ function versionsOf(db: DatabaseSync) {
 test('a fresh data root applies every migration once, creates no backup, and reopening is a no-op', async (t) => {
   const dataDir = await tempDir(t);
   const first = openStore({ dataDir });
-  assert.deepEqual(versionsOf(first.db), [1, 2, 3, 4]);
+  assert.deepEqual(versionsOf(first.db), [1, 2, 3, 4, 5]);
   first.close();
   const second = openStore({ dataDir });
-  assert.deepEqual(versionsOf(second.db), [1, 2, 3, 4]);
+  assert.deepEqual(versionsOf(second.db), [1, 2, 3, 4, 5]);
   second.close();
   assert.equal(existsSync(path.join(dataDir, 'backups')), false);
 });
@@ -91,7 +91,7 @@ test('migration 3 upgrades v1 drafts in place, keeps revisions/timestamps/IDs, s
   db.close();
 
   const store = openStore({ dataDir });
-  assert.deepEqual(versionsOf(store.db), [1, 2, 3, 4]);
+  assert.deepEqual(versionsOf(store.db), [1, 2, 3, 4, 5]);
   const upgraded = store.db.prepare('SELECT * FROM itineraries ORDER BY id').all() as any[];
   assert.equal(upgraded.length, 3);
   for (const row of upgraded) {
@@ -167,7 +167,7 @@ test('a draft that cannot be upgraded rolls migration 3 back, refuses to start, 
   const backupPath = path.join(dataDir, 'backups', 'pre-migration-3.sqlite');
   assert.equal(existsSync(backupPath), true);
   const store = openStore({ dataDir });
-  assert.deepEqual(versionsOf(store.db), [1, 2, 3, 4]);
+  assert.deepEqual(versionsOf(store.db), [1, 2, 3, 4, 5]);
   assert.equal((store.db.prepare('SELECT schema_version FROM itineraries').get() as any).schema_version, 'web-2.1.0');
   store.close();
   const backup = new DatabaseSync(backupPath, { readOnly: true });

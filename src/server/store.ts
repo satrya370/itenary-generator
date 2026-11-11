@@ -137,7 +137,8 @@ export const MIGRATIONS: Migration[] = [
   { version: 1, name: 'core-schema', up: (db) => db.exec(CORE_SCHEMA_DDL) },
   { version: 2, name: 'ai-schema', up: (db) => db.exec(AI_SCHEMA_DDL) },
   { version: 3, name: 'guide-centric-schema-web-2.0.0', before: backupBeforeV2Upgrade, up: (db) => upgradeDraftsToV2(db) },
-  { version: 4, name: 'schema-web-2.1.0-practical-lists', before: backupBeforeV21Upgrade, up: (db) => upgradeDraftsToV21(db) }
+  { version: 4, name: 'schema-web-2.1.0-practical-lists', before: backupBeforeV21Upgrade, up: (db) => upgradeDraftsToV21(db) },
+  { version: 5, name: 'places-daily-usage', up: (db) => db.exec('CREATE TABLE IF NOT EXISTS places_usage (day TEXT PRIMARY KEY, count INTEGER NOT NULL)') }
 ];
 
 export function runMigrations(db: DatabaseSync, context: MigrationContext, migrations: Migration[] = MIGRATIONS) {
