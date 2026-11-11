@@ -8,6 +8,7 @@ export interface PlaceSuggestion { placeId: string; mainText: string; secondaryT
 
 const DEBOUNCE_MS = 300;
 const MIN_CHARS = 3;
+const MAX_CHARS = 100; // the server rejects longer queries; longer place names are simply typed
 const SUPPORTED = new Set(['id', 'en', 'fr', 'ja', 'zh-Hans', 'la']);
 
 /** The draft's content language as the Places request wants it; "auto" or unknown tags send no language. */
@@ -44,7 +45,8 @@ export function PlaceAutocomplete({ id, meta, value, onChange, onPick, languageC
   useEffect(() => {
     const current = ++requestRef.current;
     if (skipRef.current !== null && skipRef.current === text) { skipRef.current = null; return; }
-    if (!focused || disabled || text.length < MIN_CHARS) {
+    if (disabled) { setItems([]); setOpen(false); setActive(-1); return; } // keep the explanation (no key / daily cap) on screen
+    if (!focused || text.length < MIN_CHARS || text.length > MAX_CHARS) {
       setItems([]); setOpen(false); setActive(-1); setNote(null);
       return;
     }
@@ -59,7 +61,7 @@ export function PlaceAutocomplete({ id, meta, value, onChange, onPick, languageC
         if (current !== requestRef.current) return;
         const code = (cause as { body?: { code?: string } }).body?.code;
         setItems([]); setOpen(false); setActive(-1);
-        if (code === 'PLACES_UNAVAILABLE') setDisabled(true);
+        if (code === 'PLACES_UNAVAILABLE' || code === 'PLACES_DAILY_LIMIT') setDisabled(true); // stop asking until the page reloads
         setNote((cause as Error).message);
       }
     }, DEBOUNCE_MS);

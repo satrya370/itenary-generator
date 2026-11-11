@@ -104,6 +104,25 @@ test('a provider error answers 502 and leaks neither the key nor upstream text',
   assert.equal(response.body.includes(SECRET), false);
 });
 
+test('a foreign origin or a missing marker header is refused before anything is counted', async (t) => {
+  const { provider, calls } = double();
+  const app = await fixture(t, { placesProvider: provider });
+  const foreign = await search(app, body(), { origin: 'https://evil.example' });
+  assert.equal(foreign.statusCode, 403);
+  const unmarked = await app.inject({ method: 'POST', url: '/api/v1/places/autocomplete', headers: { origin: headers.origin, 'content-type': 'application/json' }, payload: body() });
+  assert.equal(unmarked.statusCode, 403);
+  assert.equal(calls.length, 0);
+});
+
+test('a provider timeout or network failure answers 502 with no upstream detail', async (t) => {
+  const timeout = new GooglePlacesProvider(SECRET, (async () => { throw new DOMException(`aborted with ${SECRET}`, 'TimeoutError'); }) as typeof fetch);
+  const app = await fixture(t, { placesProvider: timeout });
+  const response = await search(app, body());
+  assert.equal(response.statusCode, 502);
+  assert.equal(response.json().error.code, 'PLACES_FAILED');
+  assert.equal(response.body.includes(SECRET), false);
+});
+
 test('responses never contain the configured key', async (t) => {
   const { provider } = double();
   const app = await fixture(t, { placesProvider: provider });

@@ -49,3 +49,7 @@ Problems found and fixed during the run:
 - Owner-only live check with a real key.
 - CP036 review (this log is the executor's record; review comes next).
 - CP030 import chapter still needs its plan revised to `web-2.1.0` before it starts.
+
+## Review fixes (2026-11-11)
+
+Reviewer changes after the executor's gate (details in `logs/cp036_review-log.md`): the 503/429 explanation note no longer disappears; the editor stops searching after the daily cap is reported and for queries over 100 characters; docs for the key, cap and route added; two server tests and two browser assertions added. Places suite 12 tests; all gates re-run green.

@@ -114,6 +114,14 @@ async function main() {
     await new Promise(resolve => setTimeout(resolve, 800));
     assert.equal(await valueOf('days[].activities[].place'), 'Warung dekat pasar!', 'free text is never overwritten by a suggestion list');
     assert.equal(await page.evaluate(() => document.querySelector('[role="listbox"]')), null, 'no suggestions means no list');
+    // A query longer than the server accepts (100) is typed, not searched: no request and no misleading note.
+    const callsBeforeLong = calls.length;
+    await set('days[].activities[].place', 'x'.repeat(120));
+    await page.click(sel('days[].activities[].place'));
+    await page.keyboard.press('End'); await page.keyboard.type('y');
+    await new Promise(resolve => setTimeout(resolve, 800));
+    assert.equal(calls.length, callsBeforeLong, 'no provider call for an over-long query');
+    assert.equal(await page.evaluate(() => document.querySelector('[data-field-path="days[].activities[].place"]')?.getAttribute('aria-describedby')), null, 'no note for an over-long query');
     await set('days[].activities[].place', 'Ubud Palace');
 
     // Meeting point: pick with the keyboard (second option) and check the Maps link.
@@ -147,6 +155,11 @@ async function main() {
     const capNote = await noteText(searchNote(await fieldIdOf('meeting.place')));
     assert.equal(capNote, 'Batas harian autocomplete tercapai; ketik manual sampai besok.', 'cap message is shown in Indonesian');
     assert.equal(calls.length, callsBefore, 'no provider call after the cap');
+    const serverHitsAfterCap = await page.evaluate(() => performance.getEntriesByType('resource').filter(entry => entry.name.includes('/places/autocomplete')).length);
+    await page.keyboard.type('bc'); await new Promise(resolve => setTimeout(resolve, 800));
+    assert.equal(await page.evaluate(() => performance.getEntriesByType('resource').filter(entry => entry.name.includes('/places/autocomplete')).length), serverHitsAfterCap, 'the browser stops asking the server once the cap is reported');
+    assert.equal(await noteText(searchNote(await fieldIdOf('meeting.place'))), 'Batas harian autocomplete tercapai; ketik manual sampai besok.', 'the cap message stays on screen');
+    await page.keyboard.press('Backspace'); await page.keyboard.press('Backspace');
     await page.keyboard.type('a');
     assert.equal(await valueOf('meeting.place'), 'Sanura', 'typing continues as free text after the cap');
 

@@ -63,6 +63,10 @@ Stale revision returns `409 REVISION_CONFLICT`. Structurally invalid, unresolved
 
 Set `SHARE_ORIGIN` to the trusted absolute origin (scheme + host, no path) used in generated URLs; it is never derived from request headers. WhatsApp/Meta preview requires that origin and OG image be reachable over public HTTPS. Republish keeps an active URL and updates its current HTML/image, but external card caches may lag. Unpublish permanently retires the old token; publishing after revoke generates a different token.
 
+## Added by CP036 — Place autocomplete
+
+`POST /api/v1/places/autocomplete` with the same-origin write guard. Body `{ text (3-100 characters), sessionToken (UUID v4), languageCode? (id|en|fr|ja|zh-Hans|la|null) }`; unknown keys are rejected. `200 { suggestions: [{ placeId, mainText, secondaryText }] (max 5), remainingToday }`. Errors: `400 INVALID_REQUEST`; `503 PLACES_UNAVAILABLE` (no key); `429 PLACES_DAILY_LIMIT` (limit from `GOOGLE_PLACES_DAILY_LIMIT`, default 300 per UTC day, counted in `places_usage`, no provider call once reached); `502 PLACES_FAILED` (provider error or timeout, no upstream text and never the key). One request is counted before the provider call, so failed calls count too.
+
 ## Runtime
 
 - `npm run dev:web-app`: Vite on `127.0.0.1:5173` with `/api` proxy to the engine.
