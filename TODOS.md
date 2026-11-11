@@ -68,9 +68,9 @@
 | CP034 | agency-setup-profile-defaults-and-photo-upload | CP033 | in_progress (gate run 2026-11-10: pass; awaiting review) |
 | CP035 | ota-practical-fields-wizard-and-validation | CP034 | in_progress (S1-S4 gate run 2026-11-11: pass; deviations listed in stage log; awaiting review) |
 | CP036 | google-places-autocomplete | CP035 | in_progress (gate + review fixes done 2026-11-11; default provider now Photon/OSM, no card; Google optional; awaiting owner acceptance) |
-| CP030 | import-source-intake | CP036 + revisi `web-2.0.0` (R1–R6) selesai | pending (plan perlu revisi ke v2) |
-| CP031 | ai-structured-itinerary-extraction | CP030 | pending |
-| CP032 | import-review-editor-and-e2e | CP031 | pending |
+| CP030 | import-intake-and-parser | CP033–CP036 diterima | pending (plan baru `web-2.1.0` 2026-11-11 siap; menunggu persetujuan owner) |
+| CP031 | import-ai-merge-and-write | CP030 | pending |
+| CP032 | import-ui-and-e2e | CP031 | pending |
 | CP029 | laravel-saas-integration | CP032 + kesiapan SaaS Laravel | pending (deferred — last) |
 
 Setiap CP menghasilkan satu hasil yang dapat diverifikasi. CP018–CP028 dan CP030–CP032 adalah fase A (standalone); CP029 fase B (integrasi SaaS) dan dijalankan paling akhir. Urutan eksekusi mengikuti tabel ini, bukan urutan angka ID. Nomor CP yang belum dieksekusi dipertahankan; scope/object disesuaikan keputusan terbaru, bukan menulis ulang hasil pekerjaan completed.

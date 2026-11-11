@@ -1,189 +1,199 @@
-# CP030–CP032 Implementation Plan: Document and Text Import
+# CP030-CP032 Implementation Plan: Text and PDF Import into the Engine Fields
 
-**Date:** 2026-11-05. **Status:** planned — **must be revised to `web-2.0.0` before CP030 starts** (field paths, `createBlankDraft`, mapping and blank shape below still reference v1). Blocked behind `plans/cp019-cp025_revision-plan_guide-centric-schema-and-editor.md`.
-**Authority:** `SPEC.md` v3.3, `TODOS.md`, `RULES.md`, canonical `web-1.0.0`.
-**Chapter:** CP030 → CP031 → CP032, one CP `in_progress` at a time, one shared plan, separate completion logs, chapter review after CP032. CP029 (Laravel) is moved to the end of the roadmap and is not touched by this chapter.
-**Entry gate:** CP028 completed/logged and `logs/cp027-cp028_chapter-review_2026-10-09.md` ACCEPT. Re-verify these artifacts and the working tree when CP030 starts.
+**Date:** 2026-11-11. **Planner:** Claude Opus 5.5. **Executor:** Claude Haiku (stop for review after each CP).
+**Supersedes:** the 2026-11-05 version of this file (written for `web-1.0.0`; see git history). CP030-CP032 were never started, so this is a replacement implementation plan (RULES section 5), not a revision plan.
+**Authority:** `SPEC.md`, `TODOS.md`, `RULES.md`, canonical schema `web-2.1.0`, field registry (74 fields).
+**Base:** `main` at `10eeb5b` (CP033-CP036 done, pushed). **Entry gate:** CP033-CP036 accepted by the owner; working tree clean except untracked tooling.
+**Chapter:** CP030 -> CP031 -> CP032, one CP `in_progress` at a time, one shared plan, one log per CP, chapter review after CP032. CP029 (Laravel) stays last.
 
 ## Objective
 
-Let a guide turn an itinerary they already wrote into an engine draft without retyping it. The guide picks a mode, then either types/pastes text or uploads a DOCX or text-layer PDF. The engine extracts plain text deterministically, AI maps that text into the real canonical fields of the chosen mode, and the result is saved as an ordinary draft. The guide reviews and edits it in the existing editor (each imported field shows the quote it came from), then uses the existing preview → publish → share-link flow.
+A guide already has an itinerary as text (notes, a WhatsApp message, a document they copy) or as a PDF. They paste it or upload the PDF, and the engine fills the editor fields (`trip`, `guide`, `meeting`, `pickup`, `summary`, `days[]` with activities, `places[]`, the practical lists, `policies`, `closingNote`), either in a **new draft** or by **overwriting the draft that is open**. The guide then checks the result in the existing wizard (red fields show what is still missing), and continues with the unchanged preview -> publish -> share link flow.
 
-The AI only **transcribes** what the document says into structure. It does not invent places, order, times, durations, transport, prices or descriptions.
+**Code reads the document first; AI only fills what code cannot structure.** AI never changes a value that code already found, never invents values (times, prices, places, descriptions), and is skipped completely when code covered the whole text.
 
 | CP | Deliverable | Completion boundary |
 |---|---|---|
-| CP030 | Import source intake: text/DOCX/PDF → stored, bounded plain text with stats; scanned/encrypted/oversized files rejected with clear codes. No AI. | API + tests prove each format, every rejection path and private storage. |
-| CP031 | AI structured extraction: source text + chosen mode → canonical draft + private per-field provenance quotes; separate unlimited cost ledger. | Deterministic-double tests + bounded live test prove fidelity guards, idempotency and that no value without a verified quote reaches the draft. |
-| CP032 | Import UI + review in editor + chapter E2E. | Browser E2E four modes: import → review → edit → save → preview → publish → share link; phone/desktop screenshots inspected. |
+| CP030 | Intake (pasted text, text-layer PDF) + deterministic parser + normalizers. No AI, no draft writes. | Unit tests prove every intake rejection, the parser on the fixture set, and each normalizer; a dry-run endpoint returns the parsed result. |
+| CP031 | AI completion for what code left, merge, write as new draft or overwrite with undo, cost ledger. | Tests with a provider double prove: code results are never overwritten by AI, unquoted AI values are dropped, overwrite keeps not-found fields, undo works only on the untouched result, ledgers of the writing AI are unchanged. |
+| CP032 | Import screens, report panel, browser E2E, bounded live run. | Browser E2E for both targets, four modes, paste and PDF; phone and desktop screenshots inspected; full regression green. |
 
 ## Clarifications and Decisions
 
-Structured Ask Question gate, three rounds, 2026-11-05:
+Ask Question gate, three rounds, 2026-11-11 (owner answers). Earlier decisions D30-1...D30-9 (2026-11-05) are kept unless listed as changed.
 
 | ID | Decision | Consequence |
 |---|---|---|
-| D30-1 | Import result is a **draft for review**; the guide can edit everything; extracted values fill the real canonical fields. | No auto-publish. Import ends at "draft created"; publish keeps all CP024/CP025 validation. |
-| D30-2 | Formats v1: **typed/pasted text, DOCX, PDF with a text layer.** | Scanned/photo PDFs are rejected (`IMPORT_NO_TEXT_LAYER`) with a message suggesting paste/DOCX. No OCR/vision. |
-| D30-3 | **No quota and no budget ceiling for import** (user: "gak usah ada budget, aman aja"). | Import does not reserve against or consume the US$2 `ai_live_budget` ledger nor the 30/day `ai_daily_usage` quota. Actual cost/tokens per import are still recorded in a separate ledger and shown to the guide. Technical per-request bounds (file size, text length, token cap, timeout, one in-flight import) remain as safety limits, not budget. |
-| D30-4 | **CP029 deferred to the very end** of the roadmap. | New chapter IDs CP030–CP032 run before CP029. CP029 depends on CP032 + Laravel readiness. IDs are not renumbered (RULES §2). |
-| D30-5 | Missing time/duration/transport/etc. → **left empty + warning.** | Consistent with W12: no fabricated values. Warnings list "not found in document" per field. |
-| D30-6 | Descriptions/overview are **taken from the document only.** | Empty descriptions stay empty; the guide can use the existing per-field Generate AI buttons afterwards. Import never calls the overview/description writer. |
-| D30-7 | **Guide selects the mode before import.** | Extraction prompt and schema are mode-specific; no mode auto-detection. Guide can still change mode later with the existing mode-change confirmation. |
-| D30-8 | Chapter of **three CPs** (CP030 intake, CP031 AI extraction, CP032 UI/review/E2E). | One shared plan, three logs, chapter review after CP032. |
-| D30-9 | **Store a source quote per extracted field.** | Private provenance metadata, shown in the editor; never in the canonical content, published snapshot, HTML or OG data. |
+| I1 | **Target is chosen at import:** new draft, or the draft that is open. | Two entry points (see CP032). Both end as an ordinary draft. (Changes D30 "always a new draft".) |
+| I2 | **Mode is chosen by the guide first** for a new draft (kept D30-7). Importing into the open draft uses that draft's mode. | No mode detection. If the text does not fit the mode (for example several days in "Sehari penuh"), the import reports it instead of switching mode. |
+| I3 | **Missing required text stays empty and shows red** (kept D30-5/D30-6). | Import never writes summaries or descriptions that are not in the document. The existing red validation and "Buat dengan AI" buttons do the rest. |
+| I4 | **Sources v1: typed/pasted text and PDF with a text layer.** No DOCX, no OCR/photos. | Scanned PDFs are rejected with a message suggesting copy-paste. (Changes D30-2: DOCX dropped.) |
+| I5 | **Overwrite:** values found in the document replace the old ones; `days[]`, `places[]` and each practical list that the document contains are replaced as a whole; **fields not found keep their old value.** A confirmation lists what will be replaced; **"Batalkan import"** restores the previous content. | The previous content is stored privately with the operation; undo is allowed only while the draft is still at the import's result revision. |
+| I6 | **No quota and no cost ceiling** for import (kept D30-3); cost is recorded per import and shown. **Make as much of it deterministic as possible.** | Separate ledger; never touches `ai_daily_usage` (30/day) or the live-test budget. Technical safety limits stay. |
+| I7 | **Hybrid: code first, AI for the rest.** Code results always win; AI may only fill fields code left empty. | Deterministic parser in CP030 is the main path; AI is called only with the unconsumed parts. |
+| I8 | **Deterministic completion allowed:** times to 24-hour `HH:MM` and durations to minutes; guide matched to the Setup guide list; practical items matched to the built-in OTA options; activity kind from keywords; country and language from Setup when the text has none; start date from an explicit date in the text (no guessed year). **Not chosen:** building a Maps link from a place name (only a Maps URL written in the text is used). | Each completion is a pure function with tests. |
+| I9 | **Review = summary panel + source text** (no per-field badges or quotes). | Replaces D30-9. Quotes are still required from the AI and checked on the server (anti-invention guard) but are not stored per field or shown. |
+| I10 | **Synthetic test samples** (made by the executor, id/en, four modes, plus PDFs). | No real customer documents in the repo. |
 
-Planner defaults (behavior-affecting, can be revised before CP030 starts):
+Planner defaults (behavior-affecting; the owner may override before CP030 starts):
 
-- Model: existing OpenRouter `openai/gpt-6-luna`. CP031 checks `supported_parameters` from preflight; uses `response_format` JSON schema if supported, otherwise JSON-only instructions. Both paths are validated by AJV.
-- Language: the source text language is detected with the existing `detectLanguage`; mixed/low-confidence detection asks the guide to choose (D10). Text is never translated.
-- Content kept as written. If the document contains prices or opening hours, the text is imported as-is and the existing CP024 publish guards report it. Import does not silently delete guide text.
-- Safety limits: upload ≤ 10 MB; PDF ≤ 60 pages; DOCX decompressed ≤ 50 MB; extracted text ≤ 120,000 characters; AI timeout 120 s; one retry on retryable failures; one in-flight import per workspace. Exceeding a limit is a clear rejection, not truncation. Chunking long documents is out of scope v1.
-- Credentials missing: CP030 intake still works and the extracted text stays viewable; the AI step is disabled with an explanation, and manual editing remains available.
+- **PD-1 Limits:** PDF <= 10 MB and <= 60 pages; text <= 120,000 characters after extraction (reject, never truncate); PDF extraction deadline 20 s in a worker thread that is terminated on timeout; AI timeout 120 s with one retry on retryable errors; one import in flight per workspace.
+- **PD-2 Parser languages:** headings and patterns for **Indonesian and English** (the owner's working languages). Japanese, Chinese, French and Latin text still imports, but code recognizes less and AI does more.
+- **PD-3 PDF library:** `unpdf` 2.1.0 (MIT, no dependencies, bundles the pdf.js serverless build), exact-pinned. Run with eval disabled. Original PDF bytes are not kept; only the extracted text and its SHA-256.
+- **PD-4 Model:** existing OpenRouter `openai/gpt-6-luna`; JSON schema `response_format` when the preflight lists it, otherwise JSON-only instructions; AJV validates both.
+- **PD-5 Too many days for the mode:** half/full day with several days in the text -> only day 1 is imported and the report says "Dokumen berisi N hari; untuk semuanya pilih mode Beberapa hari". Multi-day keeps at most 14 days (schema cap) and reports the rest. Destination guide ignores day structure and reads places.
+- **PD-6 No AI credential:** the code-only result is still written, with the report line "AI tidak aktif; bagian yang tidak terbaca kode dibiarkan kosong."
 
 ## Scope
 
-- New private import storage (SQLite tables + data directory) for sources, operations, cost ledger and per-field provenance.
-- Deterministic text extraction from DOCX (`mammoth` raw text) and PDF (`unpdf`/pdf.js text content), plus typed text; normalization (Unicode NFC, whitespace, page/paragraph markers).
-- Magic-byte detection, size/page/decompression/text limits, encrypted/scanned PDF detection, timeouts.
-- Mode-specific extraction schema, prompt, provider method, deterministic test double, quote verification, canonical mapping with fresh stable UUIDs, `validateDraft`, draft creation, and provenance.
-- Import endpoints, typed API client, import screen, review badges/quotes/missing-field list in the editor, and E2E verification.
-- SPEC v3.3 and TODOS updates reflecting D30-1…D30-9.
+- Intake for pasted text and text-layer PDF; private storage of the extracted text; language proposal.
+- Deterministic parser (Indonesian/English headings, day markers, time lines, bullet lists, phone numbers, Maps URLs) and normalizers (I8).
+- AI completion limited to unconsumed text, with quote verification, merge rules and mode rules.
+- Writing the result as a new draft or overwriting the open draft (revision-checked), undo, private operation ledger with cost.
+- Editor: import entry points, import screen, confirmation, report panel, source text view, undo.
+- Tests, browser E2E, bounded live run; docs (`docs/editor-ai-api-contract.md`, `docs/standalone-development.md`), `SPEC.md` and `TODOS.md` updates.
 
 ## Out of Scope
 
-- OCR, vision models, images/photos embedded in DOCX/PDF (guide uses the existing asset upload), `.doc`, `.odt`, `.rtf`, Google Docs links, spreadsheets.
-- Auto-publish, mode auto-detection, AI writing of empty descriptions during import, translation.
-- Merging an import into an existing itinerary. Import always creates a new draft.
-- Chunked/multi-call extraction for documents over the text limit.
-- Venue/time verification against external sources; geocoding.
-- Changes to the renderer, publish pipeline, share links, or the existing overview/description AI behavior and ledgers.
-- CP029 / Laravel / quota-billing integration; any cloud deployment.
+- DOCX, `.doc`, `.odt`, images, scanned PDFs, OCR or vision, links to Google Docs, spreadsheets.
+- Mode auto-detection; AI writing of missing summaries/descriptions during import; translation.
+- Per-field source badges/quotes in the editor (I9).
+- Photos inside PDFs (the guide uploads photos as today).
+- Building Maps links from names, Places autocomplete calls during import, geocoding.
+- Changes to the renderer, publish rules, share links, writing-AI behavior, its 30/day quota or live-test budget.
+- CP029 / Laravel; deployment.
 
 ## Current-State Findings
 
-1. `POST /api/v1/itineraries` (`src/server/app.ts:134`) already accepts a full `draftContent` + `languageContext` + `writingContext`, runs `validateDraft`, checks asset ownership and returns warnings. CP031 can create the draft through the same store path (`store.createItinerary`) without a new draft format.
-2. `createBlankDraft` (`src/server/draft.ts`) defines the exact blank shape per mode and generates UUIDs. The mapper should start from this shape so defaults stay identical to manual drafts.
-3. `writingContext` is limited to `{ brief ≤ 20k, notes ≤ 100 × 4k }` (`validWriting`, `app.ts:46`). Provenance must not be stored there: it would break the PATCH contract and the size bounds. Separate tables are needed.
-4. Multipart is registered globally with `fileSize: 5 MB, files: 1, fields: 0, parts: 1` (`app.ts:84`). The import upload needs its own per-route limits (10 MB and the `mode` field), so the CP030 route must override limits per request instead of changing the asset upload behavior.
-5. The AI provider (`src/server/ai/provider.ts`) exposes only `generate()` for `{ text }` suggestions, with a fixed copy-assistant system prompt and 45 s timeout. Extraction needs a separate `extract()` method/prompt. The existing `generate` path and its tests must stay unchanged.
-6. `AiService.reserve()` charges `ai_daily_usage` and `ai_live_budget` (`service.ts`, around lines 146–173). Import must use its own ledger (D30-3) and must not call `reserve()`.
-7. `detectLanguage(brief, notes)` and the language-resolve flow already exist and can be reused for source text.
-8. No DOCX/PDF parsing dependency is installed. `puppeteer` remains only as historical tooling. New runtime dependencies (`mammoth`, `unpdf`) must be pure JS. The CP028 release packager/validator must still pass. If `build-release.mjs`/`validate-release.mjs` needs changes, that is a CP028 revision and follows its own revision gate.
-9. Editor (`src/editor/main.tsx`, 580 lines) creates drafts via `create(mode)` and has `focusDiagnostic()` for jumping to fields by path. The review list can reuse this focus mechanism.
-10. CP024 policy guards (prices/opening hours/OTA) run at preview/publish, not at draft save. Imported text with prices will save but be reported before publish. This is the intended behavior.
+1. **Target shape (`web-2.1.0`):** `trip{mode,title,destination,country,region,language,colorTheme,startDate,startTime,endTime}`, `guide{name,phone}`, `meeting{place,mapsUrl,time,note}`, `pickup{offered,area,time,dropoffNote}`, `cover`, `summary`, `days[]` (max 14; `id`, `dayNumber`, `title`, `location`, `photo`, `activities[]`, `hotel`, `meals`, `transferNote`), activity `{id,time "HH:MM"|null,durationMinutes 1-1440|null,kind sightseeing|food|activity|transport|free,title,place,description,tip}`, `places[]` (`group,name,area,description,tips[],gettingThere,suggestedDuration,bestTime,nearby,photo`), lists `included`, `notIncluded`, `notSuitableFor`, `notAllowed`, `whatToBring`, `localTips` (max 50 each), `emergencyContacts[]` (max 30, `label`,`value`), `policies`, `closingNote`, `disclaimer`.
+2. **Registry** marks which paths apply per mode (`scheduled`, `multi_day`, `destination_guide`, ...) and which are required on publish (`trip.title/destination/country/language/mode`, `summary`, activity `title/kind/description`, place `name/area/description`, day `title`). The mapper must only fill paths that apply to the mode.
+3. `createBlankDraft(mode, { defaultCountry, defaultLanguage })` (`src/server/draft.ts`) already applies Setup defaults; new-draft imports start from it.
+4. The server rejects a draft whose `trip.language` differs from `languageContext.outputLanguage` (`INVALID_LANGUAGE_CONTEXT`). The import must set both consistently.
+5. `detectLanguage(brief, notes)` (`src/server/ai/language.ts`) needs paragraphs of at least 80 characters; short pastes fall back to the Setup default language or stay unresolved (the existing language step handles it).
+6. Multipart is registered globally with `fileSize 5 MB, fields 0, parts 1` (`src/server/app.ts:104`). The PDF route must raise the size per request (`request.file({ limits })`) without changing asset uploads; no extra fields are needed because mode and target are sent in the later JSON step.
+7. `AiService` reserves against `ai_daily_usage` and the live budget; import must not call it. `OpenRouterProvider.generate()` stays unchanged; extraction gets its own method.
+8. Practical OTA options live in `config/web/practical-options.json` (`locales.id`/`locales.en` lists, CP035), guides and defaults in the workspace profile (CP034). Both are inputs for I8 matching.
+9. Migrations 1-5 exist; import tables become migration 6.
+10. Editor: wizard with `publishIssues()` red validation and `focusDiagnostic()` (CP035); `Pengaturan` and `Draf saya` header buttons; mode cards in `ModePicker`. The report panel reuses `publishIssues` for "still missing".
 
 ## Proposed Changes
 
-### CP030 — Import Source Intake
+### H0. Executor rules (same as previous chapters)
 
-1. Add `src/server/import/schema.ts`: migration creating `import_sources(id, workspace_id, kind CHECK IN ('text','docx','pdf'), sha256, byte_size, page_count, char_count, language_proposal_json, text_path, created_at)`. Extracted text is stored under `<dataDir>/imports/<sourceId>.txt`; original uploaded bytes are **not** retained after extraction (only the hash).
-2. Add `src/server/import/extract.ts`: `extractText(kind, bytes|string)` →
-   - text: NFC + newline normalization; reject empty/whitespace-only.
-   - DOCX: verify `PK` header and `word/document.xml` entry; pre-scan the zip central directory for total uncompressed size and entry count before `mammoth.extractRawText`.
-   - PDF: verify `%PDF-` header; reject encrypted documents; load with `unpdf`; reject over 60 pages; join per-page text with page markers; treat < 40 characters per page on average as `IMPORT_NO_TEXT_LAYER`.
-   - Enforce the 120k character limit **after** extraction with `IMPORT_TEXT_TOO_LONG` (no truncation); overall 20 s extraction deadline.
-3. Add routes in `src/server/import/routes.ts`, registered from `createApp`:
-   - `POST /api/v1/imports/sources`: multipart (`file` + `mode`) or JSON `{ mode, text }`. Validates mode, extracts, stores, runs `detectLanguage`, and returns `{ sourceId, kind, mode, pageCount, charCount, languageProposal, excerpt }`.
-   - `GET /api/v1/imports/sources/:id`: metadata + full extracted text (workspace-scoped).
-   Stable error codes: `IMPORT_UNSUPPORTED_TYPE`, `IMPORT_FILE_TOO_LARGE`, `IMPORT_TOO_MANY_PAGES`, `IMPORT_ENCRYPTED`, `IMPORT_NO_TEXT_LAYER`, `IMPORT_TEXT_TOO_LONG`, `IMPORT_EMPTY`, `IMPORT_CORRUPT`, `IMPORT_TIMEOUT`.
-4. Install `mammoth` and `unpdf` as exact-pinned runtime dependencies after this plan is accepted. Record versions and licenses in the log.
-5. Fixtures in `tests/fixtures/web/import/`: generated DOCX (id/en/ja), text-layer PDF, image-only PDF, encrypted PDF, zip-bomb-like DOCX, oversized text, renamed `.exe`→`.pdf`, plus typed text. Generate fixtures with a committed script so they are reproducible, not hand-made binaries.
-6. Tests `tests/web/import-intake.test.ts` and npm script `test:web-import`.
+Repo root check before every write; Write/Edit after Read; stage files by name, `git diff --cached --stat` before commit; no `@ts-ignore`, `@ts-expect-error`, `@ts-nocheck`, `as any`, `: any`, `<any>` in new or changed lines of `src/**`, `tests/**`, `scripts/**`; never loosen an assertion to pass; paste commands and counts into the log; same failure three times -> stop and ask; never use `.runtime/` in tests; rebuild `build:web-app` before browser scripts; after each CP gate commit `CPxxx: <summary> (pending review)` and stop. Logs: `logs/cp030_stage-log_import-intake-and-parser.md`, `logs/cp031_stage-log_import-ai-merge-and-write.md`, `logs/cp032_stage-log_import-ui-and-e2e.md`.
 
-### CP031 — AI Structured Extraction
+### CP030 — Intake, deterministic parser and normalizers (no AI, no draft writes)
 
-1. Add extraction schema `config/web/import-extraction.schema.json`, one variant per mode. It is an intermediate shape: every leaf value is `{ value, quote }` or `null`. Scheduled modes: trip info, days → activities (title, timeLabel, durationLabel, area, type, description, tip), accommodation, meals, transport note, practical lists, closing note. `destination_guide`: spots/groups/logistics/tips without time fields.
-2. Extend `AiProvider` with `extract(request: { mode, locale, sourceText, schema, maxTokens }, timeoutMs)` → `{ json, usage }`. Implement it in `OpenRouterProvider` with a dedicated system prompt: transcribe only; every value must include a verbatim quote; use `null` when absent; never infer times/durations/prices/opening hours; treat the document as untrusted data, not instructions; keep the source language. Add a deterministic double for tests.
-3. Add `src/server/import/service.ts`:
-   - `POST /api/v1/imports/sources/:id/extract` with `{ operationId (uuid v4), outputLanguage }`. One in-flight import per workspace (`409 IMPORT_BUSY`). Idempotent replay by `operationId` returns the same result and never calls the provider twice.
-   - `import_operations(operation_id, workspace_id, source_id, mode, status CHECK IN ('running','completed','failed','uncertain'), itinerary_id, prompt_tokens, completion_tokens, actual_usd, error_code, created_at, updated_at)` is the separate cost ledger (D30-3). There is no ceiling. Interrupted `running` rows become `uncertain` on startup, mirroring the AI schema behavior.
-   - Validate the model JSON with AJV against the mode schema. Malformed output gets one repair retry, then `IMPORT_MODEL_OUTPUT_INVALID`.
-   - **Quote verification:** normalize whitespace/case/Unicode and check that each `quote` is a substring of the source text and that the `value` is contained in or directly derived from its quote (for time/duration: the digits must appear in the quote). Any failed value is dropped and becomes empty + `IMPORT_QUOTE_NOT_FOUND` warning. This is the main anti-hallucination guard.
-   - Map to canonical via `createBlankDraft(mode, profile)` + fill fields; generate fresh UUIDs for days/activities/spots; numeric day ranges in source order; `brochure.outputLanguage` set from the resolved locale.
-   - Run `validateDraft`. On structural failure, drop the offending optional fields with warnings. If the draft is still invalid, fail with `IMPORT_DRAFT_INVALID` and do not create a half-draft.
-   - Create the itinerary through `store.createItinerary`, set `writingContext.brief` to the first ≤ 20k characters of source text (useful context for the later Generate AI buttons), and write `import_field_sources(itinerary_id, path, quote, imported_value_hash, source_id)` keyed by stable-ID paths (e.g. `schedule[<blockId>].activities[<activityId>].timeLabel`).
-   - Return `{ itinerary, warnings: [{ code, path, message }], missing: [...paths], usage: { promptTokens, completionTokens, actualUsd } }`.
-   - `GET /api/v1/itineraries/:id/import-provenance`: workspace-scoped, private. It is **not** exposed on `/i/:token` routes and not included in published snapshots.
-4. Tests `tests/web/import-extract.test.ts` (double): all four modes, multi-day 14 days/60 spots size, quote-not-found drop, injected instruction text inside the document, model returning invented time, malformed JSON + repair, timeout, replay, busy, restart-uncertain, the US$2 ledger and daily usage unchanged after imports, provenance absent from published HTML/snapshot.
-5. Bounded live verification `scripts/web/verify-import-live.ts`: a small fixed set (≈ 6 imports across id/en/ja and the four modes). Record tokens/cost per import in the log. There is no budget ceiling per D30-3, but the run is a fixed set, not open-ended.
+1. **Migration 6** (`src/server/store.ts` list, DDL in `src/server/import/schema.ts`): `import_sources(id TEXT PK, workspace_id, kind CHECK IN ('text','pdf'), sha256, byte_size, page_count, char_count, language_json, created_at)`. Text stored at `<dataDir>/imports/<id>.txt` (private; never served statically). Update `store-migration.test.ts` to `[1..6]` and log it.
+2. **Intake** `src/server/import/intake.ts`:
+   - Text: NFC, `\r\n` -> `\n`, strip zero-width characters, collapse trailing spaces; reject empty (`IMPORT_EMPTY`) or > 120k characters (`IMPORT_TEXT_TOO_LONG`).
+   - PDF: magic bytes `%PDF-` (else `IMPORT_UNSUPPORTED_TYPE`); size <= 10 MB (`IMPORT_FILE_TOO_LARGE`); extraction in a `worker_threads` worker with `unpdf` (eval disabled), terminated after 20 s (`IMPORT_TIMEOUT`); encrypted -> `IMPORT_ENCRYPTED`; > 60 pages -> `IMPORT_TOO_MANY_PAGES`; parse error -> `IMPORT_CORRUPT`; average < 40 non-space characters per page -> `IMPORT_NO_TEXT_LAYER` ("PDF ini berupa gambar/scan. Salin teksnya lalu tempel di tab Tempel teks."). Pages joined with a blank line; text lines rebuilt from pdf.js items by y-position so bullet lists and "08:00 ..." lines stay one line each.
+   - Language proposal with `detectLanguage(text, [])`.
+3. **Routes** `src/server/import/routes.ts`, registered in `createApp`, same-origin guard as other writes:
+   - `POST /api/v1/imports/sources` — JSON `{ text }` or multipart with one `file` (PDF). Returns `{ sourceId, kind, pageCount, charCount, languageProposal, excerpt (first 400 chars) }`.
+   - `GET /api/v1/imports/sources/:id` — metadata + full text (workspace-scoped).
+   - `POST /api/v1/imports/sources/:id/parse` — body `{ mode }`; returns the **dry-run** parse result (below) without writing anything. Used by tests now and by the import screen preview in CP032.
+4. **Parser** `src/server/import/parse/` (pure functions, no I/O):
+   - `lines.ts`: split into lines; classify each line as `heading`, `bullet` (`-`, `*`, `•`, `·`, `1.`, `1)`, `a.`), `time-line`, `day-marker`, `kv` (`Label: value`), `url`, `text`.
+   - `headings.ts`: dictionary (id/en, case- and accent-insensitive, optional trailing colon) mapping headings to targets. At minimum: included (`Termasuk`, `Harga termasuk`, `Sudah termasuk`, `Include`, `Included`, `Inclusions`), notIncluded (`Tidak termasuk`, `Belum termasuk`, `Exclude`, `Excluded`, `Not included`), whatToBring (`Yang perlu dibawa`, `Bawa`, `Perlengkapan`, `What to bring`, `Bring`), notSuitableFor (`Tidak cocok untuk`, `Not suitable for`), notAllowed (`Tidak diperbolehkan`, `Dilarang`, `Not allowed`), localTips (`Yang perlu diketahui`, `Catatan`, `Tips`, `Info penting`, `Good to know`, `Important information`, `Notes`), emergencyContacts (`Kontak darurat`, `Emergency contact(s)`), policies (`Syarat & ketentuan`, `Syarat dan ketentuan`, `Ketentuan`, `Kebijakan pembatalan`, `Terms`, `Terms & conditions`, `Cancellation policy`), meeting (`Titik kumpul`, `Meeting point`, `Tempat berkumpul`), pickup (`Penjemputan`, `Jemput`, `Pickup`, `Pick-up`), guide (`Guide`, `Pemandu`, `Tour guide`), summary (`Ringkasan`, `Deskripsi`, `Tentang trip`, `Overview`, `About`, `Highlights`), closingNote (`Penutup`, `Catatan penutup`, `Closing`), hotel (`Hotel`, `Penginapan`, `Akomodasi`, `Accommodation`), places (`Tempat`, `Destinasi`, `Places`, `Spots`). The dictionary lives in `config/web/import-headings.json` so it can grow without code changes.
+   - `days.ts`: day markers `Hari 1`, `Hari ke-1`, `Hari pertama`, `Day 1`, `Day One`, `D1`, `H1` (word boundary), optional title after `:`/`-`/`–`; a numbered day sequence must increase by one, otherwise it is not treated as a day marker.
+   - `time.ts`: `08:00`, `8.00`, `08.00 WIB`, `jam 8`, `pukul 08.00`, `8 pagi/siang/sore/malam`, `8am`/`8 pm`, ranges `08:00-10:30`, `08.00 – 10.30`, `08:00 s/d 10:30`; ranges give `time` + `durationMinutes`; durations `2 jam`, `1,5 jam`, `90 menit`, `2 hours`, `45 min`. Ambiguous values (for example `jam 8` without context in a list of evening activities) stay as written in the title and leave `time` null with a report line. Never round, never infer an end time.
+   - `extract.ts`: builds a **parse result**: `{ fields: Partial<WebItineraryContent> in schema shape, consumedLines: number[], unconsumed: Array<{ section: string | null; lines: string[] }>, notes: ReportLine[] }`. Rules: first short line (<= 120 characters, not a heading or day marker) -> `trip.title`; `kv` lines `Destinasi/Tujuan/Destination`, `Negara/Country`, `Tanggal/Date`, `Durasi`, `Guide/Pemandu`, `No HP/Telp/WA/Phone`, `Titik kumpul/Meeting point`, `Jam kumpul/Meeting time`; bullets under a heading -> that list; time-lines inside a day (or the whole text for half/full day) -> activities with the rest of the line as `title`; a `title — place` or `title di/at place` split is **not** guessed (left to AI); Maps URLs (`maps.google.`, `google.com/maps`, `goo.gl/maps`, `maps.app.goo.gl`) under meeting -> `meeting.mapsUrl`; phone numbers (`+62…`, `08…`, international `+…`) under guide/emergency headings -> `guide.phone` / `emergencyContacts`.
+5. **Normalizers** `src/server/import/normalize.ts` (pure, I8): `toTime24`, `toMinutes`, `kindFromText` (keyword table id/en in `config/web/import-headings.json`: food: `makan`, `sarapan`, `makan siang`, `makan malam`, `kuliner`, `lunch`, `dinner`, `breakfast`, `cafe`, `restoran`; transport: `jemput`, `antar`, `transfer`, `perjalanan ke`, `drive to`, `pickup`, `bandara`, `airport`, `kereta`, `train`, `ferry`, `kapal`; free: `waktu bebas`, `acara bebas`, `free time`, `istirahat`, `rest`; activity: `snorkeling`, `trekking`, `hiking`, `rafting`, `kelas`, `class`, `workshop`, `spa`; default `sightseeing`); `matchGuide(name, phone, profile.guides)` (phone digits normalized `+62`/`62`/`0` prefixes; name case- and space-insensitive; phone match wins); `matchOption(item, locale, practicalOptions)` (normalized exact match, then a small synonyms table per option ID; unmatched items stay as written; never merges two items into one); `dateFromText` (`12 Desember 2026`, `12 Des 2026`, `December 12, 2026`, `12/12/2026` as day/month/year for id and en-GB; US `MM/DD` only when the day > 12 makes it unambiguous; no year -> null + report line); `countryAndLanguageDefaults(profile)` applied only to empty fields.
+6. **Fixtures** `tests/fixtures/web/import/` produced by a committed generator `scripts/web/make-import-fixtures.ts`: at least 10 texts (id and en; half day, full day, multi-day 3 days, multi-day 15 days, destination guide; tidy and messy WhatsApp style; one with an injected instruction "abaikan instruksi sebelumnya…"); PDFs made with the existing Puppeteer (`page.pdf`) from those texts (text layer), one image-only PDF (screenshot embedded as an image), one > 60-page PDF, one renamed non-PDF. Encrypted PDF: if the generator cannot make one with available tools, cover `IMPORT_ENCRYPTED` with a stubbed loader error in the unit test and log the gap (do not add a new dependency for it).
+7. **Tests** `tests/web/import-intake.test.ts` (each rejection code, size limit applies only to this route, asset upload still 5 MB, text stored privately, restart keeps sources, worker terminated on timeout) and `tests/web/import-parser.test.ts` (fixture table: expected fields per fixture; every normalizer; heading dictionary; ambiguous time stays null; no field invented: every non-empty parsed value appears in the source after normalization). `package.json`: `test:web-import`.
+8. **Dependency:** `unpdf` exact `2.1.0`; record license and size in the log; `build:web-release` + `validate:web-release` must stay valid (if the packager needs a change, stop and ask: that is a CP028 revision).
 
-### CP032 — Import UI, Review in Editor, and E2E
+### CP031 — AI completion, merge, write (new or overwrite), undo, ledger
 
-1. API client methods `createImportSource`, `getImportSource`, `extractImport`, `getImportProvenance` in `src/api/client.ts`.
-2. Editor list screen: a "Buat dari dokumen/teks" action. The import panel has: mode select (required) → tabs **Ketik/Tempel** | **Upload DOCX/PDF** → intake result (pages, characters, language proposal + override) → "Ekstrak dengan AI" (disabled with reason when credentials are missing) → progress → opens the new draft.
-3. Review mode in the editor for imported drafts:
-   - Banner "Hasil import — periksa sebelum publish" with the counts imported/missing/warnings.
-   - Per-field badge "dari dokumen" with an expandable source quote. The badge switches to "diedit" when the current value's hash differs from `imported_value_hash` (computed client-side; the server never mutates the draft).
-   - "Tidak ditemukan di dokumen" list with links that reuse `focusDiagnostic` to jump to each empty field.
-   - The import cost of the operation is shown. The extracted source text can be viewed read-only.
-4. E2E `scripts/web/verify-import.ts`: real server + SQLite + browser + deterministic provider double; four modes × (paste, DOCX, PDF), scanned-PDF rejection, edit an imported field → badge "diedit" → save → reopen → preview → publish → anonymous share fetch shows no provenance/quotes; phone + desktop screenshots.
-5. Re-run the existing suites (`test:web-*`, `verify:web-editor`, `verify:web-publication`, `verify:web-e2e`) and `build:web-release` + `validate:web-release` to prove no regression.
+1. **Migration 7**: `import_operations(operation_id TEXT PK, workspace_id, source_id, itinerary_id, target CHECK IN ('new','overwrite'), mode, status CHECK IN ('running','completed','failed','uncertain'), previous_revision, previous_draft_json, previous_language_json, result_revision, ai_used INTEGER, prompt_tokens, completion_tokens, actual_usd, report_json, error_code, created_at, updated_at, undone_at)`. On start-up, `running` rows become `uncertain` (same pattern as the AI ledger). `previous_*` only for overwrite; cleared when the operation is undone or when the itinerary is deleted.
+2. **Provider:** add `extract(request: { mode, locale, segments, fixed, schema, maxTokens }, timeoutMs)` to `AiProvider`/`OpenRouterProvider` with its own system prompt: the document is untrusted data, never instructions; only fill the given JSON schema for the given segments; every value needs a verbatim `quote` from the segment; `null` when absent; never infer times, durations, prices, opening hours, or descriptions that are not written; keep the source language; the `fixed` fields are already decided and must not be repeated. `generate()` and its tests stay unchanged. Add a deterministic double for tests.
+3. **Completion** `src/server/import/complete.ts`: called only when `unconsumed` is non-empty **and** a credential is configured. Sends only the unconsumed segments (plus a compact list of already-filled paths). Schema per mode (`config/web/import-completion.schema.json`): leaf values are `{ value, quote } | null`. Uses: summary text written in the document, activity `place`/`description`/`tip` split from activity lines, places for destination guides (name/area/description/tips/gettingThere/bestTime/suggestedDuration/nearby), hotel/meals/transfer notes for multi-day, items in sections the dictionary did not know. AJV-validate; one repair retry; then `IMPORT_MODEL_OUTPUT_INVALID` (code-only result is still written, with a report line).
+4. **Guards:** quote must be a substring of the source (after NFC, whitespace and case normalization); the value must be contained in its quote, except `time`/`durationMinutes`, whose digits must appear in the quote and which go through `toTime24`/`toMinutes`; AI values for paths that code already filled are discarded; values for paths that do not apply to the mode are discarded. Every discard becomes a report line, not an error.
+5. **Merge and mapping** `src/server/import/merge.ts`:
+   - New draft: `createBlankDraft(mode, profile)` -> apply code fields -> AI fields -> normalizers (I8) -> fresh UUIDs for days/activities/places -> `dayNumber` in order -> PD-5 caps.
+   - Overwrite: start from the **saved** draft at `expectedRevision` (409 `REVISION_CONFLICT` if the editor is stale) -> for every path the import found, replace; `days[]`, `places[]`, each list and `emergencyContacts` replace as a whole when found; everything else keeps its old value (I5); `trip.mode`, `trip.colorTheme`, `cover` and photos are never touched.
+   - Language: `trip.language` and `languageContext` set together: detected language if `detectLanguage` resolved, else the Setup default, else unresolved (`trip.language` null, `source: 'unresolved'`). Overwrite keeps an already resolved language unless the guide chose another one in the import screen.
+   - `normalizeBlanks`, then `validateDraft`. A structural failure on an optional field drops that field with a report line; if still invalid -> `IMPORT_DRAFT_INVALID`, nothing is written.
+6. **Routes:**
+   - `POST /api/v1/imports/sources/:id/apply` `{ operationId (uuid v4), target: 'new' | 'overwrite', mode (new only), itineraryId + expectedRevision (overwrite only), outputLanguage? }` -> `{ itinerary, report: { filled: string[], missingRequired: string[], skipped: ReportLine[], notes: ReportLine[] }, usage: { aiUsed, promptTokens, completionTokens, actualUsd } }`. One in flight per workspace (`409 IMPORT_BUSY`); replay by `operationId` returns the stored result without calling the provider again.
+   - `POST /api/v1/imports/operations/:id/undo` `{ expectedRevision }` -> only for `target='overwrite'`, `status='completed'`, not undone, and the itinerary still at `result_revision`; writes `previous_draft_json` + language as a **new** revision (normal store path) and marks `undone_at`. Otherwise `409 IMPORT_UNDO_UNAVAILABLE` ("Draf sudah diubah setelah import; batalkan secara manual."). For `target='new'` the guide simply deletes the draft (existing behavior).
+   - `GET /api/v1/imports/operations?itineraryId=` -> the latest operation's report and usage (for the report panel after reload).
+7. **Ledger and limits:** cost and tokens recorded in `import_operations`; no ceiling (I6); never touches `ai_daily_usage` or the live budget (test proves it). Logs contain counts, codes and hashes only, never source text.
+8. **Tests** `tests/web/import-apply.test.ts` with the double: all four modes x new/overwrite; code-only path makes zero provider calls; AI cannot override code values; unquoted/invented values dropped (time, price, place); injected instruction text has no effect; mode-inapplicable values dropped; PD-5 caps; overwrite keeps not-found fields and replaces found lists whole; stale `expectedRevision` -> 409 and nothing written; undo restores exactly and is refused after an edit; replay and busy; restart -> `uncertain`; credential missing -> code-only result + note; writing-AI quota and live budget unchanged; provenance/source text never in preview HTML, published snapshot or `/i/:token`.
+
+### CP032 — Import screens, report panel, E2E, live run
+
+1. **API client:** `createImportSource` (text or PDF), `getImportSource`, `parseImport`, `applyImport`, `undoImport`, `latestImport`.
+2. **Entry points:**
+   - Start screen: button **"Buat dari teks/PDF"** under the mode cards -> import screen with target fixed to *draf baru* and a required mode choice (the four mode cards, same copy as `ModePicker`).
+   - Open draft: header button **"Import teks/PDF"** -> import screen with target *timpa draf ini* and the draft's mode shown read-only. Disabled while there are unsaved changes ("Simpan draft dulu sebelum import.").
+3. **Import screen (mobile first, one column):** tabs **Tempel teks** (textarea, character counter, limit) | **Upload PDF** (file picker, size/page info) -> after intake: pages, characters, detected language (dropdown of the six languages, same as CP033) and a short preview of what code found (counts per section from the dry-run parse) -> **"Proses"**. For overwrite, first a confirmation dialog listing the sections that will be replaced ("Jadwal (3 hari, 12 aktivitas) akan diganti; Termasuk (5) akan diganti; …; yang tidak ada di teks tetap seperti sekarang"). Progress text while AI runs ("Membaca bagian yang belum terbaca…").
+4. **Report panel "Hasil import"** at the top of the editor after an import (dismissible, reopened from a link): filled count, "masih kosong & wajib" list (from `publishIssues`, clickable via `focusDiagnostic`), skipped/notes (for example "Dokumen berisi 3 hari; mode Sehari penuh hanya memakai hari 1"), usage ("Tanpa AI · gratis" or tokens and US$), **"Lihat teks sumber"** (read-only), and **"Batalkan import"** for overwrite (enabled only while undo is available).
+5. **Copy:** all new UI text in Indonesian, plain wording, through `labels.ts`.
+6. **Browser E2E** `scripts/web/verify-import.ts` (`npm run verify:web-import`), provider double: new draft for each mode from pasted text; new draft from a text PDF; scanned PDF rejected with the message; overwrite of a saved draft keeps a not-found field and replaces the schedule; undo restores; undo refused after an edit; unsaved changes block overwrite; red required fields after import match the report list; save -> preview -> publish -> anonymous share page contains no source text; zero external requests; screenshots at 390 and 1280 of the import screen, the confirmation and the report panel (opened and inspected).
+7. **Live run** `scripts/web/verify-import-live.ts` (opt-in, real key): fixed set of 6 imports (id and en; four modes; one messy WhatsApp text; one PDF); log tokens and cost per import and a manual comparison of one result per mode against its source.
+8. **Regression:** all `test:web-*`, all `verify:web-*` browser scripts, `build:web-release`, `validate:web-release`.
+9. **Docs:** API section "Added by CP030-CP032" in `docs/editor-ai-api-contract.md`; usage note in `docs/standalone-development.md`; `SPEC.md` decisions I1-I10; `TODOS.md` statuses.
 
 ## Data Flow or Control Flow
 
 ```
-Guide: mode + (text | DOCX | PDF)
-  → POST /imports/sources ── magic bytes, limits ──→ extractText ──→ import_sources + imports/<id>.txt
-                                                         └─ reject: NO_TEXT_LAYER / TOO_LARGE / ENCRYPTED / …
-  → (language proposal; guide confirms/overrides if mixed)
-  → POST /imports/sources/:id/extract {operationId, outputLanguage}
-        busy/replay check → import_operations(running)
-        → provider.extract (mode schema, untrusted-data prompt) → AJV → quote verification → map to createBlankDraft(mode)
-        → validateDraft → store.createItinerary → import_field_sources → import_operations(completed, cost)
-  → editor opens draft (review badges, quotes, missing list)
-  → guide edits → existing Save (PATCH, 409) → Preview → Publish → /i/:token (no provenance)
+Guide: (new: mode) | (open draft: saved, no unsaved changes)
+  -> POST /imports/sources  {text} | PDF  -- limits, magic bytes, worker 20 s --> import_sources + imports/<id>.txt
+  -> POST /imports/sources/:id/parse {mode}           (dry run: code result + unconsumed parts, shown as counts)
+  -> [overwrite: confirmation listing what is replaced]
+  -> POST /imports/sources/:id/apply {operationId, target, mode | itineraryId+expectedRevision, outputLanguage?}
+        busy/replay -> import_operations(running)
+        parse (code) -> normalizers -> [unconsumed and credential? provider.extract -> AJV -> quote guard -> drop code-filled paths]
+        -> merge (new: blank draft from Setup | overwrite: saved draft, found paths replaced) -> validateDraft
+        -> store.createItinerary | store.updateItinerary(expectedRevision) -> import_operations(completed, cost, report, previous_*)
+  -> editor opens the draft + "Hasil import" panel; red fields show what is still missing
+  -> optional: POST /imports/operations/:id/undo {expectedRevision}  (overwrite only, untouched result only)
+  -> existing Save / Preview / Publish / share link (no import data in public output)
 ```
 
 ## Files and n8n Workflows Affected
 
-- New: `src/server/import/{schema,extract,routes,service,mapper}.ts`, `config/web/import-extraction.schema.json`, `tests/web/import-intake.test.ts`, `tests/web/import-extract.test.ts`, `tests/fixtures/web/import/*` + generator script, `scripts/web/verify-import.ts`, `scripts/web/verify-import-live.ts`.
-- Changed: `src/server/app.ts` (register import routes/migration), `src/server/ai/provider.ts` (add `extract`, unchanged `generate`), `src/api/client.ts`, `src/editor/main.tsx` (+ possibly a new `src/editor/import.tsx`), `package.json`/`package-lock.json` (two runtime deps + scripts), `SPEC.md`, `TODOS.md`, docs `docs/editor-ai-api-contract.md`.
-- Possibly changed (only via CP028 revision gate): `scripts/web/build-release.mjs`, `scripts/web/validate-release.mjs`.
+- New: `src/server/import/{schema,intake,routes,complete,merge,normalize,service}.ts`, `src/server/import/parse/{lines,headings,days,time,extract}.ts`, `src/server/import/pdf-worker.ts`, `config/web/import-headings.json`, `config/web/import-completion.schema.json`, `scripts/web/make-import-fixtures.ts`, `tests/fixtures/web/import/*`, `tests/web/import-{intake,parser,apply}.test.ts`, `scripts/web/verify-import.ts`, `scripts/web/verify-import-live.ts`, `src/editor/import/{ImportScreen,ImportReport}.tsx`.
+- Changed: `src/server/app.ts` (register routes), `src/server/store.ts` (migrations 6-7), `src/server/ai/provider.ts` (`extract`, `generate` unchanged), `src/api/client.ts`, `src/editor/main.tsx`, `src/editor/sections/ModePicker.tsx`, `src/editor/labels.ts`, `tests/web/store-migration.test.ts`, `package.json`/`package-lock.json` (`unpdf`, scripts), `docs/*`, `SPEC.md`, `TODOS.md`.
+- Only via a CP028 revision if needed: `scripts/web/build-release.mjs`, `scripts/web/validate-release.mjs`.
 - n8n workflows: none.
 
 ## Security and Failure Handling
 
-- Files: magic-byte type detection, never trust the extension or MIME; per-route size limits; DOCX decompression and entry-count guard before parsing; encrypted PDF rejection; page and text limits; extraction deadline. Original bytes are discarded after extraction.
-- Prompt injection: document text is sent as data in a delimited field; the system prompt states it is untrusted. The output is schema-validated and quote-verified, so an injected instruction cannot add values that are not in the document, and it cannot touch other itineraries or settings (no tools).
-- Fidelity: values without a verified quote are dropped (empty + warning). Time/duration digits must appear in their quote. W12 and D11 are preserved.
-- Privacy: provenance quotes and source text are workspace-private and never in published snapshots/HTML/OG. The API key stays server-side. Logs record counts/hashes, never raw document text (RULES §12).
-- Failures: provider timeout/5xx → `uncertain`/`failed` with cost recorded conservatively; no draft is created on failure; the source stays available for retry with a new operation ID; restart marks `running` as `uncertain`.
-- Concurrency: one in-flight import per workspace; idempotent `operationId` replay.
+- **Files:** magic bytes, not extension or MIME; per-route size limit; page and text limits; PDF parsing in a worker terminated on deadline; eval disabled in pdf.js; original bytes discarded.
+- **Prompt injection:** source text is sent as delimited data; the system prompt marks it untrusted; there are no tools; output is schema-validated and quote-checked, and AI cannot touch code-found values, other drafts, settings or publication.
+- **No invention:** code only copies text that exists; normalizers only reformat digits that exist; AI values without a verified quote are dropped; missing required fields stay empty and red.
+- **Data safety for overwrite:** revision check, confirmation, previous content stored for undo, undo refused after later edits (so a newer edit is never silently lost).
+- **Privacy:** source text, previous content and reports are workspace-private, never in previews, snapshots, HTML, OG data or public routes; logs hold no document text; the API key stays server-side.
+- **Failures:** extraction errors -> clear Indonesian message, nothing stored or written; provider failure/timeout -> the code-only result is written with a note (or, if the guide cancels, nothing); interrupted operations become `uncertain` with cost recorded conservatively; one import in flight; idempotent replay.
 
 ## Verification Plan
 
-- CP030: `npm run test:web-import` (intake). Every format and rejection code; magic-byte spoof; zip-bomb guard; data-root persistence across restart; the asset upload 5 MB limit is unchanged.
-- CP031: extraction tests with the double; regression `npm run test:web-ai` proves the US$2 ledger, the daily quota and the `generate` behavior are unchanged; bounded live run with cost recorded; manual inspection of one live result per mode against its source document.
-- CP032: `scripts/web/verify-import.ts` browser E2E; phone/desktop screenshots actually opened and inspected (RULES §11a); full regression suites; `build:web-release` + `validate:web-release`.
-- Chapter review against SPEC v3.3 and this plan before marking CP032 completed.
+- **CP030:** `npm run test:web-import` (intake + parser + normalizers); fixture table results checked by hand for 3 fixtures and pasted into the log; `test:web-store` with migration 6; `build:web-release` + `validate:web-release` after adding `unpdf`; mutation check: disabling the "value must appear in the source" assertion makes a parser test fail.
+- **CP031:** `tests/web/import-apply.test.ts`; `test:web-ai` unchanged (quota, live budget, `generate`); mutation checks: letting AI overwrite a code value, and accepting an unquoted value, each make a test fail.
+- **CP032:** `npm run verify:web-import`; screenshots opened and inspected; full regression; opt-in live run with costs in the log.
+- Chapter review against this plan and `SPEC.md` after CP032.
 
 ## Acceptance Criteria
 
-1. A guide can create a draft from typed text, DOCX, or a text-layer PDF for each of the four modes, in the guide-chosen mode.
-2. Scanned/encrypted/oversized/spoofed files are rejected with a specific, understandable message, and nothing is created.
-3. Every non-empty imported field has a quote that exists in the source text; no time, duration, price or place appears that the document did not contain.
-4. Fields absent from the document are empty and listed as "tidak ditemukan di dokumen"; the guide can jump to each.
-5. Imported drafts are ordinary drafts: editable, saved with revision checks, previewable and publishable through the unchanged CP024/CP025 rules.
-6. Provenance/source text never appears in published HTML, OG data, or public routes.
-7. Import does not change the US$2 live ledger or the 30/day writing quota; each import's tokens/cost is recorded and visible.
-8. Existing test/verify suites and the release build/validation still pass.
+1. Pasted text or a text-layer PDF fills the engine fields of the chosen mode in a new draft, or overwrites the open draft, as the guide chooses.
+2. Clear Indonesian messages for scanned, encrypted, too large, too long, empty or non-PDF input; nothing is created or changed.
+3. Every non-empty imported value comes from the text (code copy or verified AI quote); no time, duration, price, place or description is invented; missing required fields stay empty and red.
+4. Code-found values are never changed by AI; a well-structured Indonesian or English text imports with **zero** AI calls.
+5. Times are `HH:MM`, durations minutes, activity kinds set, guide matched to Setup when possible, OTA options matched when equal, country/language from Setup when absent, start date only from an explicit date.
+6. Overwrite replaces found sections, keeps not-found fields, asks for confirmation, and can be undone until the draft is edited again.
+7. The report panel shows filled/missing/skipped, the source text and the cost; missing items jump to their fields.
+8. Import never changes the writing-AI quota or live budget; each import's tokens and cost are recorded.
+9. Source text and import data never appear in previews, published pages, OG data or public routes.
+10. All existing test and browser suites, release build and validation stay green.
 
 ## Risks and Rollback
 
-- **Extraction quality varies by document layout** (tables, two-column PDFs). Mitigation: quote verification turns misreads into empty fields instead of wrong values; tables are tested in fixtures. Residual risk is documented in the CP031 log.
-- **Unbounded cost (D30-3).** The cost is visible per import and in the ledger. If real usage shows a problem, adding a ceiling is a new decision/revision, not a silent change.
-- **Model JSON reliability.** Mitigation: structured output if supported, AJV, one repair retry, then a clean failure.
-- **Release packaging drift** from new dependencies. Mitigation: validate-release in CP032; packaging changes go through a CP028 revision plan.
-- **Rollback:** the feature is additive. Remove the route registration and UI entry to disable it. Import tables are additive migrations; existing drafts/publications are unaffected. Imported drafts remain ordinary drafts.
-
-## Planner note 2026-11-10: revise before CP030 starts
-
-The guide-centric revision (R1-R6, `plans/cp019-cp025_revision-plan_guide-centric-schema-and-editor.md`) replaced the canonical schema with `web-2.0.0`. This plan was written against `web-1.0.0` and is **not valid as written**:
-
-- Its extraction target (`brochure`, `schedule` blocks with `dayStart`/`dayEnd`, `spots`, `hero`, `overview`, `practical`, `closing`) no longer exists. The target is now `trip`, `guide`, `meeting`, `pickup`, `cover`, `summary`, `days[]` (one entry per day), `places[]`, the practical lists, `policies`, `closingNote`, `disclaimer`; agency data comes from the workspace profile.
-- Activity time and duration are structured (`time` as `HH:MM` or null, `durationMinutes`), not free labels; mode rules (`FIELD_NOT_APPLICABLE`, span caps 360/720/960) apply to imported drafts as to any draft.
-- The editor registry (`config/web/field-registry.json`) is the source for which fields an import may fill; imported fields should map to registry paths.
-- The existing `upgradeV1ToV2` is a one-way upgrade for stored v1 drafts and is not an extraction path.
-
-Before CP030 starts: run a new Ask Question round, then replace this plan with a revision plan (RULES section 6) written against `web-2.0.0`. Status of CP030-CP032 stays `pending`.
+- **Messy layouts** (two-column PDFs, tables, emoji-heavy WhatsApp text) reduce what code recognizes. Mitigation: AI fills the rest under quote guards; anything uncertain stays empty and red, not wrong. Residual quality is reported in the CP032 live run.
+- **Heading/keyword coverage** starts with id/en (PD-2); other languages rely more on AI. The dictionary is a JSON file and can be extended without code changes.
+- **Unbounded cost (I6):** visible per import; adding a ceiling later is a new decision.
+- **PDF parsing cost/safety:** worker deadline and limits; scanned PDFs are rejected instead of attempted.
+- **Overwrite mistakes:** confirmation + undo; undo is refused after later edits, so the guide may have to fix by hand in that case (documented in the message).
+- **Rollback:** additive. Remove route registration and the two UI entry points to disable; migrations 6-7 only add tables; imported drafts are ordinary drafts.
