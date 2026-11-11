@@ -15,7 +15,7 @@ export interface Completion {
   summary?: TextValue | null; closingNote?: TextValue | null; policies?: TextValue | null;
   places?: CompletionPlace[]; activityDetails?: CompletionActivity[];
 }
-export interface Dropped { path: string; code: 'IMPORT_QUOTE_NOT_FOUND' | 'IMPORT_NOT_APPLICABLE' | 'IMPORT_ACTIVITY_NOT_FOUND' | 'IMPORT_ALREADY_FILLED'; }
+export interface Dropped { path: string; code: 'IMPORT_QUOTE_NOT_FOUND' | 'IMPORT_NOT_APPLICABLE' | 'IMPORT_ACTIVITY_NOT_FOUND' | 'IMPORT_ACTIVITY_AMBIGUOUS' | 'IMPORT_ALREADY_FILLED'; }
 
 const Ajv = Ajv2020 as unknown as new (options: Record<string, unknown>) => { compile(schema: unknown): ((value: unknown) => boolean) & { errors?: unknown[] | null } };
 const validateCompletion = new Ajv({ allErrors: true, strict: false }).compile(completionSchema);
@@ -71,8 +71,11 @@ export function filterCompletion(completion: Completion, segmentsText: string, p
   const activities = parse.fields.days.flatMap((day) => day.activities);
   for (const detail of completion.activityDetails ?? []) {
     if (!isDayMode(mode)) { dropped.push({ path: 'activityDetails', code: 'IMPORT_NOT_APPLICABLE' }); break; }
-    const target = activities.find((activity) => fold(activity.title) === fold(detail.title));
-    if (!target) { dropped.push({ path: `activityDetails[${detail.title}]`, code: 'IMPORT_ACTIVITY_NOT_FOUND' }); continue; }
+    const matches = activities.filter((activity) => fold(activity.title) === fold(detail.title));
+    if (matches.length === 0) { dropped.push({ path: `activityDetails[${detail.title}]`, code: 'IMPORT_ACTIVITY_NOT_FOUND' }); continue; }
+    // The same title on two days cannot be told apart by the model; dropping is safer than guessing the day.
+    if (matches.length > 1) { dropped.push({ path: `activityDetails[${detail.title}]`, code: 'IMPORT_ACTIVITY_AMBIGUOUS' }); continue; }
+    const target = matches[0];
     const keep = (field: 'place' | 'description' | 'tip', item: TextValue | null | undefined) => {
       if (!item) return null;
       if (!quoteHolds(item, source)) { dropped.push({ path: `activities[${detail.title}].${field}`, code: 'IMPORT_QUOTE_NOT_FOUND' }); return null; }

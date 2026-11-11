@@ -200,6 +200,29 @@ test('undo restores the previous draft once; after a later edit undo is refused'
   assert.equal(refused.json().error.code, 'IMPORT_UNDO_UNAVAILABLE');
 });
 
+test('a duplicated activity title on two days is dropped from the model reply instead of guessed', async (t) => {
+  const d = double([JSON.stringify({ activityDetails: [{ title: 'Ubud', description: { value: 'sawah bagus', quote: 'sawah bagus' }, place: null, tip: null }] })]);
+  const app = await fixture(t, d.extractor);
+  const text = ['Liburan dua hari', 'Hari 1', '09:00 Ubud', 'Hari 2', '09:00 Ubud', 'Ubud: sawah bagus'].join('\n');
+  const sourceId = await source(app, text);
+  const body = (await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'multi_day', outputLanguage: 'id' })).json();
+  assert.equal(d.calls.length, 1);
+  assert.equal(body.itinerary.draftContent.days[0].activities[0].description, '');
+  assert.equal(body.itinerary.draftContent.days[1].activities[0].description, '');
+  assert.ok(body.report.skipped.some((item: { path: string }) => item.path.startsWith('activityDetails[Ubud]')));
+});
+
+test('text beyond the 20,000 character limit is not sent to the model, and the report says how many lines were left out', async (t) => {
+  const d = double([JSON.stringify({})]);
+  const app = await fixture(t, d.extractor);
+  const long = Array.from({ length: 400 }, (_, i) => `Catatan panjang nomor ${i} yang tidak terbaca kode ${'x'.repeat(60)}`);
+  const sourceId = await source(app, ['Judul trip', 'Hari 1', '09:00 Ubud', ...long].join('\n'));
+  const body = (await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'multi_day', outputLanguage: 'id' })).json();
+  assert.equal(d.calls.length, 1);
+  assert.ok(d.calls[0].segments.join('\n').length <= 20_000 + 200);
+  assert.ok(body.report.notes.some((note: string) => /tidak dikirim ke AI/.test(note)));
+});
+
 test('the same operationId replays the stored result without a second model call; a running one is busy', async (t) => {
   const d = double([JSON.stringify({ summary: { value: 'Perjalanan sehari ke sawah terasering dan pasar seni Ubud.', quote: 'Perjalanan sehari ke sawah terasering dan pasar seni Ubud.' } })]);
   const app = await fixture(t, d.extractor);

@@ -18,6 +18,7 @@ const DROP_MESSAGES: Record<Dropped['code'], string> = {
   IMPORT_QUOTE_NOT_FOUND: 'tidak ada kutipan yang cocok di dokumen; dibiarkan kosong',
   IMPORT_NOT_APPLICABLE: 'tidak berlaku untuk mode ini',
   IMPORT_ACTIVITY_NOT_FOUND: 'aktivitas tidak ditemukan di hasil baca',
+  IMPORT_ACTIVITY_AMBIGUOUS: 'judul aktivitas sama di lebih dari satu hari; diisi manual',
   IMPORT_ALREADY_FILLED: 'sudah terisi'
 };
 function error(status: number, code: string, message: string): ServiceResult { return { status, body: { error: { code, message } } }; }
@@ -111,6 +112,8 @@ export class ImportService {
     let dropped: Dropped[] = [];
     let usage = { promptTokens: 0, completionTokens: 0, actualUsd: null as number | null };
     let aiUsed = 0;
+    const unsent = parse.unconsumed.length - segments.length;
+    if (unsent > 0) notes.push(`${unsent} baris tidak dikirim ke AI karena batas 20.000 karakter; periksa bagian itu secara manual.`);
     if (segments.length) {
       if (extractor && extractor.credentialState === 'configured') {
         const outcome = await requestCompletion(extractor, { mode, locale: language.locale, segments });
