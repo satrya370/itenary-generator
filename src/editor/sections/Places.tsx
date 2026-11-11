@@ -1,4 +1,5 @@
 import React from 'react';
+import { ItemScope } from '../issues.js';
 import type { EditorProps } from '../EditorForm.js';
 import { PhotoField, TextArea, TextField, TextList, buttonClass } from '../fields.js';
 import { blankToNull, makePlace, moveById, setPhotoAsset, setPhotoCredit } from '../model.js';
@@ -17,7 +18,7 @@ export function Places(props: EditorProps) {
           return (
             <React.Fragment key={place.id}>
             {showHeading && <h4 className="text-base font-bold">{place.group}</h4>}
-            <fieldset className="space-y-4 rounded-xl border border-slate-300 p-4" data-target-id={place.id} tabIndex={-1}>
+            <ItemScope id={place.id}><fieldset className="space-y-4 rounded-xl border border-slate-300 p-4" data-target-id={place.id} tabIndex={-1}>
               <legend className="px-2 font-semibold">Tempat {index + 1}</legend>
               <div className="flex gap-2">
                 <button type="button" className={buttonClass} disabled={index === 0} onClick={() => patch((n) => { n.places = moveById(n.places, place.id, -1); })}>Naikkan</button>
@@ -44,7 +45,7 @@ export function Places(props: EditorProps) {
                     onCredit={(k, v) => patch((n) => { const p = n.places.find((x) => x.id === place.id); if (p) p.photo = setPhotoCredit(p.photo, k, v); })} />
                 </div>
               </details>
-            </fieldset>
+            </fieldset></ItemScope>
             </React.Fragment>
           );
         })}

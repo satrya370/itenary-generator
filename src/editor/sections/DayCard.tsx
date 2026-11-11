@@ -1,4 +1,5 @@
 import React from 'react';
+import { ItemScope } from '../issues.js';
 import type { AssetDto } from '../../api/client.js';
 import type { ItineraryMode, WebItineraryContent } from '../../contracts/types.js';
 import type { AiAction, MetaFn, Patch } from '../EditorForm.js';
@@ -17,7 +18,7 @@ function ActivityList({ dayId, day, mode, recordId, assets, meta, patch, aiActio
         <button type="button" className={buttonClass} disabled={day.activities.length >= 30} onClick={() => patch((next) => { const d = next.days.find((x) => x.id === dayId); if (d) d.activities.push(makeActivity()); })}>Tambah aktivitas</button>
       </div>
       {day.activities.map((activity, activityIndex) => (
-        <fieldset key={activity.id} className="space-y-3 rounded-lg bg-slate-50 p-3" data-target-id={activity.id} tabIndex={-1}>
+        <ItemScope key={activity.id} id={activity.id}><fieldset className="space-y-3 rounded-lg bg-slate-50 p-3" data-target-id={activity.id} tabIndex={-1}>
           <legend className="px-1 text-sm font-medium">Aktivitas {activityIndex + 1}</legend>
           <div className="flex gap-2">
             <button type="button" className={buttonClass} disabled={activityIndex === 0} onClick={() => patch((next) => { const d = next.days.find((x) => x.id === dayId); if (d) d.activities = moveById(d.activities, activity.id, -1); })}>Naikkan</button>
@@ -34,7 +35,7 @@ function ActivityList({ dayId, day, mode, recordId, assets, meta, patch, aiActio
             <TextArea id={`${recordId}-activity-tip-${activity.id}`} meta={meta('days[].activities[].tip', mode)} value={activity.tip} onChange={(v) => patch((next) => { const a = next.days.find((x) => x.id === dayId)?.activities.find((x) => x.id === activity.id); if (a) a.tip = blankToNull(v); })} />
             {aiAction(`activity:${activity.id}`, 'Buat dengan AI', 'description', { kind: 'activity', id: activity.id }, (text) => patch((next) => { const a = next.days.find((x) => x.id === dayId)?.activities.find((x) => x.id === activity.id); if (a) a.description = text; }))}
           </div>
-        </fieldset>
+        </fieldset></ItemScope>
       ))}
     </div>
   );
@@ -47,7 +48,7 @@ export function DayCard({ day, mode, recordId, assets, meta, patch, aiAction, sh
   onMove: (delta: number) => void; onRemove: () => void;
 }) {
   return (
-    <div className="space-y-4 rounded-xl border border-slate-300 p-4" data-target-id={day.id} tabIndex={-1}>
+    <ItemScope id={day.id}><div className="space-y-4 rounded-xl border border-slate-300 p-4" data-target-id={day.id} tabIndex={-1}>
       {showDayControls && (
         <div className="flex flex-wrap gap-2">
           <button type="button" className={buttonClass} disabled={isFirst} onClick={() => onMove(-1)}>Naikkan hari</button>
@@ -78,6 +79,6 @@ export function DayCard({ day, mode, recordId, assets, meta, patch, aiAction, sh
         </div>
       )}
       <ActivityList dayId={day.id} day={day} mode={mode} recordId={recordId} assets={assets} meta={meta} patch={patch} aiAction={aiAction} />
-    </div>
+    </div></ItemScope>
   );
 }

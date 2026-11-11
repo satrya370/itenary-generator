@@ -184,7 +184,15 @@ async function main() {
     const fullId = await createMode('full_day');
     assert.equal(await count(sel('days[].hotel.name')), 0);
     assert.equal(await count(sel('days[].meals.lunch')), 1);
+    // Required-field feedback sits on the field: red after leaving it empty, cleared once filled.
+    assert.equal(await count('[data-field-path="trip.title"][aria-invalid="true"]'), 0, 'no red before the field was touched');
+    await page.focus('[data-field-path="trip.title"]'); await page.keyboard.press('Tab');
+    await page.waitForSelector('[data-field-path="trip.title"][aria-invalid="true"]');
+    assert.equal(await page.$eval('[data-field-path="trip.title"] + p', element => element.textContent), 'Wajib diisi sebelum publish.');
+    const borders = await page.evaluate(() => ({ invalid: getComputedStyle(document.querySelector('[data-field-path="trip.title"]')!).borderColor, normal: getComputedStyle(document.querySelector('[data-field-path="trip.destination"]')!).borderColor }));
+    assert.notEqual(borders.invalid, borders.normal, 'an invalid field has a visibly different (red) border');
     await set('trip.title', 'R5 full day'); await set('trip.destination', 'Kyoto');
+    assert.equal(await count('[data-field-path="trip.title"][aria-invalid="true"]'), 0, 'red clears once the field is filled');
     await save();
     assert.equal((await getRecord(fullId)).draftContent.days.length, 1);
     await captureMode('full_day');

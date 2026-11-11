@@ -6,18 +6,22 @@ import type { ItineraryMode, Photo } from '../contracts/types.js';
 import type { MetaFn } from './EditorForm.js';
 import { statusCopy, themeNames } from './labels.js';
 import palettes from '../../config/palettes.json' with { type: 'json' };
+import { IssueText, useIssue } from './issues.js';
 
 export const inputClass = 'mt-1 block w-full rounded-md border border-slate-300 bg-white p-2 text-sm focus-visible:outline-2 focus-visible:outline-teal-700 disabled:bg-slate-100';
+export const fieldClass = (invalid: boolean) => inputClass.replace('border-slate-300', invalid ? 'border-red-600 bg-red-50' : 'border-slate-300');
 export const buttonClass = 'rounded-md border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 disabled:cursor-not-allowed disabled:opacity-50';
 export const primaryClass = 'rounded-md bg-teal-800 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-800 disabled:cursor-not-allowed disabled:opacity-50';
 
 export function TextField({ id, meta, value, onChange, type = 'text' }: {
   id: string; meta: FieldMeta; value: string | null | undefined; onChange: (value: string | null) => void; type?: 'text' | 'url' | 'date' | 'time';
 }) {
+  const issue = useIssue(meta.path);
   return (
     <div className="min-w-0">
       <label htmlFor={id} className="block text-sm font-medium text-slate-800">{meta.label}{meta.required && <span aria-hidden="true" className="ml-1 text-red-700">*</span>}</label>
-      <input id={id} type={type} value={value ?? ''} maxLength={meta.maxLength} required={meta.required} onChange={(event) => onChange(event.target.value)} className={inputClass} data-field-path={meta.path} />
+      <input id={id} type={type} value={value ?? ''} maxLength={meta.maxLength} onChange={(event) => onChange(event.target.value)} className={fieldClass(Boolean(issue.message))} data-field-path={meta.path} aria-describedby={issue.message ? `${id}-issue` : undefined} {...issue.inputProps} />
+      <IssueText id={`${id}-issue`} message={issue.message} />
     </div>
   );
 }
@@ -25,10 +29,12 @@ export function TextField({ id, meta, value, onChange, type = 'text' }: {
 export function TextArea({ id, meta, value, onChange, rows = 3 }: {
   id: string; meta: FieldMeta; value: string | null | undefined; onChange: (value: string | null) => void; rows?: number;
 }) {
+  const issue = useIssue(meta.path);
   return (
     <div className="min-w-0 sm:col-span-2">
       <label htmlFor={id} className="block text-sm font-medium text-slate-800">{meta.label}{meta.required && <span aria-hidden="true" className="ml-1 text-red-700">*</span>}</label>
-      <textarea id={id} rows={rows} value={value ?? ''} maxLength={meta.maxLength} required={meta.required} onChange={(event) => onChange(event.target.value)} className={inputClass} data-field-path={meta.path} />
+      <textarea id={id} rows={rows} value={value ?? ''} maxLength={meta.maxLength} onChange={(event) => onChange(event.target.value)} className={fieldClass(Boolean(issue.message))} data-field-path={meta.path} aria-describedby={issue.message ? `${id}-issue` : undefined} {...issue.inputProps} />
+      <IssueText id={`${id}-issue`} message={issue.message} />
     </div>
   );
 }
@@ -36,10 +42,12 @@ export function TextArea({ id, meta, value, onChange, rows = 3 }: {
 export function TimeField({ id, meta, value, onChange }: {
   id: string; meta: FieldMeta; value: string | null; onChange: (value: string | null) => void;
 }) {
+  const issue = useIssue(meta.path);
   return (
     <div className="min-w-0">
       <label htmlFor={id} className="block text-sm font-medium text-slate-800">{meta.label}{meta.required && <span aria-hidden="true" className="ml-1 text-red-700">*</span>}</label>
-      <input id={id} type="time" value={value ?? ''} onChange={(event) => onChange(event.target.value || null)} className={inputClass} data-field-path={meta.path} />
+      <input id={id} type="time" value={value ?? ''} onChange={(event) => onChange(event.target.value || null)} className={fieldClass(Boolean(issue.message))} data-field-path={meta.path} aria-describedby={issue.message ? `${id}-issue` : undefined} {...issue.inputProps} />
+      <IssueText id={`${id}-issue`} message={issue.message} />
     </div>
   );
 }
@@ -47,10 +55,12 @@ export function TimeField({ id, meta, value, onChange }: {
 export function NumberField({ id, meta, value, onChange }: {
   id: string; meta: FieldMeta; value: number | null; onChange: (value: number | null) => void;
 }) {
+  const issue = useIssue(meta.path);
   return (
     <div className="min-w-0">
       <label htmlFor={id} className="block text-sm font-medium text-slate-800">{meta.label}{meta.required && <span aria-hidden="true" className="ml-1 text-red-700">*</span>}</label>
-      <input id={id} type="number" min={1} max={1440} value={value ?? ''} onChange={(event) => onChange(event.target.value === '' ? null : Number(event.target.value))} className={inputClass} data-field-path={meta.path} />
+      <input id={id} type="number" min={1} max={1440} value={value ?? ''} onChange={(event) => onChange(event.target.value === '' ? null : Number(event.target.value))} className={fieldClass(Boolean(issue.message))} data-field-path={meta.path} aria-describedby={issue.message ? `${id}-issue` : undefined} {...issue.inputProps} />
+      <IssueText id={`${id}-issue`} message={issue.message} />
     </div>
   );
 }
@@ -69,12 +79,14 @@ export function Toggle({ id, meta, value, onChange }: {
 export function SelectField({ id, meta, value, choices, onChange }: {
   id: string; meta: FieldMeta; value: string; choices: Array<[string, string]>; onChange: (value: string) => void;
 }) {
+  const issue = useIssue(meta.path);
   return (
     <div className="min-w-0">
       <label htmlFor={id} className="block text-sm font-medium text-slate-800">{meta.label}{meta.required && <span aria-hidden="true" className="ml-1 text-red-700">*</span>}</label>
-      <select id={id} value={value} onChange={(event) => onChange(event.target.value)} className={inputClass} data-field-path={meta.path}>
+      <select id={id} value={value} onChange={(event) => onChange(event.target.value)} className={fieldClass(Boolean(issue.message))} data-field-path={meta.path} aria-describedby={issue.message ? `${id}-issue` : undefined} {...issue.inputProps}>
         {choices.map(([key, name]) => <option key={key} value={key}>{name}</option>)}
       </select>
+      <IssueText id={`${id}-issue`} message={issue.message} />
     </div>
   );
 }
@@ -182,16 +194,18 @@ export function LocaleField({ id, meta, value, onChange, error, help, unresolved
   showDetect: boolean; busy: boolean; dirty: boolean; proposal: LanguageResolutionDto | null; onDetect: () => void; onAccept: () => void;
 }) {
   const known = value === 'auto' || contentLanguages.some((item) => item.value === value);
+  const issue = useIssue(meta.path);
   return (
     <div className="min-w-0">
       <label htmlFor={id} className="block text-sm font-medium text-slate-800">{meta.label}{meta.required && <span aria-hidden="true" className="ml-1 text-red-700">*</span>}</label>
-      <select id={id} value={value} onChange={(event) => onChange(event.target.value)} className={`${inputClass} ${error ? 'border-red-600' : ''}`} aria-invalid={Boolean(error)} aria-describedby={`${id}-help`} data-field-path={meta.path}>
+      <select id={id} value={value} onChange={(event) => onChange(event.target.value)} className={fieldClass(Boolean(error) || Boolean(issue.message))} aria-invalid={Boolean(error) || Boolean(issue.message)} aria-describedby={`${id}-help`} data-field-path={meta.path} onBlur={issue.inputProps.onBlur}>
         <option value="auto">Deteksi otomatis</option>
         {contentLanguages.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
         {!known && <option value={value} disabled>Bahasa tidak didukung: {value}</option>}
       </select>
       <p id={`${id}-help`} className="mt-1 text-xs text-slate-500">{unresolved ? help : !known ? 'Pilih salah satu bahasa yang tersedia.' : ''}</p>
       {error && <p id={`${id}-error`} className="mt-1 text-xs text-red-700">{error}</p>}
+      <IssueText id={`${id}-issue`} message={issue.message} />
       {showDetect && <button type="button" disabled={busy || dirty} className={`${buttonClass} mt-2`} onClick={onDetect}>Deteksi otomatis</button>}
       {proposal?.status === 'resolved' && (
         <div className="mt-2 rounded-md bg-teal-50 p-2 text-sm">Proposal bahasa: {proposal.locale}. <button type="button" className="font-semibold text-teal-900 underline" onClick={onAccept}>Konfirmasi bahasa</button></div>

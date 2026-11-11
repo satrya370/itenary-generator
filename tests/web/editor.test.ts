@@ -22,7 +22,7 @@ function editorProps(mode: ItineraryMode, content: WebItineraryContent): EditorP
     content, mode, recordId: 'rec', assets: [], meta: fieldMeta, patch: noop, onModeChange: noop, agencyName: '', onFocusProfile: noop,
     localeInput: 'en', localeError: '', language: { requestedLanguage: 'en', outputLanguage: 'en', source: 'explicit' }, localeNeedsSupport: false,
     languageProposal: null, onLocaleChange: noop, onDetectLanguage: noop, onAcceptLanguage: noop, busy: false, dirty: false, localeSupportedCheck: true,
-    aiAction: () => null, writing: { brief: '', notes: [] }, onWritingChange: noop, aiAssistExtra: null, guides: [], onUploadAsset: noop
+    aiAction: () => null, writing: { brief: '', notes: [] }, onWritingChange: noop, aiAssistExtra: null, guides: [], onUploadAsset: async () => null
   };
 }
 
@@ -264,6 +264,22 @@ test('5g. publish issues map to Indonesian messages, wizard steps per mode, and 
   const visible = [...html.matchAll(/<div data-step="([a-z]+)"( hidden="")?/g)].filter((match) => !match[2]).map((match) => match[1]);
   assert.deepEqual(visible, ['summary'], 'only the active step is visible');
   assert.ok(html.includes('data-step="info" hidden=""'), 'hidden steps stay mounted');
+});
+
+test('5h. a missing required field is marked red with its message, scoped to the right activity', async () => {
+  const { IssuesContext } = await import('../../src/editor/issues.js');
+  const content = createContentV2('multi_day');
+  const target = content.days[1].activities[0];
+  const messages = new Map([['|trip.title', 'Wajib diisi sebelum publish.'], [`${target.id}|days[].activities[].title`, 'Wajib diisi sebelum publish.']]);
+  const api = { issueFor: (key: string) => messages.get(key) ?? null, touch: () => {} };
+  const html = renderToStaticMarkup(React.createElement(IssuesContext.Provider, { value: api }, React.createElement(EditorForm, editorProps('multi_day', content))));
+  assert.equal((html.match(/aria-invalid="true"/g) ?? []).length, 2, 'exactly the two flagged fields are invalid');
+  assert.equal((html.match(/Wajib diisi sebelum publish\./g) ?? []).length, 2);
+  const flagged = [...html.matchAll(/<input[^>]*id="([^"]*)"[^>]*aria-invalid="true"/g)].map((match) => match[1]);
+  assert.ok(flagged.some((id) => id.endsWith(`activity-title-${target.id}`)), 'the flagged activity is the second day first activity');
+  assert.ok(!flagged.some((id) => id.includes(content.days[0].activities[0].id)), 'the same field on another activity is not flagged');
+  const clean = renderToStaticMarkup(React.createElement(EditorForm, editorProps('multi_day', content)));
+  assert.ok(!clean.includes('aria-invalid="true"'), 'no issues without a provider');
 });
 
 test('6. reordering keeps stable IDs and does not mutate the input', () => {

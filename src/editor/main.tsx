@@ -14,6 +14,7 @@ import { ProfileForm, emptyProfile, type AgencyProfile } from './sections/Profil
 type ProfileData = { revision: number; profile: AgencyProfile };
 import { Stepper, stepTitle } from './wizard/Stepper.js';
 import { publishIssues, stepsFor, type PublishIssue, type StepId } from './validation.js';
+import { IssuesContext } from './issues.js';
 import './style.css';
 
 type Diagnostic = { code: string; path: string; message: string; targetId?: string };
@@ -63,6 +64,7 @@ function App() {
   const [stepIndex, setStepIndex] = useState(0);
   const [attempted, setAttempted] = useState<Partial<Record<StepId, boolean>>>({});
   const [listOpen, setListOpen] = useState(true);
+  const [touched, setTouched] = useState<Set<string>>(new Set());
   const [publication, setPublication] = useState<PublicationDto | null>(null);
   const [versions, setVersions] = useState<PublishedVersionDto[]>([]);
   const draftRef = useRef<WebItineraryContent | null>(null);
@@ -106,7 +108,7 @@ function App() {
   }
 
   function installRecord(loaded: RecordDto) {
-    setStepIndex(0); setAttempted({}); setListOpen(false);
+    setStepIndex(0); setAttempted({}); setListOpen(false); setTouched(new Set());
     editGeneration.current++;
     languageProposalGeneration.current = null;
     draftRef.current = loaded.draftContent;
@@ -396,6 +398,15 @@ function App() {
   const issueCounts = issues.reduce<Partial<Record<StepId, number>>>((counts, issue) => ({ ...counts, [issue.step]: (counts[issue.step] ?? 0) + 1 }), {});
   const stepIssues = issues.filter((issue) => issue.step === current);
   const showStepIssues = attempted[current] === true || current === 'publish';
+  const issueByKey = new Map(issues.map((issue) => [issue.key, issue]));
+  const issuesApi = {
+    issueFor: (key: string) => {
+      const issue = issueByKey.get(key);
+      if (!issue) return null;
+      return touched.has(key) || attempted[issue.step] === true || current === 'publish' ? issue.message : null;
+    },
+    touch: (key: string) => setTouched((old) => (old.has(key) ? old : new Set(old).add(key)))
+  };
   function goToStep(index: number) { setStepIndex(Math.max(0, Math.min(index, steps.length - 1))); }
   function focusIssue(issue: PublishIssue) {
     const index = steps.indexOf(issue.step);
@@ -459,25 +470,31 @@ function App() {
       <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-7">
         {!content || !activeMode ? <div className="grid min-h-80 place-items-center text-center text-slate-500">Pilih atau buat draft untuk mulai.</div> : <>
           <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4"><div><div className="flex flex-wrap items-center gap-2"><h2 className="text-xl font-semibold">{content.trip.title || 'Tanpa judul'}</h2><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${modeCopy[activeMode].badge}`}>{modeCopy[activeMode].title}</span></div><p className="mt-1 text-sm text-slate-600">{dirty ? 'Belum disimpan' : `Tersimpan · revisi ${record?.revision}`}{profileDirty ? ' · profil belum disimpan' : ''}</p></div><div className="flex gap-2"><button type="button" disabled={busy || dirty || !record} onClick={() => { goToStep(steps.indexOf('publish')); void previewSaved(); }} className={buttonClass}>Preview</button><button type="button" disabled={busy || !dirty || Boolean(localeError)} onClick={save} className={primaryClass}>Simpan draft</button></div></div>
-          <div className="sticky top-0 z-10 -mx-1 mb-4 bg-white px-1 py-2"><Stepper steps={steps} mode={activeMode ?? 'half_day'} current={stepIndex} issueCounts={issueCounts} onSelect={goToStep} /><p className="mt-2 text-xs font-semibold text-slate-700">Langkah {stepIndex + 1} dari {steps.length} · {stepTitle(current, activeMode ?? 'half_day')}</p></div>
+          <div className="lg:grid lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-6">
+          <div className="sticky top-0 z-10 -mx-1 mb-4 bg-white px-1 py-2 lg:top-4 lg:z-0 lg:mx-0 lg:mb-0 lg:self-start lg:px-0"><Stepper steps={steps} mode={activeMode ?? 'half_day'} current={stepIndex} issueCounts={issueCounts} onSelect={goToStep} /><p className="mt-2 text-xs font-semibold text-slate-700 lg:hidden">Langkah {stepIndex + 1} dari {steps.length} · {stepTitle(current, activeMode ?? 'half_day')}</p></div>
+          <div className="min-w-0">
           {showStepIssues && stepIssues.length > 0 && <section aria-label="Isian wajib" className="mb-5 rounded-lg border border-red-300 bg-red-50 p-4"><h3 className="font-semibold text-red-900">Lengkapi isian berikut</h3><ul className="mt-2 space-y-1 text-sm text-red-800">{stepIssues.map((issue) => <li key={`${issue.key}-${issue.path}`}><button type="button" className="text-left underline underline-offset-2" onClick={() => focusIssue(issue)}>{labelFor(issue.path, activeMode)}: {issue.message}</button></li>)}</ul></section>}
+          {sectionErrors.length > 0 && <section aria-label="Kesalahan draft" className="mt-6 rounded-lg border border-red-300 bg-red-50 p-4"><h3 className="font-semibold text-red-900">Periksa field berikut</h3><ul className="mt-2 list-disc pl-5 text-sm text-red-800">{sectionErrors.map((item, index) => <li key={`${item.path}-${index}`}><button type="button" data-diagnostic-path={item.path} className="text-left underline underline-offset-2" onClick={() => focusDiagnostic(item)}>{labelFor(item.path, activeMode ?? 'half_day')}: {item.message}</button></li>)}</ul></section>}
           {conflict && <section aria-label="Konflik revisi" className="mb-5 rounded-lg border border-amber-400 bg-amber-50 p-4"><h3 className="font-semibold text-amber-950">Draft berubah di server</h3><p className="mt-1 text-sm text-amber-900">Server berada di revisi {conflict.latest.revision}; input lokal tetap dipertahankan. Tidak ada overwrite otomatis.</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" className={buttonClass} onClick={copyLocal}>Salin salinan lokal</button><button type="button" className={buttonClass} onClick={reloadLatest}>Muat revisi terbaru</button></div></section>}
+          <IssuesContext.Provider value={issuesApi}>
           <EditorForm activeStep={current} content={content} mode={activeMode} recordId={recordId} assets={assets} meta={fieldMeta} patch={edit}
             onModeChange={requestMode} agencyName={profile?.profile.agencyName ?? ''} onFocusProfile={() => setView('settings')}
             localeInput={localeInput} localeError={localeError} language={language} localeNeedsSupport={localeNeedsSupport} languageProposal={languageProposal}
             onLocaleChange={changeLocale} onDetectLanguage={resolveLanguage} onAcceptLanguage={acceptLanguage} busy={busy} dirty={dirty}
             localeSupportedCheck={localeSupported(language.outputLanguage)} aiAction={aiAction}
             writing={writing} onWritingChange={next => { markDirty(); setWriting(next); }} aiAssistExtra={aiExtra} guides={agencyProfile().guides} onUploadAsset={uploadAsset} />
-          {sectionErrors.length > 0 && <section aria-label="Kesalahan draft" className="mt-6 rounded-lg border border-red-300 bg-red-50 p-4"><h3 className="font-semibold text-red-900">Periksa field berikut</h3><ul className="mt-2 list-disc pl-5 text-sm text-red-800">{sectionErrors.map((item, index) => <li key={`${item.path}-${index}`}><button type="button" data-diagnostic-path={item.path} className="text-left underline underline-offset-2" onClick={() => focusDiagnostic(item)}>{labelFor(item.path, activeMode ?? 'half_day')}: {item.message}</button></li>)}</ul></section>}
+          </IssuesContext.Provider>
           <div data-step="publish" hidden={current !== 'publish'}>
           {previewDiagnostics && <section aria-label="Publish diagnostics" className="mt-6 rounded-xl border border-slate-300 bg-slate-50 p-4"><h3 className="font-semibold">Pemeriksaan publish</h3>{previewDiagnostics.errors.length === 0 && <p className="mt-2 text-sm text-emerald-800">Tidak ada error publish.</p>}{previewDiagnostics.errors.length > 0 && <ul className="mt-2 space-y-2 text-sm text-red-800">{previewDiagnostics.errors.map((item, index) => <li key={`${item.code}-${item.path}-${index}`}><button type="button" data-diagnostic-path={item.path} className="text-left underline underline-offset-2" onClick={() => focusDiagnostic(item)}>{item.path ? `${labelFor(item.path, activeMode)}: ` : ''}{item.message}</button></li>)}</ul>}{previewDiagnostics.warnings.length > 0 && <><h4 className="mt-4 text-sm font-semibold text-amber-900">Peringatan</h4><ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-amber-900">{previewDiagnostics.warnings.map((item, index) => <li key={`${item.code}-${item.path}-${index}`}><button type="button" data-diagnostic-path={item.path} className="text-left underline underline-offset-2" onClick={() => focusDiagnostic(item)}>{item.path ? `${labelFor(item.path, activeMode)}: ` : ''}{item.message}</button></li>)}</ul></>}</section>}
-          {issues.length > 0 && <p className="mt-6 text-sm font-semibold text-red-800">Lengkapi {issues.length} isian wajib sebelum publish.</p>}
+          {issues.length > 0 && <p className="mt-6 text-sm font-semibold text-red-800">Lengkapi {issues.length} isian wajib sebelum publish. <button type="button" className="ml-2 underline underline-offset-2" onClick={() => focusIssue(issues[0])}>Tunjukkan</button></p>}
           <section aria-label="Publikasi" className="mt-6 rounded-xl border border-slate-300 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-semibold">Halaman publik</h3>{publication?.currentVersion && <p className="mt-1 text-sm text-slate-600">Versi {publication.currentVersion.id.slice(0, 8)} · revisi sumber {publication.currentVersion.sourceRevision}{(publication.draftDiffers || dirty) && <span className="text-amber-800"> · draft berbeda dari versi published</span>}</p>}{publication && !publication.active && publication.currentVersion && <p className="mt-1 text-sm text-red-800">Link dicabut; publish ulang akan membuat link baru.</p>}</div><div className="flex flex-wrap gap-2">{publication?.active ? <><button type="button" disabled={busy || dirty} className={buttonClass} onClick={publishSaved}>Publish ulang</button><button type="button" disabled={busy} className={buttonClass} onClick={unpublish}>Cabut link</button></> : <button type="button" disabled={busy || dirty || !record || Boolean(localeError) || issues.length > 0} className={primaryClass} onClick={publishSaved}>Publish itinerary</button>}</div></div>{publication?.active && publication.shareUrl && <div className="mt-3 flex flex-wrap items-center gap-2"><a className="break-all text-sm text-teal-800 underline" href={publication.shareUrl} target="_blank" rel="noreferrer">{publication.shareUrl}</a><button type="button" className={buttonClass} onClick={copyShareLink}>Salin link</button></div>}{versions.length > 0 && <details className="mt-3"><summary className="cursor-pointer text-sm font-medium">Riwayat published ({versions.length})</summary><ol className="mt-2 list-inside list-decimal space-y-1 text-xs text-slate-600">{versions.map(version => <li key={version.id}>{version.id.slice(0, 8)} · revisi {version.sourceRevision} · {new Date(version.createdAt).toLocaleString()}</li>)}</ol></details>}</section>
           {preview && <section aria-label="Preview itinerary" className="mt-6 rounded-xl border border-slate-300 p-4"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold">Preview draft tersimpan · revisi {preview.revision}</h3><div className="flex gap-2"><button type="button" aria-pressed={previewViewport === 'phone'} className={buttonClass} onClick={() => setPreviewViewport('phone')}>Phone</button><button type="button" aria-pressed={previewViewport === 'desktop'} className={buttonClass} onClick={() => setPreviewViewport('desktop')}>Desktop</button></div></div><div className="mt-4 overflow-auto rounded-lg bg-slate-100 p-2"><iframe title="Preview itinerary tersimpan" sandbox="" srcDoc={preview.html} className="mx-auto block h-[720px] border-0 bg-white shadow-sm" style={{ width: previewViewport === 'phone' ? '390px' : '100%', maxWidth: '100%' }} /></div></section>}
           </div>
           <div className="sticky bottom-0 -mx-1 mt-6 flex justify-between gap-3 border-t border-slate-200 bg-white px-1 py-3">
             <button type="button" disabled={stepIndex === 0} className={buttonClass} onClick={() => goToStep(stepIndex - 1)}>Kembali</button>
             {current !== 'publish' && <button type="button" className={primaryClass} onClick={() => { setAttempted(old => ({ ...old, [current]: true })); if (stepIssues.length === 0) goToStep(stepIndex + 1); }}>Lanjut</button>}
+          </div>
+          </div>
           </div>
         </>}
       </section>

@@ -91,3 +91,7 @@ Screenshots opened (390 px, full_day, language en): `output/web-editor/cp035-s2-
 ### Screenshot opened (S4)
 
 `output/web-editor/cp035-s4-validation-390.png`: step bar with "1. Info trip · 3 wajib", "Langkah 1 dari 9", a red list "Lengkapi isian berikut" with the three missing fields (Negara, Destinasi, Judul perjalanan), then the form and Kembali / Lanjut at the bottom. No overflow.
+
+## Review fixes (2026-11-11)
+
+Reviewer changes after S1-S4 (details in `logs/cp033-cp035_review-log.md`): desktop two-column wizard layout; per-field red state (border, background, aria-invalid, message, scoped to the stable item id) with touched-on-blur tracking and a "Tunjukkan" button; save-error panel moved above the form; `typecheck:web-contracts` fixed. This closes deviation 2 and 3 of S4 above (per-field red and Tunjukkan). Deviations 1 (home view) and 4 (screenshot set) remain open.
