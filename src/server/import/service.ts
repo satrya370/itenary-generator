@@ -51,7 +51,7 @@ export class ImportService {
 
     const replay = store.db.prepare('SELECT * FROM import_operations WHERE operation_id=? AND workspace_id=?').get(input.operationId, store.workspaceId) as Record<string, unknown> | undefined;
     if (replay) {
-      if (replay.status === 'completed') return { status: 200, body: { itinerary: store.getItinerary(String(replay.itinerary_id)), report: JSON.parse(String(replay.report_json)), usage: usageOf(replay), replayed: true } };
+      if (replay.status === 'completed') return { status: 200, body: { itinerary: store.getItinerary(String(replay.itinerary_id)), report: JSON.parse(String(replay.report_json)), usage: usageOf(replay), operationId: input.operationId, sourceId: String(replay.source_id), replayed: true } };
       if (replay.status === 'running') return error(409, 'IMPORT_BUSY', 'Import ini masih berjalan.');
       return error(409, 'IMPORT_NOT_REPEATABLE', 'Import dengan operationId ini sudah gagal; mulai dengan operationId baru.');
     }
@@ -162,7 +162,7 @@ export class ImportService {
     store.db.prepare("UPDATE import_operations SET status='completed', itinerary_id=?, result_revision=?, previous_draft_json=?, previous_language_json=?, previous_writing_json=?, ai_used=?, prompt_tokens=?, completion_tokens=?, actual_usd=?, report_json=?, updated_at=? WHERE operation_id=?")
       .run(record.id, record.revision, target === 'overwrite' ? JSON.stringify(saved!.draftContent) : null, target === 'overwrite' ? JSON.stringify(saved!.languageContext) : null, target === 'overwrite' ? JSON.stringify(saved!.writingContext) : null,
         aiUsed, usage.promptTokens, usage.completionTokens, actualUsd, JSON.stringify(report), new Date().toISOString(), operationId);
-    return { status: target === 'new' ? 201 : 200, body: { itinerary: record, report, usage: { aiUsed, promptTokens: usage.promptTokens, completionTokens: usage.completionTokens, actualUsd }, operationId } };
+    return { status: target === 'new' ? 201 : 200, body: { itinerary: record, report, usage: { aiUsed, promptTokens: usage.promptTokens, completionTokens: usage.completionTokens, actualUsd }, operationId, sourceId } };
   }
 
   undo(operationId: string, expectedRevision: unknown): ServiceResult {
@@ -185,7 +185,7 @@ export class ImportService {
     if (!row) return { status: 200, body: { operation: null } };
     const current = store.getItinerary(itineraryId);
     const undoAvailable = row.target === 'overwrite' && row.status === 'completed' && !row.undone_at && current?.revision === row.result_revision;
-    return { status: 200, body: { operation: { operationId: row.operation_id, status: row.status, target: row.target, report: row.report_json ? JSON.parse(String(row.report_json)) : null, usage: usageOf(row), undoAvailable } } };
+    return { status: 200, body: { operation: { operationId: row.operation_id, sourceId: row.source_id, status: row.status, target: row.target, report: row.report_json ? JSON.parse(String(row.report_json)) : null, usage: usageOf(row), undoAvailable } } };
   }
 }
 

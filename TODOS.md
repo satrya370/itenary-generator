@@ -69,8 +69,8 @@
 | CP035 | ota-practical-fields-wizard-and-validation | CP034 | in_progress (S1-S4 gate run 2026-11-11: pass; deviations listed in stage log; awaiting review) |
 | CP036 | google-places-autocomplete | CP035 | in_progress (gate + review fixes done 2026-11-11; default provider now Photon/OSM, no card; Google optional; awaiting owner acceptance) |
 | CP030 | import-intake-and-parser | CP033–CP036 diterima | completed (working 4e08bac, review + revisi 55f5160; diterima owner 2026-11-11) |
-| CP031 | import-ai-merge-and-write | CP030 | in_progress (working 5ece6e0, review + revisi 6e2704f; gate hijau 2026-11-11; menunggu penerimaan owner) |
-| CP032 | import-ui-and-e2e | CP031 | pending |
+| CP031 | import-ai-merge-and-write | CP030 | completed (working 5ece6e0, review + revisi 6e2704f; diterima owner 2026-11-11) |
+| CP032 | import-ui-and-e2e | CP031 | in_progress (working selesai, E2E import hijau, live check 6 impor ~US$0.0007, gate hijau 2026-11-11; menunggu review) |
 | CP029 | laravel-saas-integration | CP032 + kesiapan SaaS Laravel | pending (deferred — last) |
 
 Setiap CP menghasilkan satu hasil yang dapat diverifikasi. CP018–CP028 dan CP030–CP032 adalah fase A (standalone); CP029 fase B (integrasi SaaS) dan dijalankan paling akhir. Urutan eksekusi mengikuti tabel ini, bukan urutan angka ID. Nomor CP yang belum dieksekusi dipertahankan; scope/object disesuaikan keputusan terbaru, bukan menulis ulang hasil pekerjaan completed.

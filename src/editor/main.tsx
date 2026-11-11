@@ -9,6 +9,10 @@ import { changeMode, hasModeLoss, normalizeBlanks, targetIdFor } from './model.j
 import { fieldMeta, templatePath } from './schema-meta.js';
 import { DraftList } from './sections/DraftList.js';
 import { ModePicker } from './sections/ModePicker.js';
+import { ImportScreen } from './import/ImportScreen.js';
+import { ImportReport } from './import/ImportReport.js';
+import { importCopy } from './import/copy.js';
+import type { ImportApplyDto, ImportOperationDto } from '../api/client.js';
 import { ProfileForm, emptyProfile, type AgencyProfile } from './sections/ProfileForm.js';
 
 type ProfileData = { revision: number; profile: AgencyProfile };
@@ -67,6 +71,8 @@ function App() {
   const [touched, setTouched] = useState<Set<string>>(new Set());
   const [publication, setPublication] = useState<PublicationDto | null>(null);
   const [versions, setVersions] = useState<PublishedVersionDto[]>([]);
+  const [importing, setImporting] = useState<null | 'new' | 'overwrite'>(null);
+  const [importOperation, setImportOperation] = useState<ImportOperationDto | null>(null);
   const draftRef = useRef<WebItineraryContent | null>(null);
   const editGeneration = useRef(0);
   const languageProposalGeneration = useRef<number | null>(null);
@@ -108,6 +114,7 @@ function App() {
   }
 
   function installRecord(loaded: RecordDto) {
+    setImportOperation(null);
     setStepIndex(0); setAttempted({}); setListOpen(false); setTouched(new Set());
     editGeneration.current++;
     languageProposalGeneration.current = null;
@@ -118,12 +125,29 @@ function App() {
   function canDiscard() { return !dirty || confirm(`Draft memiliki perubahan belum disimpan. Buang draft lokal dan lanjutkan?${profileDirty ? ' Perubahan profil akan tetap tersimpan di formulir.' : ''}`); }
   async function open(id: string) {
     if (!canDiscard()) return;
-    setBusy(true); try { const loaded = await api.get(id); installRecord(loaded); const [published, history] = await Promise.all([api.publication(id), api.versions(id)]); setPublication(published); setVersions(history.items); setStatus(`Draft dibuka · revisi ${loaded.revision}`); } catch (e) { setStatus((e as Error).message); } finally { setBusy(false); }
+    setBusy(true); try { const loaded = await api.get(id); installRecord(loaded); const [published, history] = await Promise.all([api.publication(id), api.versions(id)]); setPublication(published); setVersions(history.items); setStatus(`Draft dibuka · revisi ${loaded.revision}`); api.latestImport(id).then(({ operation }) => setImportOperation(operation && operation.status === 'completed' ? operation : null)).catch(() => {}); } catch (e) { setStatus((e as Error).message); } finally { setBusy(false); }
   }
   async function create(mode: ItineraryMode) {
     if (!canDiscard()) return;
     if (profileDirty && !confirm('Profil operator belum disimpan. Draft baru akan menyalin profil terakhir yang tersimpan. Lanjutkan?')) return;
     setBusy(true); try { const created = await api.create(mode); installRecord(created); setPublication(null); setVersions([]); await refresh().catch(() => {}); setStatus('Draft baru tersimpan'); } catch (e) { setStatus((e as Error).message); } finally { setBusy(false); }
+  }
+  async function finishImport(result: ImportApplyDto & { target: 'new' | 'overwrite' }) {
+    installRecord(result.itinerary); setImporting(null); setPublication(null); setVersions([]);
+    setImportOperation({ operationId: result.operationId, sourceId: result.sourceId, status: 'completed', target: result.target, report: result.report, usage: result.usage, undoAvailable: result.target === 'overwrite' });
+    await refresh().catch(() => {});
+    setStatus(result.target === 'new' ? 'Draf baru dari import tersimpan' : 'Draf diganti dari import; batalkan tersedia selama belum diedit.');
+    api.publication(result.itinerary.id).then(setPublication).catch(() => {});
+  }
+  async function undoImport() {
+    if (!record || !importOperation) return;
+    setBusy(true);
+    try {
+      const undone = await api.undoImport(importOperation.operationId, record.revision);
+      installRecord(undone.itinerary); setImportOperation(null);
+      setStatus('Import dibatalkan; draf kembali seperti sebelum import.');
+    } catch (caught) { setStatus(importCopy.undoUnavailable + ' ' + ((caught as Error).message || '')); }
+    finally { setBusy(false); }
   }
   function changeLocale(raw: string) {
     setLocaleInput(raw); setLocaleError('');
@@ -453,14 +477,15 @@ function App() {
   return <main className="mx-auto min-h-screen max-w-7xl px-4 py-8 text-slate-900 sm:px-6 lg:px-8">
     <header className="mb-8 flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-5">
       <div><p className="text-sm font-semibold uppercase tracking-widest text-teal-700">Itinerary Engine · lokal</p><h1 className="mt-2 text-3xl font-bold tracking-tight">Ruang kerja perjalanan</h1></div>
-      <div className="flex flex-wrap items-center gap-3"><p role="status" aria-live="polite" className="text-sm text-slate-600">{status}</p>{content && <button type="button" className={`${buttonClass} lg:hidden`} onClick={() => setListOpen(true)}>Draf saya</button>}<button type="button" className={buttonClass} onClick={() => setView('settings')}>Pengaturan</button></div>
+      <div className="flex flex-wrap items-center gap-3"><p role="status" aria-live="polite" className="text-sm text-slate-600">{status}</p>{content && <button type="button" className={`${buttonClass} lg:hidden`} onClick={() => setListOpen(true)}>Draf saya</button>}{content && <button type="button" className={buttonClass} disabled={busy || hasUnsaved} title={hasUnsaved ? importCopy.entryOpenDirty : undefined} onClick={() => setImporting('overwrite')}>{importCopy.entryOpen}</button>}<button type="button" className={buttonClass} onClick={() => setView('settings')}>Pengaturan</button></div>
     </header>
     <div className="grid gap-6 lg:grid-cols-[20rem_1fr]">
-      <aside className={`space-y-5 ${content && !listOpen ? 'hidden lg:block' : ''}`}>
+      <aside className={`space-y-5 ${(content && !listOpen) || importing ? 'hidden lg:block' : ''}`}>
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <h2 className="font-semibold">Buat draft baru</h2>
           <p className="mt-1 text-sm text-slate-600">Pilih tipe itinerary.</p>
           <div className="mt-3"><ModePicker onCreate={create} busy={busy} /></div>
+          <button type="button" className={`${buttonClass} mt-3 w-full`} disabled={busy} onClick={() => { if (canDiscard()) setImporting('new'); }}>{importCopy.entryNew}</button>
         </section>
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <h2 className="font-semibold">Draft tersimpan</h2>
@@ -468,7 +493,8 @@ function App() {
         </section>
       </aside>
       <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-7">
-        {!content || !activeMode ? <div className="grid min-h-80 place-items-center text-center text-slate-500">Pilih atau buat draft untuk mulai.</div> : <>
+        {importing ? <ImportScreen target={importing} draftMode={activeMode ?? null} draftId={record?.id ?? null} draftRevision={record?.revision ?? null} aiActive={capabilities.ai?.credentialState === 'configured'} onCancel={() => setImporting(null)} onDone={finishImport} /> : !content || !activeMode ? <div className="grid min-h-80 place-items-center text-center text-slate-500">Pilih atau buat draft untuk mulai.</div> : <>
+          {importOperation && <ImportReport operation={importOperation} busy={busy} onJump={(path) => focusDiagnostic({ path })} onUndo={undoImport} onClose={() => setImportOperation(null)} />}
           <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4"><div><div className="flex flex-wrap items-center gap-2"><h2 className="text-xl font-semibold">{content.trip.title || 'Tanpa judul'}</h2><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${modeCopy[activeMode].badge}`}>{modeCopy[activeMode].title}</span></div><p className="mt-1 text-sm text-slate-600">{dirty ? 'Belum disimpan' : `Tersimpan · revisi ${record?.revision}`}{profileDirty ? ' · profil belum disimpan' : ''}</p></div><div className="flex gap-2"><button type="button" disabled={busy || dirty || !record} onClick={() => { goToStep(steps.indexOf('publish')); void previewSaved(); }} className={buttonClass}>Preview</button><button type="button" disabled={busy || !dirty || Boolean(localeError)} onClick={save} className={primaryClass}>Simpan draft</button></div></div>
           <div className="lg:grid lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-6">
           <div className="sticky top-0 z-10 -mx-1 mb-4 bg-white px-1 py-2 lg:top-4 lg:z-0 lg:mx-0 lg:mb-0 lg:self-start lg:px-0"><Stepper steps={steps} mode={activeMode ?? 'half_day'} current={stepIndex} issueCounts={issueCounts} onSelect={goToStep} /><p className="mt-2 text-xs font-semibold text-slate-700 lg:hidden">Langkah {stepIndex + 1} dari {steps.length} · {stepTitle(current, activeMode ?? 'half_day')}</p></div>

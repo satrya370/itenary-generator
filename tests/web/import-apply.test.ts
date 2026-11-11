@@ -5,7 +5,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { test, type TestContext } from 'node:test';
 import { createApp } from '../../src/server/app.js';
-import { ProviderFailure, type ImportExtractRequest, type ImportExtractor } from '../../src/server/ai/provider.js';
+import { OpenRouterProvider, ProviderFailure, type ImportExtractRequest, type ImportExtractor } from '../../src/server/ai/provider.js';
 import type { WebItineraryContent } from '../../src/contracts/types.js';
 
 const FIXTURES = path.resolve('tests/fixtures/web/import');
@@ -48,6 +48,19 @@ const apply = (app: Awaited<ReturnType<typeof createApp>>, sourceId: string, pay
   app.inject({ method: 'POST', url: `/api/v1/imports/sources/${sourceId}/apply`, headers, payload });
 
 const op = () => randomUUID();
+
+test('the extraction prompt names the exact reply keys, so the model cannot invent its own shape', async () => {
+  const bodies: Array<{ messages: Array<{ role: string; content: string }> }> = [];
+  const fakeFetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    bodies.push(JSON.parse(String(init?.body)));
+    return new Response(JSON.stringify({ choices: [{ message: { content: '{}' } }], usage: {} }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as typeof fetch;
+  const provider = new OpenRouterProvider({ state: 'configured', source: 'environment', key: 'sk-or-test-key' }, fakeFetch);
+  await provider.extract({ mode: 'destination_guide', locale: 'id', segments: ['- Candi Prambanan'], maxTokens: 100 }, 5000);
+  const system = bodies[0].messages[0].content;
+  for (const key of ['places', 'activityDetails', 'summary', 'closingNote', 'policies']) assert.ok(system.includes(`"${key}"`), `prompt names ${key}`);
+  assert.ok(system.includes('Do not use any other key names'));
+});
 
 test('a fully structured document never calls the model; the new draft has the parsed fields and the chosen language', async (t) => {
   const d = double([]);
