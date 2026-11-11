@@ -244,16 +244,16 @@ async function main() {
     assert.equal(await page.$eval('[data-field-path="trip.language"]', element => (element as HTMLSelectElement).querySelector('option[value="zh-Hant"]')), null, 'zh-Hant is not offered');
     await set('trip.language', 'zh-Hans');
     await page.waitForFunction(() => document.querySelector('[data-field-path="trip.language"]')?.getAttribute('value') !== 'zh-Hant');
+    assert.equal(await count(sel('cover.credit.photographer')), 0, 'credit fields appear only after a photo is chosen');
     await page.evaluate(async () => {
       const canvas = document.createElement('canvas'); canvas.width = 16; canvas.height = 12;
       const context = canvas.getContext('2d')!; context.fillStyle = '#147d92'; context.fillRect(0, 0, 16, 12);
       const blob = await new Promise<Blob>(resolve => canvas.toBlob(value => resolve(value!), 'image/png'));
       const transfer = new DataTransfer(); transfer.items.add(new File([blob], 'verify-editor.png', { type: 'image/png' }));
-      const input = document.querySelector<HTMLInputElement>('#asset-upload')!; input.files = transfer.files; input.dispatchEvent(new Event('change', { bubbles: true }));
+      const input = document.querySelector<HTMLInputElement>('input[aria-label="Unggah Foto sampul"]')!; input.files = transfer.files; input.dispatchEvent(new Event('change', { bubbles: true }));
     });
-    await waitStatus('Aset tersimpan');
+    await waitStatus('Foto tersimpan');
     const assetId = (await page.evaluate(async () => await (await fetch('/api/v1/assets')).json())).items[0].id as string;
-    assert.equal(await count(sel('cover.credit.photographer')), 0, 'credit fields appear only after a photo is chosen');
     await set('cover.assetId', assetId);
     await set('cover.credit.photographer', 'Fixture photographer'); await set('cover.credit.source', 'Synthetic guide photo');
     await save();

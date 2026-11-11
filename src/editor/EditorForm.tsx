@@ -45,7 +45,7 @@ export interface EditorProps {
   onWritingChange: (writing: EditorProps['writing']) => void;
   aiAssistExtra: React.ReactNode;
   guides: Array<{ id: string; name: string; phone: string }>;
-  onUploadAsset: (file: File) => void;
+  onUploadAsset: (file: File) => Promise<AssetDto | null>;
 }
 
 export function EditorForm(props: EditorProps & { activeStep?: StepId }) {

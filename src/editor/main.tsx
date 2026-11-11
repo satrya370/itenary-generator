@@ -9,8 +9,9 @@ import { changeMode, hasModeLoss, normalizeBlanks, targetIdFor } from './model.j
 import { fieldMeta, templatePath } from './schema-meta.js';
 import { DraftList } from './sections/DraftList.js';
 import { ModePicker } from './sections/ModePicker.js';
-import { Profile, type ProfileData } from './sections/Profile.js';
 import { ProfileForm, emptyProfile, type AgencyProfile } from './sections/ProfileForm.js';
+
+type ProfileData = { revision: number; profile: AgencyProfile };
 import { Stepper, stepTitle } from './wizard/Stepper.js';
 import { publishIssues, stepsFor, type PublishIssue, type StepId } from './validation.js';
 import './style.css';
@@ -356,7 +357,7 @@ function App() {
     profileGeneration.current++; setProfileDirty(true);
     setProfile(old => old && { ...old, profile: next });
   }
-  async function uploadAsset(file: File) {
+  async function uploadAsset(file: File): Promise<AssetDto | null> {
     setBusy(true);
     try { const uploaded = await api.upload(file); setAssets(old => [uploaded, ...old]); setStatus(`Foto tersimpan · ${uploaded.width}×${uploaded.height}`); return uploaded; }
     catch (caught) { setStatus((caught as Error).message); return null; }
@@ -454,11 +455,6 @@ function App() {
           <h2 className="font-semibold">Draft tersimpan</h2>
           <DraftList records={records} modeCopyBadge={modeBadges} onOpen={open} busy={busy} />
         </section>
-        {profile && <Profile profile={profile} assets={assets} busy={busy} dirty={profileDirty}
-          onChange={changeProfile}
-          onLogo={value => { profileGeneration.current++; setProfileDirty(true); setProfile(old => old && { ...old, profile: { ...old.profile, agencyLogoAssetId: value } }); }}
-          onSave={saveProfile} />}
-        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><h2 className="font-semibold">Pustaka foto</h2><label htmlFor="asset-upload" className="mt-2 block text-sm text-slate-600">JPEG, PNG, WebP · maks. 5 MiB, 16 MP</label><input id="asset-upload" type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={e => upload(e.target.files?.[0])} className="mt-2 block w-full text-sm file:mr-2 file:rounded-md file:border-0 file:bg-teal-50 file:px-3 file:py-2 file:font-semibold file:text-teal-900"/><p className="mt-2 text-xs text-slate-500">{assets.length} foto tersedia.</p></section>
       </aside>
       <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-7">
         {!content || !activeMode ? <div className="grid min-h-80 place-items-center text-center text-slate-500">Pilih atau buat draft untuk mulai.</div> : <>
@@ -467,7 +463,7 @@ function App() {
           {showStepIssues && stepIssues.length > 0 && <section aria-label="Isian wajib" className="mb-5 rounded-lg border border-red-300 bg-red-50 p-4"><h3 className="font-semibold text-red-900">Lengkapi isian berikut</h3><ul className="mt-2 space-y-1 text-sm text-red-800">{stepIssues.map((issue) => <li key={`${issue.key}-${issue.path}`}><button type="button" className="text-left underline underline-offset-2" onClick={() => focusIssue(issue)}>{labelFor(issue.path, activeMode)}: {issue.message}</button></li>)}</ul></section>}
           {conflict && <section aria-label="Konflik revisi" className="mb-5 rounded-lg border border-amber-400 bg-amber-50 p-4"><h3 className="font-semibold text-amber-950">Draft berubah di server</h3><p className="mt-1 text-sm text-amber-900">Server berada di revisi {conflict.latest.revision}; input lokal tetap dipertahankan. Tidak ada overwrite otomatis.</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" className={buttonClass} onClick={copyLocal}>Salin salinan lokal</button><button type="button" className={buttonClass} onClick={reloadLatest}>Muat revisi terbaru</button></div></section>}
           <EditorForm activeStep={current} content={content} mode={activeMode} recordId={recordId} assets={assets} meta={fieldMeta} patch={edit}
-            onModeChange={requestMode} agencyName={profile?.profile.agencyName ?? ''} onFocusProfile={() => document.getElementById('agency-name')?.focus()}
+            onModeChange={requestMode} agencyName={profile?.profile.agencyName ?? ''} onFocusProfile={() => setView('settings')}
             localeInput={localeInput} localeError={localeError} language={language} localeNeedsSupport={localeNeedsSupport} languageProposal={languageProposal}
             onLocaleChange={changeLocale} onDetectLanguage={resolveLanguage} onAcceptLanguage={acceptLanguage} busy={busy} dirty={dirty}
             localeSupportedCheck={localeSupported(language.outputLanguage)} aiAction={aiAction}

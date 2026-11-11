@@ -43,7 +43,7 @@ function ActivityList({ dayId, day, mode, recordId, assets, meta, patch, aiActio
 export function DayCard({ day, mode, recordId, assets, meta, patch, aiAction, showHotel, showTransfer, showDayControls, isFirst, isLast, onUploadAsset, onMove, onRemove }: {
   day: NonNullable<WebItineraryContent['days'][number]>; mode: ItineraryMode; recordId: string; assets: AssetDto[]; meta: MetaFn; patch: Patch; aiAction: AiAction;
   showHotel: boolean; showTransfer: boolean; showDayControls: boolean; isFirst: boolean; isLast: boolean;
-  onUploadAsset: (file: File) => void;
+  onUploadAsset: (file: File) => Promise<AssetDto | null>;
   onMove: (delta: number) => void; onRemove: () => void;
 }) {
   return (

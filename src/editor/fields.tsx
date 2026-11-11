@@ -111,7 +111,7 @@ export function TextList({ id, meta, values, onChange, hideLegend = false }: {
 }
 
 export function AssetSelect({ id, meta, value, assets, onChange, onUpload }: {
-  id: string; meta: FieldMeta; value: string | null; assets: AssetDto[]; onChange: (value: string | null) => void; onUpload?: (file: File) => void;
+  id: string; meta: FieldMeta; value: string | null; assets: AssetDto[]; onChange: (value: string | null) => void; onUpload?: (file: File) => Promise<AssetDto | null>;
 }) {
   const fileInput = useRef<HTMLInputElement>(null);
   return (
@@ -123,7 +123,7 @@ export function AssetSelect({ id, meta, value, assets, onChange, onUpload }: {
       </select>
       {onUpload && <>
         <button type="button" className={`${buttonClass} mt-2`} onClick={() => fileInput.current?.click()}>Unggah foto</button>
-        <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" aria-label={`Unggah ${meta.label}`} onChange={(event) => { const file = event.target.files?.[0]; if (file) onUpload(file); event.target.value = ''; }} />
+        <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" aria-label={`Unggah ${meta.label}`} onChange={(event) => { const file = event.target.files?.[0]; if (file) void onUpload(file).then((uploaded) => { if (uploaded) onChange(uploaded.id); }); event.target.value = ''; }} />
       </>}
     </div>
   );
@@ -151,7 +151,7 @@ export function ThemePicker({ id, meta, value, onChange }: {
 
 
 export function PhotoField({ id, basePath, mode, meta, photo, assets, emptyText, onAsset, onCredit, onUpload }: {
-  id: string; basePath: string; mode: ItineraryMode; meta: MetaFn; photo: Photo | null; assets: AssetDto[]; emptyText: string; onUpload?: (file: File) => void;
+  id: string; basePath: string; mode: ItineraryMode; meta: MetaFn; photo: Photo | null; assets: AssetDto[]; emptyText: string; onUpload?: (file: File) => Promise<AssetDto | null>;
   onAsset: (value: string | null) => void; onCredit: (key: 'photographer' | 'url' | 'source', value: string | null) => void;
 }) {
   return (

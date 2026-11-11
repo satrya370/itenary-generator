@@ -52,3 +52,16 @@ Not opened: `cp034-setup-1280.png` (generated; same component at a wider width, 
 
 - The Setup step 3 "Guide" list does not validate a duplicate guide name (only duplicate ids are rejected server-side, per plan). Decide whether duplicate names should warn.
 - `verify:web-readiness` still not run (Docker not running); CP034 changes to Setup affect its runtime probe, which does not complete Setup yet.
+
+## Completion pass (2026-11-11): plan items left open
+
+| Plan item | Done in this pass |
+|---|---|
+| Step 4 / Step 6: remove the sidebar profile panel and the sidebar upload panel | Removed from the sidebar. `sections/Profile.tsx` deleted (replaced by `ProfileForm`). The draft's "Ubah profil" link now opens Pengaturan. |
+| Step 6: a new photo is selected in its field | Upload now returns the new asset and the field selects it (`AssetSelect` onChange); before this it only added the asset to the list. |
+| Step 7: browser scripts | `verify-editor` uploads through the cover field's "Unggah foto" input (the sidebar input is gone); its credit-field check runs before the upload, since the upload now selects the photo. |
+| Gate screenshots | `cp034-setup-390`, `cp034-setup-1280`, `cp034-settings-390`, `cp034-settings-1280` regenerated and opened. Setup 1280: step 1 of 3, centred single column. Settings 1280: values from the profile in every field. The sticky action bar appears mid-page only in full-page captures. |
+
+Gate (final): `test:web-editor` 31/31; `verify:web-editor`, `-preview`, `-publication`, `-ai-ui`, `-e2e`, `-publish-retry`, `-render` all rc 0.
+
+Not verified in a browser: the "Ubah profil" link itself (a one-line change; no script clicks it).
