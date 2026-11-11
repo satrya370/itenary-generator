@@ -5,6 +5,7 @@ import type { openStore } from '../store.js';
 import type { ItineraryMode } from '../../contracts/types.js';
 import { ImportError, MAX_PDF_BYTES, importError, intakePdf, intakeText, readSourceText, storeSourceText } from './intake.js';
 import { parseDocument } from './parse/extract.js';
+import type { ImportService } from './service.js';
 
 const MODES = new Set<ItineraryMode>(['half_day', 'full_day', 'multi_day', 'destination_guide']);
 const excerptOf = (text: string) => [...text].slice(0, 400).join('');
@@ -14,7 +15,7 @@ interface SourceRow { id: string; workspace_id: string; kind: string; sha256: st
 function errorBody(code: string, message: string, requestId: string) { return { error: { code, message, requestId } }; }
 
 /** Registers the CP030 intake and dry-run parse routes. Nothing here writes a draft. */
-export function registerImportRoutes(app: FastifyInstance, { store, dataDir }: { store: ReturnType<typeof openStore>; dataDir: string }) {
+export function registerImportRoutes(app: FastifyInstance, { store, dataDir, service }: { store: ReturnType<typeof openStore>; dataDir: string; service: ImportService }) {
   const sourceRow = (id: string) => store.db.prepare('SELECT * FROM import_sources WHERE id=? AND workspace_id=?').get(id, store.workspaceId) as SourceRow | undefined;
 
   app.post<{ Body: unknown }>('/api/v1/imports/sources', async (request, reply) => {
@@ -68,5 +69,24 @@ export function registerImportRoutes(app: FastifyInstance, { store, dataDir }: {
     const text = await readSourceText(dataDir, row.id);
     const parsed = parseDocument(text, body.mode as ItineraryMode);
     return { sourceId: row.id, mode: parsed.mode, fields: parsed.fields, unconsumed: parsed.unconsumed, notes: parsed.notes, totalLines: parsed.totalLines, consumedLines: parsed.consumedLines };
+  });
+
+  app.post<{ Params: { id: string }; Body: unknown }>('/api/v1/imports/sources/:id/apply', async (request, reply) => {
+    const result = await service.apply(request.body, request.params.id);
+    return reply.code(result.status).send(result.body);
+  });
+
+  app.post<{ Params: { id: string }; Body: unknown }>('/api/v1/imports/operations/:id/undo', async (request, reply) => {
+    const body = request.body && typeof request.body === 'object' ? request.body as Record<string, unknown> : {};
+    if (Object.keys(body).some((key) => key !== 'expectedRevision') || !Number.isInteger(body.expectedRevision)) return reply.code(400).send(errorBody('INVALID_REQUEST', 'Kirim expectedRevision.', request.id));
+    const result = service.undo(request.params.id, body.expectedRevision);
+    return reply.code(result.status).send(result.body);
+  });
+
+  app.get<{ Querystring: { itineraryId?: string } }>('/api/v1/imports/operations', async (request, reply) => {
+    const itineraryId = request.query.itineraryId;
+    if (!itineraryId) return reply.code(400).send(errorBody('INVALID_REQUEST', 'Sertakan itineraryId.', request.id));
+    const result = service.latest(itineraryId);
+    return reply.code(result.status).send(result.body);
   });
 }

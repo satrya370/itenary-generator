@@ -16,6 +16,8 @@ import { OpenRouterProvider, type AiProvider } from './ai/provider.js';
 import { AiService, registerAiRoutes, type AiServiceLimits } from './ai/service.js';
 import { createPlacesProvider, defaultDailyLimit, type PlacesProvider } from './places/provider.js';
 import { registerImportRoutes } from './import/routes.js';
+import { ImportService } from './import/service.js';
+import type { ImportExtractor } from './ai/provider.js';
 
 export interface AppOptions {
   dataDir?: string; publicOrigin?: string; shareOrigin?: string; allowedOrigins?: string[]; renderStylesheetPath?: string;
@@ -24,6 +26,8 @@ export interface AppOptions {
   /** Test-only crash seam after artifacts are promoted but before the publication transaction. */
   afterPublicationPromote?: () => Promise<void>;
   aiProvider?: AiProvider; liveAiTest?: boolean; aiLimits?: AiServiceLimits;
+  /** Test-only import extraction seam; production uses the OpenRouter provider when a credential is configured. */
+  importExtractor?: ImportExtractor;
   /** Test-only Places seam; production uses PLACES_PROVIDER (Photon by default). */
   placesProvider?: PlacesProvider; placesDailyLimit?: number;
   /** Test-only renderer seam; production always uses the saved-draft preview renderer. */
@@ -84,6 +88,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
   const allowedOrigins = new Set(options.allowedOrigins || [origin, 'http://127.0.0.1:5173']);
   const store = openStore({ dataDir });
   let ai: AiService;
+  let importExtractor: ImportExtractor | null = null;
   try {
     await cleanUploadOrphans(dataDir, store.storageKeys());
     await recoverPublication(store, dataDir);
@@ -95,6 +100,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
       contextBytes: envLimit('OPENROUTER_CONTEXT_BYTES', 16 * 1024, 1024, 16 * 1024),
       timeoutMs: envLimit('OPENROUTER_TIMEOUT_MS', 45_000, 5000, 45_000)
     };
+    importExtractor = options.importExtractor ?? (typeof (provider as unknown as Partial<ImportExtractor>).extract === 'function' ? (provider as unknown as ImportExtractor) : null);
     ai = new AiService(store, provider, options.liveAiTest ?? process.env.OPENROUTER_LIVE_TEST === '1', aiLimits);
   } catch (cause) {
     store.close();
@@ -309,7 +315,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
       return reply.code(502).send(error('PLACES_FAILED', 'Autocomplete tempat gagal; ketik manual.', undefined, request.id));
     }
   });
-  registerImportRoutes(app, { store, dataDir });
+  registerImportRoutes(app, { store, dataDir, service: new ImportService({ store, dataDir, extractor: importExtractor }) });
   app.get('/api/health', async () => ({ status: 'ok' }));
   registerAiRoutes(app, ai);
   return app;

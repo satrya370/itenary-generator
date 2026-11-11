@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import type { Activity, Day, ItineraryMode, WebItineraryContent } from '../contracts/types.js';
 
-function blankActivity(): Activity {
+export function blankActivity(): Activity {
   return { id: randomUUID(), time: null, durationMinutes: null, kind: 'sightseeing', title: '', place: null, description: '', tip: null };
 }
 
-function blankDay(mode: ItineraryMode, dayNumber: number): Day {
+export function blankDay(mode: ItineraryMode, dayNumber: number): Day {
   return {
     id: randomUUID(), dayNumber, title: '', location: null, photo: null, activities: [blankActivity()], hotel: null,
     meals: mode === 'half_day' ? null : { breakfast: false, lunch: false, dinner: false }, transferNote: null

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Import completion (CP031): values the deterministic parser did not fill",
+  "description": "Every leaf is { value, quote }. value must be contained in quote, and quote must be contained in the unconsumed source segments. Anything else is dropped by the server guard.",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "textValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "quote"],
+      "properties": {
+        "value": { "type": "string", "minLength": 1, "maxLength": 6000 },
+        "quote": { "type": "string", "minLength": 1, "maxLength": 2000 }
+      }
+    },
+    "nullableText": { "anyOf": [{ "$ref": "#/$defs/textValue" }, { "type": "null" }] }
+  },
+  "properties": {
+    "summary": { "$ref": "#/$defs/nullableText" },
+    "closingNote": { "$ref": "#/$defs/nullableText" },
+    "policies": { "$ref": "#/$defs/nullableText" },
+    "places": {
+      "type": "array",
+      "maxItems": 60,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": { "$ref": "#/$defs/textValue" },
+          "area": { "$ref": "#/$defs/nullableText" },
+          "description": { "$ref": "#/$defs/nullableText" }
+        }
+      }
+    },
+    "activityDetails": {
+      "type": "array",
+      "maxItems": 120,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title"],
+        "properties": {
+          "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "place": { "$ref": "#/$defs/nullableText" },
+          "description": { "$ref": "#/$defs/nullableText" },
+          "tip": { "$ref": "#/$defs/nullableText" }
+        }
+      }
+    }
+  }
+}

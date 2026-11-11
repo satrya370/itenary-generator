@@ -21,7 +21,7 @@
     "test:web-preview": "tsx --test tests/web/preview.test.ts",
     "test:web-publication": "tsx --test tests/web/publication.test.ts",
     "test:web-editor": "tsx --test tests/web/editor.test.ts",
-    "test:web-import": "tsx --test tests/web/import-intake.test.ts tests/web/import-parser.test.ts",
+    "test:web-import": "tsx --test tests/web/import-intake.test.ts tests/web/import-parser.test.ts tests/web/import-apply.test.ts",
     "test:web-places": "tsx --test tests/web/places.test.ts tests/web/places-sources.test.ts",
     "test:web-ai": "tsx --test tests/web/ai*.test.ts",
     "verify:web-places": "tsx scripts/web/verify-places.ts",
