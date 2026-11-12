@@ -116,7 +116,7 @@ test('a source whose text file was removed answers 404 with a clear message, not
   await rm(path.join(f.dataDir, 'imports', `${created.sourceId}.txt`));
   const response = await f.app.inject({ url: `/api/v1/imports/sources/${created.sourceId}` });
   assert.equal(response.statusCode, 404);
-  assert.equal(response.json().error.code, 'NOT_FOUND');
+  assert.equal(response.json().error.code, 'IMPORT_SOURCE_TEXT_REMOVED');
 });
 
 test('sources survive a server restart and are scoped to the workspace', async (t) => {

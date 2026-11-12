@@ -3,7 +3,7 @@ import { rm } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import type { openStore } from '../store.js';
 import type { ItineraryMode } from '../../contracts/types.js';
-import { ImportError, MAX_PDF_BYTES, importError, intakePdf, intakeText, readSourceText, storeSourceText } from './intake.js';
+import { ImportError, MAX_PDF_BYTES, SOURCE_TEXT_REMOVED_CODE, SOURCE_TEXT_REMOVED_MESSAGE, importError, intakePdf, intakeText, readSourceTextOrNull, storeSourceText } from './intake.js';
 import { parseDocument } from './parse/extract.js';
 import type { ImportService } from './service.js';
 
@@ -54,10 +54,8 @@ export function registerImportRoutes(app: FastifyInstance, { store, dataDir, ser
   app.get<{ Params: { id: string } }>('/api/v1/imports/sources/:id', async (request, reply) => {
     const row = sourceRow(request.params.id);
     if (!row) return reply.code(404).send(errorBody('NOT_FOUND', 'Sumber import tidak ditemukan.', request.id));
-    let text: string;
-    try { text = await readSourceText(dataDir, row.id); } catch {
-      return reply.code(404).send(errorBody('NOT_FOUND', 'Teks sumber tidak tersedia; upload ulang atau tempel teksnya.', request.id));
-    }
+    const text = await readSourceTextOrNull(dataDir, row.id);
+    if (text === null) return reply.code(404).send(errorBody(SOURCE_TEXT_REMOVED_CODE, SOURCE_TEXT_REMOVED_MESSAGE, request.id));
     return { sourceId: row.id, kind: row.kind, sha256: row.sha256, byteSize: row.byte_size, pageCount: row.page_count, charCount: row.char_count, languageProposal: JSON.parse(row.language_json), createdAt: row.created_at, text };
   });
 
@@ -66,7 +64,8 @@ export function registerImportRoutes(app: FastifyInstance, { store, dataDir, ser
     if (Object.keys(body).some((key) => key !== 'mode') || !MODES.has(body.mode as ItineraryMode)) return reply.code(400).send(errorBody('INVALID_REQUEST', 'Pilih mode itinerary terlebih dahulu.', request.id));
     const row = sourceRow(request.params.id);
     if (!row) return reply.code(404).send(errorBody('NOT_FOUND', 'Sumber import tidak ditemukan.', request.id));
-    const text = await readSourceText(dataDir, row.id);
+    const text = await readSourceTextOrNull(dataDir, row.id);
+    if (text === null) return reply.code(404).send(errorBody(SOURCE_TEXT_REMOVED_CODE, SOURCE_TEXT_REMOVED_MESSAGE, request.id));
     const parsed = parseDocument(text, body.mode as ItineraryMode);
     return { sourceId: row.id, mode: parsed.mode, fields: parsed.fields, unconsumed: parsed.unconsumed, notes: parsed.notes, totalLines: parsed.totalLines, consumedLines: parsed.consumedLines };
   });

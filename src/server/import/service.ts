@@ -2,7 +2,7 @@ import type { openStore } from '../store.js';
 import type { ImportExtractor } from '../ai/provider.js';
 import { validateDraft } from '../../contracts/validator.js';
 import type { ItineraryMode, WebItineraryContent } from '../../contracts/types.js';
-import { readSourceText } from './intake.js';
+import { SOURCE_TEXT_REMOVED_CODE, SOURCE_TEXT_REMOVED_MESSAGE, readSourceTextOrNull } from './intake.js';
 import { parseDocument } from './parse/extract.js';
 import { filterCompletion, requestCompletion, segmentsOf, type Completion, type Dropped } from './complete.js';
 import { fitToLimits, missingAfterImport, mergeContent, newDraftBase } from './merge.js';
@@ -95,7 +95,12 @@ export class ImportService {
   private async run(args: { input: Record<string, unknown>; target: 'new' | 'overwrite'; mode: ItineraryMode; saved: ReturnType<Store['getItinerary']>; outputLanguage: string | null; sourceLanguageJson: string; operationId: string; sourceId: string }): Promise<ServiceResult> {
     const { store, dataDir, extractor } = this.deps;
     const { target, mode, saved, outputLanguage, operationId, sourceId } = args;
-    const text = await readSourceText(dataDir, sourceId);
+    const text = await readSourceTextOrNull(dataDir, sourceId);
+    if (text === null) {
+      // The run was already recorded as "running"; close it so the operationId is not stuck and a new one can be used.
+      store.db.prepare("UPDATE import_operations SET status='failed', error_code=?, updated_at=? WHERE operation_id=?").run(SOURCE_TEXT_REMOVED_CODE, new Date().toISOString(), operationId);
+      return error(404, SOURCE_TEXT_REMOVED_CODE, SOURCE_TEXT_REMOVED_MESSAGE);
+    }
     const parse = parseDocument(text, mode);
     const { sent: segments, plain: plainSegments } = segmentsOf(parse);
     const notes = [...parse.notes];

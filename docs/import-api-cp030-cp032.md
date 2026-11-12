@@ -28,9 +28,16 @@ The model receives only the unread lines of the document, as data, and returns J
 
 ## Editor (CP032)
 
-- Start screen: "Buat dari teks/PDF" opens the import screen for a new draft.
-- Open draft: "Import teks/PDF" (disabled while the draft has unsaved changes) opens it as an overwrite. Overwrite asks for confirmation listing the sections it replaces.
+- Start screen and sidebar: "Buat itinerary baru" opens the create flow (CP037): step 1 picks the type, step 2 picks the method (tempel teks, upload PDF, isi manual). Only "Mulai isi" or a finished import creates a draft; choosing a type or method creates nothing.
+- Open draft: "Isi ulang dari teks/PDF" (disabled while the draft has unsaved changes or the create flow is open) opens it as an overwrite. Overwrite asks for confirmation listing the sections it replaces.
 - After an import the report panel shows what was filled, the required fields still empty (click to jump), skipped AI values, notes, usage, the source text, and "Batalkan import" while undo is available.
+- Typed text and reading results survive moving between steps and methods. Navigation is locked while a read, preview or apply request is running.
+
+## Source text removal (CP037, A10)
+
+- `IMPORT_SOURCE_TEXT_REMOVED` (404) is returned by `GET /imports/sources/:id`, `POST .../parse` and `POST .../apply` when the stored text is gone. Apply closes the run as failed, so a new operationId works.
+- Text older than `IMPORT_RETENTION_DAYS` (default 30; 0 keeps everything) is removed at server start. Source rows and the import ledger stay, so the report of a finished import still shows.
+- `GET /api/v1/itinerary-engine/context` reports `capabilities.import`: `aiConfigured` (from the import extractor, not the writing AI), `maxTextChars`, `maxPdfBytes`, `maxPdfPages`, `retentionDays`.
 
 ## Live check (opt-in)
 

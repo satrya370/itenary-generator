@@ -53,18 +53,21 @@ export function EditorForm(props: EditorProps & { activeStep?: StepId }) {
   const show = (step: StepId) => (activeStep === undefined ? undefined : activeStep !== step);
   return (
     <div className="space-y-7">
-      <div data-step="info" hidden={show('info')}><TripInfo {...props} /></div>
-      {mode !== 'destination_guide' && <div data-step="time" hidden={show('time')}><TimeAndMeeting {...props} /></div>}
-      <div data-step="guide" hidden={show('guide')}><TripGuide {...props} /><Cover {...props} /></div>
-      <div data-step="summary" hidden={show('summary')}><Summary {...props} /></div>
-      <div data-step="plan" hidden={show('plan')}>
+      <div data-step="info" hidden={show('info')} className="space-y-7"><TripInfo {...props} />{mode !== 'destination_guide' && <TimeAndMeeting {...props} />}</div>
+      <div data-step="plan" hidden={show('plan')} className="space-y-7">
+        <Summary {...props} />
+        <AiAssist {...props} />
         {(mode === 'half_day' || mode === 'full_day') && <DaySchedule {...props} />}
         {mode === 'multi_day' && <MultiDay {...props} />}
         {mode === 'destination_guide' && <Places {...props} />}
       </div>
-      <div data-step="practical" hidden={show('practical')}><Practical {...props} /></div>
-      <div data-step="terms" hidden={show('terms')}><Closing {...props} /></div>
-      <div data-step="ai" hidden={show('ai')}><AiAssist {...props} /></div>
+      <div data-step="details" hidden={show('details')} className="space-y-7">
+        <TripGuide {...props} /><Cover {...props} /><Practical {...props} />
+        <details className="rounded-lg border border-slate-200 p-4">
+          <summary className="min-h-[44px] cursor-pointer font-semibold focus-visible:outline-2 focus-visible:outline-teal-700">Ketentuan & penutup {props.content.policies || props.content.closingNote || props.content.disclaimer ? '· sudah diisi' : ''}</summary>
+          <Closing {...props} />
+        </details>
+      </div>
     </div>
   );
 }

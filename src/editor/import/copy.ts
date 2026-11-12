@@ -1,13 +1,16 @@
 /** Copy for the import screens (CP032). Plain Indonesian; the guide never sees developer wording. */
 export const importCopy = {
   entryNew: 'Buat dari teks/PDF',
-  entryOpen: 'Import teks/PDF',
+  entryOpen: 'Isi ulang dari teks/PDF',
   entryOpenDirty: 'Simpan draft dulu sebelum import.',
   title: 'Import itinerary',
   back: 'Kembali ke draf',
   tabPaste: 'Tempel teks',
   tabPdf: 'Upload PDF',
-  pasteHint: 'Tempel isi itinerary dari chat, catatan, atau dokumen. Maksimal 120.000 karakter.',
+  pastePlaceholder: 'Contoh:\n08:00 Jemput di hotel\n09:30 Kunjungi Tegallalang\n12:00 Makan siang',
+  charCount: (used: number, max: number) => `${used.toLocaleString('id-ID')} dari ${max.toLocaleString('id-ID')} karakter`,
+  textTooLong: (max: number) => `Teks terlalu panjang. Maksimal ${max.toLocaleString('id-ID')} karakter; hapus bagian yang tidak perlu.`,
+  pasteHint: 'Tempel isi itinerary dari chat, catatan, atau dokumen.',
   pdfHint: 'PDF yang teksnya bisa diblok. PDF hasil scan tidak bisa dibaca; salin teksnya lalu tempel.',
   readText: 'Baca teks',
   readPdf: 'Baca PDF',

@@ -10,13 +10,13 @@ import type { ItineraryMode } from '../../src/contracts/types.js';
 import { modeCopy } from '../../src/editor/labels.js';
 import { completeSetup } from './complete-setup.js';
 
-const SCHEDULED_BASE = ['trip-info', 'time-meeting', 'trip-guide', 'cover', 'summary'];
-const TAIL = ['practical', 'closing', 'ai-assist'];
+const SCHEDULED_BASE = ['trip-info', 'time-meeting', 'summary', 'ai-assist'];
+const TAIL = ['trip-guide', 'cover', 'practical', 'closing'];
 const SECTIONS: Record<ItineraryMode, string[]> = {
   half_day: [...SCHEDULED_BASE, 'schedule', ...TAIL],
   full_day: [...SCHEDULED_BASE, 'schedule', ...TAIL],
   multi_day: [...SCHEDULED_BASE, 'days', ...TAIL],
-  destination_guide: ['trip-info', 'trip-guide', 'cover', 'summary', 'places', ...TAIL]
+  destination_guide: ['trip-info', 'summary', 'ai-assist', 'places', ...TAIL]
 };
 
 async function availablePort() {
@@ -66,7 +66,7 @@ async function main() {
   const sections = () => page.evaluate(() => [...document.querySelectorAll<HTMLElement>('[data-editor-section]')].map(element => element.dataset.editorSection));
   async function createMode(mode: ItineraryMode) {
     const before = await currentId();
-    await page.click(`[data-mode-card="${mode}"]`);
+    await page.evaluate(() => [...document.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.trim() === 'Buat itinerary baru' && !b.disabled)?.click()); await page.waitForSelector('[data-mode-card]:not([disabled])'); await page.click(`[data-mode-card="${mode}"]`); await page.waitForSelector('[data-method="manual"]'); await page.click('[data-method="manual"]'); await page.evaluate(() => [...document.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.trim() === 'Mulai isi')?.click());
     await page.waitForFunction(previous => {
       const id = document.querySelector<HTMLElement>('[data-field-path="trip.title"]')?.id.replace(/-trip-title$/, '');
       return Boolean(id) && id !== previous && document.querySelector('[role="status"]')?.textContent?.includes('Draft baru tersimpan');

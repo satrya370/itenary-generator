@@ -8,7 +8,9 @@ import { modeCopy, statusCopy } from './labels.js';
 import { changeMode, hasModeLoss, normalizeBlanks, targetIdFor } from './model.js';
 import { fieldMeta, templatePath } from './schema-meta.js';
 import { DraftList } from './sections/DraftList.js';
-import { ModePicker } from './sections/ModePicker.js';
+import { CreateFlow } from './create/CreateFlow.js';
+import { createCopy } from './create/copy.js';
+import { DEFAULT_IMPORT_LIMITS, type ImportLimits } from './import/limits.js';
 import { ImportScreen } from './import/ImportScreen.js';
 import { ImportReport } from './import/ImportReport.js';
 import { importCopy } from './import/copy.js';
@@ -24,7 +26,6 @@ import './style.css';
 type Diagnostic = { code: string; path: string; message: string; targetId?: string };
 type DiagnosticFields = Diagnostic[] & { errors?: Diagnostic[]; warnings?: Diagnostic[] };
 interface ApiFailure extends Error { status?: number; body?: { code?: string; message?: string; fields?: DiagnosticFields } }
-const modeBadges = Object.fromEntries(Object.entries(modeCopy).map(([key, copy]) => [key, copy.badge]));
 
 function isPendingAiResponse(result: AiGenerationResponseDto): result is AiPendingDto { return 'status' in result && result.status === 'running'; }
 
@@ -43,6 +44,14 @@ function App() {
   const [view, setView] = useState<'editor' | 'settings' | 'setup'>('editor');
   const [setupStep, setSetupStep] = useState(0);
   const [records, setRecords] = useState<Array<{ id: string; revision: number; mode: string; title: string; updatedAt: string }>>([]);
+  const [visibleRecords, setVisibleRecords] = useState(5);
+  const [recordsCursor, setRecordsCursor] = useState<string | null>(null);
+  const [recordsLoading, setRecordsLoading] = useState(true);
+  const [recordsError, setRecordsError] = useState(false);
+  const [recordsRetryMore, setRecordsRetryMore] = useState(false);
+  const recordsRequest = useRef(0);
+  const recordsLoadingRef = useRef(false);
+  const visibleRecordsRef = useRef(5);
   const [assets, setAssets] = useState<AssetDto[]>([]);
   const [record, setRecord] = useState<RecordDto | null>(null);
   const [content, setContent] = useState<WebItineraryContent | null>(null);
@@ -51,9 +60,11 @@ function App() {
   const [localeError, setLocaleError] = useState('');
   const [writing, setWriting] = useState<RecordDto['writingContext']>({ brief: '', notes: [] });
   const [dirty, setDirty] = useState(false);
+  const [saveProblem, setSaveProblem] = useState<'failed' | 'invalid' | 'conflict' | null>(null);
+  const [pendingSavedAction, setPendingSavedAction] = useState<{ kind: 'preview' | 'publish' | 'import' | 'create' } | { kind: 'open'; id: string } | { kind: 'generate'; task: 'overview' | 'description'; target?: { kind: 'activity' | 'place'; id: string } } | null>(null);
   const [profileDirty, setProfileDirty] = useState(false);
   const [status, setStatus] = useState('Memuat engine…');
-  const [capabilities, setCapabilities] = useState<{ ai?: { credentialState?: string } }>({ ai: { credentialState: 'missing' } });
+  const [capabilities, setCapabilities] = useState<{ ai?: { credentialState?: string }; import?: ImportLimits }>({ ai: { credentialState: 'missing' } });
   const [aiPreflight, setAiPreflight] = useState<AiPreflightDto | null>(null);
   const [busy, setBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState<string | null>(null);
@@ -63,6 +74,9 @@ function App() {
   const [conflict, setConflict] = useState<{ latest: RecordDto; local: WebItineraryContent; language: LanguageContext; writing: RecordDto['writingContext'] } | null>(null);
   const [sectionErrors, setSectionErrors] = useState<Diagnostic[]>([]);
   const [preview, setPreview] = useState<PreviewDto | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const previewDialog = useRef<HTMLDivElement>(null);
+  const previewTrigger = useRef<HTMLButtonElement>(null);
   const [previewDiagnostics, setPreviewDiagnostics] = useState<{ errors: PreviewDto['errors']; warnings: PreviewDto['warnings'] } | null>(null);
   const [previewViewport, setPreviewViewport] = useState<'phone' | 'desktop'>('phone');
   const [stepIndex, setStepIndex] = useState(0);
@@ -72,8 +86,12 @@ function App() {
   const [publication, setPublication] = useState<PublicationDto | null>(null);
   const [versions, setVersions] = useState<PublishedVersionDto[]>([]);
   const [importing, setImporting] = useState<null | 'new' | 'overwrite'>(null);
+  const [creating, setCreating] = useState(false);
   const [importOperation, setImportOperation] = useState<ImportOperationDto | null>(null);
   const draftRef = useRef<WebItineraryContent | null>(null);
+  const saveInFlight = useRef(false);
+  const latestLanguage = useRef(language); latestLanguage.current = language;
+  const latestWriting = useRef(writing); latestWriting.current = writing;
   const editGeneration = useRef(0);
   const languageProposalGeneration = useRef<number | null>(null);
   const profileGeneration = useRef(0);
@@ -81,12 +99,48 @@ function App() {
   const pendingPublishIntent = useRef<{ itineraryId: string; expectedRevision: number; operationId: string } | null>(null);
   const hasUnsaved = dirty || profileDirty;
 
+  async function refreshRecords() {
+    const request = ++recordsRequest.current;
+    setRecordsLoading(true); setRecordsError(false); setRecordsRetryMore(false);
+    try {
+      let cursor: string | null = null;
+      const items: typeof records = [];
+      do {
+        const page = await api.list(cursor ?? undefined);
+        const ids = new Set(items.map(item => item.id));
+        items.push(...page.items.filter(item => !ids.has(item.id)));
+        cursor = page.nextCursor;
+      } while (cursor && items.length < visibleRecordsRef.current);
+      if (request === recordsRequest.current) { setRecords(items); setRecordsCursor(cursor); }
+    } catch { if (request === recordsRequest.current) setRecordsError(true); }
+    finally { if (request === recordsRequest.current) setRecordsLoading(false); }
+  }
+  async function loadMoreRecords() {
+    if (recordsLoadingRef.current) return;
+    const nextVisible = visibleRecordsRef.current + 5;
+    if (records.length >= nextVisible || !recordsCursor) { visibleRecordsRef.current = nextVisible; setVisibleRecords(nextVisible); return; }
+    recordsLoadingRef.current = true;
+    const request = ++recordsRequest.current;
+    setRecordsLoading(true); setRecordsError(false);
+    try {
+      let cursor: string | null = recordsCursor;
+      const items = [...records];
+      while (cursor && items.length < nextVisible) {
+        const page = await api.list(cursor);
+        const ids = new Set(items.map(item => item.id));
+        items.push(...page.items.filter(item => !ids.has(item.id)));
+        cursor = page.nextCursor;
+      }
+      if (request === recordsRequest.current) { setRecords(items); setRecordsCursor(cursor); visibleRecordsRef.current = nextVisible; setVisibleRecords(nextVisible); }
+    } catch { if (request === recordsRequest.current) { setRecordsError(true); setRecordsRetryMore(true); } }
+    finally { recordsLoadingRef.current = false; if (request === recordsRequest.current) setRecordsLoading(false); }
+  }
   async function refresh() {
-    const [context, nextProfile, rows, nextAssets] = await Promise.all([api.context(), api.profile(), api.list(), api.assets()]);
+    const [context, nextProfile, , nextAssets] = await Promise.all([api.context(), api.profile(), refreshRecords(), api.assets()]);
     setCapabilities(context.capabilities);
     if (profileGeneration.current === profileSavedGeneration.current) setProfile(nextProfile);
     if (nextProfile?.profile && nextProfile.profile.setupCompleted !== true) setView('setup');
-    setRecords(rows.items); setAssets(nextAssets.items);
+    setAssets(nextAssets.items);
   }
   useEffect(() => { refresh().then(() => setStatus('Engine tersambung')).catch(() => setStatus('Engine belum tersambung. Jalankan server lokal lalu muat ulang.')); }, []);
   useEffect(() => {
@@ -101,8 +155,25 @@ function App() {
     window.addEventListener('keydown', escape);
     return () => window.removeEventListener('keydown', escape);
   }, [pendingMode]);
+  useEffect(() => {
+    if (!previewOpen) return;
+    const dialog = previewDialog.current;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    dialog?.querySelector<HTMLButtonElement>('button')?.focus();
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') { event.preventDefault(); setPreviewOpen(false); return; }
+      if (event.key !== 'Tab' || !dialog) return;
+      const items = [...dialog.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], iframe, [tabindex]:not([tabindex="-1"])')];
+      if (!items.length) return;
+      if (event.shiftKey && document.activeElement === items[0]) { event.preventDefault(); items.at(-1)?.focus(); }
+      else if (!event.shiftKey && document.activeElement === items.at(-1)) { event.preventDefault(); items[0].focus(); }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => { document.body.style.overflow = previousOverflow; window.removeEventListener('keydown', onKeyDown); requestAnimationFrame(() => previewTrigger.current?.focus()); };
+  }, [previewOpen]);
 
-  function markDirty() { editGeneration.current++; languageProposalGeneration.current = null; setLanguageProposal(null); setDirty(true); setSectionErrors([]); setPreview(null); setPreviewDiagnostics(null); }
+  function markDirty() { editGeneration.current++; languageProposalGeneration.current = null; setLanguageProposal(null); setDirty(true); setSaveProblem(current => current === 'conflict' ? current : null); setSectionErrors([]); setPreview(null); setPreviewDiagnostics(null); }
   function edit(mutator: (next: WebItineraryContent) => void) {
     const current = draftRef.current;
     if (!current) return;
@@ -120,10 +191,19 @@ function App() {
     languageProposalGeneration.current = null;
     draftRef.current = loaded.draftContent;
     setRecord(loaded); setContent(loaded.draftContent); setLanguage(loaded.languageContext); setLocaleInput(loaded.languageContext.outputLanguage || 'auto');
-    setLocaleError(''); setWriting(loaded.writingContext); setDirty(false); setSectionErrors([]); setConflict(null); setProposals({}); setLanguageProposal(null); setPreview(null); setPreviewDiagnostics(null);
+    setLocaleError(''); setWriting(loaded.writingContext); setDirty(false); setSaveProblem(null); setPendingSavedAction(null); setSectionErrors([]); setConflict(null); setProposals({}); setLanguageProposal(null); setPreview(null); setPreviewOpen(false); setPreviewDiagnostics(null);
   }
   function canDiscard() { return !dirty || confirm(`Draft memiliki perubahan belum disimpan. Buang draft lokal dan lanjutkan?${profileDirty ? ' Perubahan profil akan tetap tersimpan di formulir.' : ''}`); }
+  function startCreate() {
+    if (dirty && !saveProblem && !localeError) { setPendingSavedAction({ kind: 'create' }); setStatus('Menunggu perubahan tersimpan sebelum membuat itinerary…'); }
+    else if (canDiscard()) setCreating(true);
+  }
+  function startImport() {
+    if (dirty && !saveProblem && !localeError) { setPendingSavedAction({ kind: 'import' }); setStatus('Menunggu perubahan tersimpan sebelum membuka import…'); }
+    else if (!dirty) setImporting('overwrite');
+  }
   async function open(id: string) {
+    if (dirty && !saveProblem && !localeError) { setPendingSavedAction({ kind: 'open', id }); setStatus('Menunggu perubahan tersimpan sebelum membuka draft…'); return; }
     if (!canDiscard()) return;
     setBusy(true); try { const loaded = await api.get(id); installRecord(loaded); const [published, history] = await Promise.all([api.publication(id), api.versions(id)]); setPublication(published); setVersions(history.items); setStatus(`Draft dibuka · revisi ${loaded.revision}`); api.latestImport(id).then(({ operation }) => setImportOperation(operation && operation.status === 'completed' && !importReportClosed(operation.operationId) ? operation : null)).catch(() => {}); } catch (e) { setStatus((e as Error).message); } finally { setBusy(false); }
   }
@@ -210,7 +290,9 @@ function App() {
   }
   async function generate(task: 'overview' | 'description', target?: { kind: 'activity' | 'place'; id: string }) {
     if (!record || !content) return;
+    if (dirty && !saveProblem && !localeError) { setPendingSavedAction({ kind: 'generate', task, target }); setStatus('Menunggu perubahan tersimpan sebelum meminta AI…'); return; }
     if (dirty || localeError) { setStatus('Simpan semua perubahan itinerary dan bahasa sebelum Generate.'); return; }
+    if (target && !findTarget(content, target)) { setStatus('Aktivitas atau tempat sudah berubah; pilih kembali.'); return; }
     if (!language.outputLanguage || language.source === 'unresolved') { setStatus('Pilih atau deteksi bahasa konten sebelum Generate.'); return; }
     if (capabilities.ai?.credentialState !== 'configured') { setStatus('OpenRouter belum terkonfigurasi pada server; Anda tetap dapat menulis manual.'); return; }
     const key = task === 'overview' ? 'overview.summary' : `${target!.kind}:${target!.id}`;
@@ -243,8 +325,8 @@ function App() {
   }
   function aiAction(key: string, labelText: string, task: 'overview' | 'description', target?: { kind: 'activity' | 'place'; id: string }, apply?: (text: string) => void) {
     const proposal = proposals[key];
-    const ready = capabilities.ai?.credentialState === 'configured' && Boolean(language.outputLanguage) && language.source !== 'unresolved' && !dirty && !localeError;
-    return <div className="sm:col-span-2"><button type="button" disabled={!ready || busy || aiBusy !== null} className={buttonClass} title={!ready ? 'Simpan draft, pilih bahasa, dan konfigurasikan key pada server sebelum Generate.' : undefined} onClick={() => generate(task, target)}>{aiBusy === key ? 'Menunggu usulan…' : labelText}</button>{!ready && <span className="ml-2 text-xs text-slate-500">{statusCopy.saveBeforeAi}</span>}{proposal && proposalPanel(key, text => setProposals(old => ({ ...old, [key]: { ...old[key], text } })), text => { if (apply) apply(text); })}</div>;
+    const ready = capabilities.ai?.credentialState === 'configured' && Boolean(language.outputLanguage) && language.source !== 'unresolved' && !saveProblem && !localeError;
+    return <div className="sm:col-span-2"><button type="button" disabled={!ready || (busy && !saveInFlight.current) || aiBusy !== null || Boolean(pendingSavedAction)} className={buttonClass} title={!ready ? 'Simpan draft, pilih bahasa, dan konfigurasikan key pada server sebelum Generate.' : undefined} onClick={() => generate(task, target)}>{aiBusy === key ? 'Menunggu usulan…' : labelText}</button>{!ready && <span className="ml-2 text-xs text-slate-500">{statusCopy.saveBeforeAi}</span>}{proposal && proposalPanel(key, text => setProposals(old => ({ ...old, [key]: { ...old[key], text } })), text => { if (apply) apply(text); })}</div>;
   }
   function requestMode(mode: ItineraryMode) {
     if (!content || mode === content.trip.mode) return;
@@ -255,10 +337,11 @@ function App() {
     edit(next => Object.assign(next, changeMode(next, mode))); setPendingMode(null);
   }
   async function save() {
-    if (!record || !content || localeError) return;
+    if (!record || !content || localeError || saveInFlight.current || saveProblem === 'conflict') return;
+    saveInFlight.current = true;
     const generation = editGeneration.current;
     const submitted = normalizeBlanks(draftRef.current || content);
-    setBusy(true); setStatus('Menyimpan…');
+    setSaveProblem(null); setBusy(true); setStatus('Menyimpan…');
     try {
       const saved = await api.save(record, submitted, language, writing); setRecord(saved); setConflict(null); setPublication(current => current ? { ...current, draftRevision: saved.revision, draftDiffers: Boolean(current.currentVersion && current.currentVersion.sourceRevision !== saved.revision) } : current);
       if (editGeneration.current === generation) { draftRef.current = saved.draftContent; setContent(saved.draftContent); setLanguage(saved.languageContext); setWriting(saved.writingContext); setDirty(false); setProposals({}); setStatus(`Tersimpan · revisi ${saved.revision}`); }
@@ -266,12 +349,18 @@ function App() {
       await refresh().catch(() => {});
     } catch (caught) { const e = caught as ApiFailure;
       if (e.status === 409) {
-        try { const latest = await api.get(record.id); setConflict({ latest, local: structuredClone(draftRef.current || content), language: structuredClone(language), writing: structuredClone(writing) }); setStatus(`Konflik: versi tersimpan sudah di revisi ${latest.revision}; perubahan lokal tetap aman.`); }
+        setSaveProblem('conflict');
+        try { const latest = await api.get(record.id); setConflict({ latest, local: structuredClone(draftRef.current || content), language: structuredClone(latestLanguage.current), writing: structuredClone(latestWriting.current) }); setStatus(`Konflik: versi tersimpan sudah di revisi ${latest.revision}; perubahan lokal tetap aman.`); }
         catch { setStatus('Konflik revisi; perubahan lokal tetap aman, tetapi versi terbaru belum dapat dimuat.'); }
-      } else if (e.status === 422) { setSectionErrors((e.body?.fields ?? []).map(item => ({ ...item, targetId: item.targetId ?? targetIdFor(draftRef.current ?? submitted, item.path) }))); setStatus('Draft memiliki data yang perlu diperbaiki sebelum dapat disimpan.'); }
-      else setStatus(`Gagal menyimpan: ${e.message}`);
-    } finally { setBusy(false); }
+      } else if (e.status === 422) { if (editGeneration.current === generation) { setSaveProblem('invalid'); setSectionErrors((e.body?.fields ?? []).map(item => ({ ...item, targetId: item.targetId ?? targetIdFor(draftRef.current ?? submitted, item.path) }))); setStatus('Draft memiliki data yang perlu diperbaiki sebelum dapat disimpan.'); } }
+      else { setSaveProblem('failed'); setStatus(`Gagal menyimpan: ${e.message}`); }
+    } finally { saveInFlight.current = false; setBusy(false); }
   }
+  useEffect(() => {
+    if (!dirty || !record || localeError || busy || aiBusy || importing || creating || saveProblem) return;
+    const timer = window.setTimeout(() => { void save(); }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [dirty, record, content, language, writing, localeError, busy, aiBusy, importing, creating, saveProblem]);
   async function previewSaved() {
     if (!record || dirty) { setStatus('Simpan draft terlebih dahulu sebelum preview.'); return; }
     const generation = editGeneration.current;
@@ -279,7 +368,7 @@ function App() {
     try {
       const result = await api.preview(record.id, record.revision);
       if (generation !== editGeneration.current || result.itineraryId !== record.id || result.revision !== record.revision) { setStatus('Preview usang karena draft berubah; simpan dan coba lagi.'); return; }
-      setPreview(result); setPreviewDiagnostics({ errors: result.errors, warnings: result.warnings });
+      setPreview(result); setPreviewDiagnostics({ errors: result.errors, warnings: result.warnings }); setPreviewOpen(true);
       setStatus(result.publishReady ? 'Preview siap · draft memenuhi pemeriksaan publish.' : 'Preview siap · perbaiki diagnostics publish sebelum publish.');
     } catch (caught) { const e = caught as ApiFailure;
       const diagnostics = e.body?.fields;
@@ -308,6 +397,20 @@ function App() {
       setStatus(`Publish gagal: ${e.body?.message || e.message}`);
     } finally { setBusy(false); }
   }
+  useEffect(() => {
+    if (!pendingSavedAction) return;
+    if ((listOpen && pendingSavedAction.kind !== 'open' && pendingSavedAction.kind !== 'create') || creating || importing) { setPendingSavedAction(null); return; }
+    if (busy || aiBusy) return;
+    if (saveProblem || localeError) { const action = pendingSavedAction; setPendingSavedAction(null); if (action.kind === 'open') void open(action.id); else if (action.kind === 'create' && canDiscard()) setCreating(true); return; }
+    if (dirty) return;
+    setPendingSavedAction(null);
+    if (pendingSavedAction.kind === 'preview') void previewSaved();
+    else if (pendingSavedAction.kind === 'publish') void publishSaved();
+    else if (pendingSavedAction.kind === 'open') void open(pendingSavedAction.id);
+    else if (pendingSavedAction.kind === 'create') setCreating(true);
+    else if (pendingSavedAction.kind === 'import') setImporting('overwrite');
+    else if (pendingSavedAction.kind === 'generate') void generate(pendingSavedAction.task, pendingSavedAction.target);
+  }, [pendingSavedAction, dirty, busy, aiBusy, saveProblem, localeError, listOpen, creating, importing]);
   async function unpublish() {
     if (!record || !publication?.active || !confirm('Cabut link publik? Link lama tidak akan aktif lagi.')) return;
     setBusy(true);
@@ -319,6 +422,12 @@ function App() {
     if (!publication?.shareUrl) return;
     try { await navigator.clipboard.writeText(publication.shareUrl); setStatus('Link publik disalin.'); }
     catch { setStatus('Clipboard tidak tersedia; gunakan link publik yang terlihat.'); }
+  }
+  async function shareLink() {
+    if (!publication?.shareUrl) return;
+    if (!navigator.share) { await copyShareLink(); return; }
+    try { await navigator.share({ title: content?.trip.title || 'Itinerary', url: publication.shareUrl }); }
+    catch (error) { if ((error as Error).name !== 'AbortError') await copyShareLink(); }
   }
 
   function labelFor(path: string, mode: ItineraryMode) {
@@ -355,7 +464,7 @@ function App() {
   }
   async function copyLocal() {
     if (!conflict) return;
-    try { await navigator.clipboard.writeText(JSON.stringify({ draftContent: conflict.local, languageContext: conflict.language, writingContext: conflict.writing }, null, 2)); setStatus('Salinan perubahan lokal disalin; tidak ada overwrite ke server.'); }
+    try { await navigator.clipboard.writeText(JSON.stringify({ draftContent: draftRef.current ?? conflict.local, languageContext: latestLanguage.current, writingContext: latestWriting.current }, null, 2)); setStatus('Salinan perubahan lokal disalin; tidak ada overwrite ke server.'); }
     catch { setStatus('Clipboard tidak tersedia; perubahan lokal tetap ada di formulir.'); }
   }
   async function saveProfile() {
@@ -440,6 +549,7 @@ function App() {
     setTimeout(() => focusDiagnostic({ path: issue.path, targetId }), 0);
   }
   const aiConfigured = capabilities.ai?.credentialState === 'configured';
+  const importLimits: ImportLimits = { ...DEFAULT_IMPORT_LIMITS, ...(capabilities.import ?? {}) };
   const aiHint = ({ missing: statusCopy.aiMissing, ambiguous: statusCopy.aiAmbiguous, unavailable: statusCopy.aiUnavailable } as Record<string, string>)[capabilities.ai?.credentialState ?? ''];
   const modelText = aiPreflight?.modelId && aiPreflight.modelId !== 'openai/gpt-6-luna' ? `Model: ${aiPreflight.modelId}` : statusCopy.modelLabel;
   const aiExtra = (
@@ -475,28 +585,31 @@ function App() {
     </main>;
   }
 
-  return <main className="mx-auto min-h-screen max-w-7xl px-4 py-8 text-slate-900 sm:px-6 lg:px-8">
+  return <><main inert={previewOpen} className="mx-auto min-h-screen max-w-7xl px-4 py-8 text-slate-900 sm:px-6 lg:px-8">
     <header className="mb-8 flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-5">
       <div><p className="text-sm font-semibold uppercase tracking-widest text-teal-700">Itinerary Engine · lokal</p><h1 className="mt-2 text-3xl font-bold tracking-tight">Ruang kerja perjalanan</h1></div>
-      <div className="flex flex-wrap items-center gap-3"><p role="status" aria-live="polite" className="text-sm text-slate-600">{status}</p>{content && <button type="button" className={`${buttonClass} lg:hidden`} onClick={() => setListOpen(true)}>Draf saya</button>}{content && <button type="button" className={buttonClass} disabled={busy || hasUnsaved} title={hasUnsaved ? importCopy.entryOpenDirty : undefined} onClick={() => setImporting('overwrite')}>{importCopy.entryOpen}</button>}<button type="button" className={buttonClass} onClick={() => setView('settings')}>Pengaturan</button></div>
+      <div className="flex flex-wrap items-center gap-3"><p role="status" aria-live="polite" className="text-sm text-slate-600">{status}</p>{content && !listOpen && !creating && !importing && <button type="button" className={buttonClass} onClick={() => setListOpen(true)}>Draf saya</button>}{content && !listOpen && <button type="button" className={buttonClass} disabled={(busy && !saveInFlight.current) || profileDirty || creating || Boolean(saveProblem) || Boolean(localeError) || Boolean(pendingSavedAction)} title={profileDirty ? importCopy.entryOpenDirty : creating ? createCopy.inFlow : undefined} onClick={startImport}>{importCopy.entryOpen}</button>}<button type="button" className={buttonClass} disabled={creating} onClick={() => setView('settings')}>Pengaturan</button></div>
     </header>
-    <div className="grid gap-6 lg:grid-cols-[20rem_1fr]">
-      <aside className={`space-y-5 ${(content && !listOpen) || importing ? 'hidden lg:block' : ''}`}>
-        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="mx-auto grid max-w-4xl gap-6">
+      <aside className={creating || importing || (content && !listOpen) ? 'hidden' : 'space-y-5'}>
+        <section className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
           <h2 className="font-semibold">Buat draft baru</h2>
-          <p className="mt-1 text-sm text-slate-600">Pilih tipe itinerary.</p>
-          <div className="mt-3"><ModePicker onCreate={create} busy={busy} /></div>
-          <button type="button" className={`${buttonClass} mt-3 w-full`} disabled={busy} onClick={() => { if (canDiscard()) setImporting('new'); }}>{importCopy.entryNew}</button>
+          <button type="button" className={`${primaryClass} mt-3 min-h-[44px] w-full sm:w-auto`} disabled={(busy && !saveInFlight.current) || Boolean(pendingSavedAction)} onClick={startCreate}>{createCopy.start}</button>
+          {content && <button type="button" className={`${buttonClass} mt-3 min-h-[44px] w-full sm:ml-3 sm:w-auto`} onClick={() => setListOpen(false)}>Lanjutkan draft</button>}
         </section>
-        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
           <h2 className="font-semibold">Draft tersimpan</h2>
-          <DraftList records={records} modeCopyBadge={modeBadges} onOpen={open} busy={busy} />
+          <DraftList records={records.slice(0, visibleRecords)} onOpen={open} busy={(busy && !saveInFlight.current) || Boolean(pendingSavedAction)} />
+          {recordsLoading && <p className="mt-3 text-sm text-slate-600">Memuat draft…</p>}
+          {recordsError && <div role="alert" className="mt-3 text-sm text-red-800">Daftar draft belum dapat dimuat. <button type="button" className="min-h-[44px] underline focus-visible:outline-2 focus-visible:outline-teal-700" onClick={() => void (recordsRetryMore ? loadMoreRecords() : refreshRecords())}>Coba lagi</button></div>}
+          {!recordsLoading && !recordsError && records.length === 0 && <p className="mt-3 text-sm text-slate-600">Belum ada itinerary. Buat itinerary untuk memulai.</p>}
+          {!recordsLoading && !recordsError && (records.length > visibleRecords || recordsCursor) && <button type="button" className={`${buttonClass} mt-3 min-h-[44px] w-full`} onClick={() => void loadMoreRecords()}>Muat lebih banyak</button>}
         </section>
       </aside>
-      <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-7">
-        {importing ? <ImportScreen target={importing} draftMode={activeMode ?? null} draftId={record?.id ?? null} draftRevision={record?.revision ?? null} aiActive={capabilities.ai?.credentialState === 'configured'} onCancel={() => setImporting(null)} onDone={finishImport} /> : !content || !activeMode ? <div className="grid min-h-80 place-items-center text-center text-slate-500">Pilih atau buat draft untuk mulai.</div> : <>
+      <section className={`min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-7 ${!creating && !importing && (!content || listOpen) ? 'hidden' : ''}`}>
+        {creating ? <CreateFlow aiActive={importLimits.aiConfigured} limits={importLimits} busy={busy} onCancel={() => setCreating(false)} onManual={(next) => { setCreating(false); void create(next); }} onImported={(result) => { setCreating(false); void finishImport(result); }} /> : importing ? <ImportScreen target={importing} draftMode={activeMode ?? null} draftId={record?.id ?? null} draftRevision={record?.revision ?? null} aiActive={importLimits.aiConfigured} limits={importLimits} onCancel={() => setImporting(null)} onDone={finishImport} /> : !content || !activeMode ? <div className="grid min-h-80 place-items-center gap-4 text-center text-slate-500"><p>Pilih atau buat draft untuk mulai.</p><button type="button" className={primaryClass} disabled={busy} onClick={() => { if (canDiscard()) setCreating(true); }}>{createCopy.start}</button></div> : <>
           {importOperation && <ImportReport operation={importOperation} busy={busy} labelFor={(path) => labelFor(path, activeMode ?? 'half_day')} onJump={(path) => focusDiagnostic({ path, targetId: draftRef.current ? targetIdFor(draftRef.current, path) : undefined })} onUndo={undoImport} onClose={() => { try { localStorage.setItem(`import-report-closed:${importOperation.operationId}`, '1'); } catch { /* storage unavailable: the panel just returns next time */ } setImportOperation(null); }} />}
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4"><div><div className="flex flex-wrap items-center gap-2"><h2 className="text-xl font-semibold">{content.trip.title || 'Tanpa judul'}</h2><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${modeCopy[activeMode].badge}`}>{modeCopy[activeMode].title}</span></div><p className="mt-1 text-sm text-slate-600">{dirty ? 'Belum disimpan' : `Tersimpan · revisi ${record?.revision}`}{profileDirty ? ' · profil belum disimpan' : ''}</p></div><div className="flex gap-2"><button type="button" disabled={busy || dirty || !record} onClick={() => { goToStep(steps.indexOf('publish')); void previewSaved(); }} className={buttonClass}>Preview</button><button type="button" disabled={busy || !dirty || Boolean(localeError)} onClick={save} className={primaryClass}>Simpan draft</button></div></div>
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4"><div><p className="text-xs font-semibold uppercase tracking-wide text-teal-800">{createCopy.editorStep}</p><div className="flex flex-wrap items-center gap-2"><h2 className="text-xl font-semibold">{content.trip.title || 'Tanpa judul'}</h2><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${modeCopy[activeMode].badge}`}>{modeCopy[activeMode].title}</span></div><p className="mt-1 text-sm text-slate-600">{dirty ? saveInFlight.current ? 'Menyimpan…' : saveProblem ? 'Belum tersimpan · periksa pesan di atas' : 'Perubahan akan disimpan otomatis' : `Tersimpan · revisi ${record?.revision}`}{profileDirty ? ' · profil belum disimpan' : ''}</p></div><div className="flex gap-2"><button ref={previewTrigger} type="button" disabled={(busy && !saveInFlight.current) || !record || Boolean(localeError) || Boolean(saveProblem) || Boolean(pendingSavedAction)} onClick={() => { if (dirty) { setStatus('Menunggu perubahan tersimpan sebelum preview…'); setPendingSavedAction({ kind: 'preview' }); } else void previewSaved(); }} className={buttonClass}>Preview</button><button type="button" disabled={busy || !dirty || Boolean(localeError) || saveProblem === 'conflict'} onClick={save} className={primaryClass}>{saveProblem === 'failed' ? 'Coba lagi' : 'Simpan draft'}</button></div></div>
           <div className="lg:grid lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-6">
           <div className="sticky top-0 z-10 -mx-1 mb-4 bg-white px-1 py-2 lg:top-4 lg:z-0 lg:mx-0 lg:mb-0 lg:self-start lg:px-0"><Stepper steps={steps} mode={activeMode ?? 'half_day'} current={stepIndex} issueCounts={issueCounts} onSelect={goToStep} /><p className="mt-2 text-xs font-semibold text-slate-700 lg:hidden">Langkah {stepIndex + 1} dari {steps.length} · {stepTitle(current, activeMode ?? 'half_day')}</p></div>
           <div className="min-w-0">
@@ -514,8 +627,14 @@ function App() {
           <div data-step="publish" hidden={current !== 'publish'}>
           {previewDiagnostics && <section aria-label="Publish diagnostics" className="mt-6 rounded-xl border border-slate-300 bg-slate-50 p-4"><h3 className="font-semibold">Pemeriksaan publish</h3>{previewDiagnostics.errors.length === 0 && <p className="mt-2 text-sm text-emerald-800">Tidak ada error publish.</p>}{previewDiagnostics.errors.length > 0 && <ul className="mt-2 space-y-2 text-sm text-red-800">{previewDiagnostics.errors.map((item, index) => <li key={`${item.code}-${item.path}-${index}`}><button type="button" data-diagnostic-path={item.path} className="text-left underline underline-offset-2" onClick={() => focusDiagnostic(item)}>{item.path ? `${labelFor(item.path, activeMode)}: ` : ''}{item.message}</button></li>)}</ul>}{previewDiagnostics.warnings.length > 0 && <><h4 className="mt-4 text-sm font-semibold text-amber-900">Peringatan</h4><ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-amber-900">{previewDiagnostics.warnings.map((item, index) => <li key={`${item.code}-${item.path}-${index}`}><button type="button" data-diagnostic-path={item.path} className="text-left underline underline-offset-2" onClick={() => focusDiagnostic(item)}>{item.path ? `${labelFor(item.path, activeMode)}: ` : ''}{item.message}</button></li>)}</ul></>}</section>}
           {issues.length > 0 && <p className="mt-6 text-sm font-semibold text-red-800">Lengkapi {issues.length} isian wajib sebelum publish. <button type="button" className="ml-2 underline underline-offset-2" onClick={() => focusIssue(issues[0])}>Tunjukkan</button></p>}
-          <section aria-label="Publikasi" className="mt-6 rounded-xl border border-slate-300 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-semibold">Halaman publik</h3>{publication?.currentVersion && <p className="mt-1 text-sm text-slate-600">Versi {publication.currentVersion.id.slice(0, 8)} · revisi sumber {publication.currentVersion.sourceRevision}{(publication.draftDiffers || dirty) && <span className="text-amber-800"> · draft berbeda dari versi published</span>}</p>}{publication && !publication.active && publication.currentVersion && <p className="mt-1 text-sm text-red-800">Link dicabut; publish ulang akan membuat link baru.</p>}</div><div className="flex flex-wrap gap-2">{publication?.active ? <><button type="button" disabled={busy || dirty} className={buttonClass} onClick={publishSaved}>Publish ulang</button><button type="button" disabled={busy} className={buttonClass} onClick={unpublish}>Cabut link</button></> : <button type="button" disabled={busy || dirty || !record || Boolean(localeError) || issues.length > 0} className={primaryClass} onClick={publishSaved}>Publish itinerary</button>}</div></div>{publication?.active && publication.shareUrl && <div className="mt-3 flex flex-wrap items-center gap-2"><a className="break-all text-sm text-teal-800 underline" href={publication.shareUrl} target="_blank" rel="noreferrer">{publication.shareUrl}</a><button type="button" className={buttonClass} onClick={copyShareLink}>Salin link</button></div>}{versions.length > 0 && <details className="mt-3"><summary className="cursor-pointer text-sm font-medium">Riwayat published ({versions.length})</summary><ol className="mt-2 list-inside list-decimal space-y-1 text-xs text-slate-600">{versions.map(version => <li key={version.id}>{version.id.slice(0, 8)} · revisi {version.sourceRevision} · {new Date(version.createdAt).toLocaleString()}</li>)}</ol></details>}</section>
-          {preview && <section aria-label="Preview itinerary" className="mt-6 rounded-xl border border-slate-300 p-4"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold">Preview draft tersimpan · revisi {preview.revision}</h3><div className="flex gap-2"><button type="button" aria-pressed={previewViewport === 'phone'} className={buttonClass} onClick={() => setPreviewViewport('phone')}>Phone</button><button type="button" aria-pressed={previewViewport === 'desktop'} className={buttonClass} onClick={() => setPreviewViewport('desktop')}>Desktop</button></div></div><div className="mt-4 overflow-auto rounded-lg bg-slate-100 p-2"><iframe title="Preview itinerary tersimpan" sandbox="" srcDoc={preview.html} className="mx-auto block h-[720px] border-0 bg-white shadow-sm" style={{ width: previewViewport === 'phone' ? '390px' : '100%', maxWidth: '100%' }} /></div></section>}
+          <section aria-label="Publikasi" className="mt-6 rounded-xl border border-slate-300 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div><h3 className="font-semibold">Halaman publik</h3>{publication?.currentVersion && <p className="mt-1 text-sm text-slate-600">Versi {publication.currentVersion.id.slice(0, 8)} · revisi sumber {publication.currentVersion.sourceRevision}{(publication.draftDiffers || dirty) && <span className="text-amber-800"> · draft berbeda dari versi published</span>}</p>}{publication && !publication.active && publication.currentVersion && <p className="mt-1 text-sm text-red-800">Link dicabut; publish ulang akan membuat link baru.</p>}</div>
+              <div className="flex flex-wrap gap-2"><button type="button" disabled={(busy && !saveInFlight.current) || !record || Boolean(localeError) || Boolean(saveProblem) || Boolean(pendingSavedAction) || issues.length > 0} className={publication?.active ? buttonClass : primaryClass} onClick={() => { if (dirty) { setStatus('Menunggu perubahan tersimpan sebelum publish…'); setPendingSavedAction({ kind: 'publish' }); } else void publishSaved(); }}>{publication?.active ? 'Publish ulang' : 'Publish itinerary'}</button>{publication?.active && <button type="button" disabled={busy} className={buttonClass} onClick={unpublish}>Cabut link</button>}</div>
+            </div>
+            {publication?.active && publication.shareUrl && <div className="mt-3 flex flex-wrap items-center gap-2"><a className="break-all text-sm text-teal-800 underline" href={publication.shareUrl} target="_blank" rel="noreferrer">{publication.shareUrl}</a><button type="button" className={buttonClass} onClick={shareLink}>Bagikan</button><button type="button" className={buttonClass} onClick={copyShareLink}>Salin link</button></div>}
+            {versions.length > 0 && <details className="mt-3"><summary className="cursor-pointer text-sm font-medium">Riwayat published ({versions.length})</summary><ol className="mt-2 list-inside list-decimal space-y-1 text-xs text-slate-600">{versions.map(version => <li key={version.id}>{version.id.slice(0, 8)} · revisi {version.sourceRevision} · {new Date(version.createdAt).toLocaleString()}</li>)}</ol></details>}
+          </section>
           </div>
           <div className="sticky bottom-0 -mx-1 mt-6 flex justify-between gap-3 border-t border-slate-200 bg-white px-1 py-3">
             <button type="button" disabled={stepIndex === 0} className={buttonClass} onClick={() => goToStep(stepIndex - 1)}>Kembali</button>
@@ -527,7 +646,14 @@ function App() {
       </section>
     </div>
     {pendingMode && <div role="presentation" className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4"><section role="dialog" aria-modal="true" aria-labelledby="mode-dialog-title" className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl"><h2 id="mode-dialog-title" className="text-lg font-semibold">Ganti tipe itinerary?</h2><p className="mt-2 text-sm text-slate-700">Data berikut tidak berlaku pada tipe baru dan akan dihapus setelah Anda konfirmasi:</p><ul className="mt-2 list-disc pl-5 text-sm text-slate-800">{pendingLoss.map(item => <li key={item}>{item}</li>)}</ul><p className="mt-2 text-sm text-slate-700">Judul, ringkasan, info praktis, ketentuan dan penutup tetap dipertahankan.</p><div className="mt-5 flex justify-end gap-2"><button type="button" className={buttonClass} onClick={() => setPendingMode(null)}>Batal</button><button type="button" className={primaryClass} onClick={() => applyMode(pendingMode)}>Ganti tipe</button></div></section></div>}
-  </main>;
+  </main>{previewOpen && preview && <div ref={previewDialog} role="dialog" aria-modal="true" aria-labelledby="preview-heading" className="fixed inset-0 z-50 overflow-y-auto bg-slate-100 text-slate-900">
+    <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6">
+      <div className="flex flex-wrap items-center justify-between gap-3"><button type="button" className={`${buttonClass} min-h-[44px]`} onClick={() => setPreviewOpen(false)}>Kembali mengedit</button><div className="flex gap-2"><button type="button" aria-pressed={previewViewport === 'phone'} className={`${buttonClass} min-h-[44px]`} onClick={() => setPreviewViewport('phone')}>Phone</button><button type="button" aria-pressed={previewViewport === 'desktop'} className={`${buttonClass} min-h-[44px]`} onClick={() => setPreviewViewport('desktop')}>Desktop</button></div></div>
+      <h2 id="preview-heading" className="mt-5 text-lg font-semibold">Preview itinerary</h2>
+      <p className="mt-1 text-sm text-slate-600">Draft tersimpan · revisi {preview.revision}{preview.publishReady ? ' · siap dipublish' : ' · masih ada isian yang perlu diperiksa'}</p>
+      <div className="mt-4 rounded-lg bg-slate-200 p-1 sm:p-3"><iframe title="Preview itinerary tersimpan" sandbox="" srcDoc={preview.html} className={`mx-auto block h-[calc(100dvh-12rem)] min-h-[480px] w-full border-0 bg-white shadow-sm ${previewViewport === 'phone' ? 'sm:max-w-[390px]' : ''}`} /></div>
+    </div>
+  </div>}</>;
 }
 
 const runtime = globalThis as typeof globalThis & { itineraryRoot?: ReturnType<typeof createRoot> };

@@ -73,16 +73,20 @@ async function main() {
     }, { selector: `[data-field-path="${fieldPath}"]`, value });
   }
   const readFixture = (name: string) => readFile(path.join(FIXTURES, name), 'utf8');
-  async function pasteAndProcess(name: string, mode?: string, expectedTitle?: string) {
-    await clickText('Buat dari teks/PDF');
+  /** Create flow (CP037): step 1 picks the type, step 2 picks the method. */
+  async function startCreate(mode: string, method: 'paste' | 'pdf') {
+    await clickText('Buat itinerary baru');
+    await page.click(`[data-mode-card="${mode}"]`);
+    await page.click(`[data-method="${method}"]`);
+  }
+  async function pasteAndProcess(name: string, mode = 'half_day', expectedTitle?: string) {
+    await startCreate(mode, 'paste');
     await page.waitForSelector('#import-text');
-    await clickText('Tempel teks', {});
     await setTextarea(await readFixture(name));
     await clickText('Baca teks');
-    await page.waitForFunction(() => document.querySelector('#import-mode') !== null || document.querySelector('[role="alert"]') !== null, { timeout: 20000 });
+    await page.waitForFunction(() => document.querySelector('#import-language') !== null || document.querySelector('[role="alert"]') !== null, { timeout: 20000 });
     const alertText = await page.evaluate(() => document.querySelector('[role="alert"]')?.textContent ?? '');
     assert.equal(alertText, '', `import failed for ${name}: ${alertText}`);
-    if (mode) await page.select('#import-mode', mode);
     await clickText('Lihat hasil baca');
     await waitText('Hasil baca otomatis');
     await clickText('Proses');
@@ -94,7 +98,7 @@ async function main() {
     await page.goto(origin); await waitStatus('Engine tersambung');
 
     // 1. Paste import for the half-day fixture: the report appears and missing required fields are listed.
-    await clickText('Buat dari teks/PDF');
+    await startCreate('half_day', 'paste');
     await page.waitForSelector('#import-text');
     await screenshot('cp032-import-screen-390.png', 390);
     await setTextarea(await readFixture('en-half-day-messy.txt'));
@@ -123,32 +127,31 @@ async function main() {
     await pasteAndProcess('id-destination-guide.txt', 'destination_guide', 'Panduan Yogyakarta');
 
     // 3. Text-layer PDF.
-    await clickText('Buat dari teks/PDF');
-    await clickText('Upload PDF');
+    await startCreate('full_day', 'pdf');
     const pdfInput = await page.waitForSelector('input#import-pdf') as import('puppeteer').ElementHandle<HTMLInputElement>;
     await pdfInput.uploadFile(path.join(FIXTURES, 'id-full-day-tidy.pdf'));
     await clickText('Baca PDF');
-    await page.waitForSelector('#import-mode');
-    await page.select('#import-mode', 'full_day');
+    await waitText('Lihat hasil baca');
+    await clickText('Lihat hasil baca');
+    await waitText('Hasil baca otomatis');
     await clickText('Proses');
     await waitStatus('tersimpan');
     await page.waitForFunction(() => document.querySelector('h2.text-xl')?.textContent === 'Tur Ubud dan Tegallalang', { timeout: 20000 });
 
     // 4. Scanned PDF is refused with the plain message and creates nothing.
-    await clickText('Buat dari teks/PDF');
-    await clickText('Upload PDF');
+    await startCreate('half_day', 'pdf');
     const scanInput = await page.waitForSelector('input#import-pdf') as import('puppeteer').ElementHandle<HTMLInputElement>;
     await scanInput.uploadFile(path.join(FIXTURES, 'image-only-scan.pdf'));
     await clickText('Baca PDF');
     await page.waitForSelector('[role="alert"]');
     assert.match(await page.$eval('[role="alert"]', (node) => node.textContent ?? ''), /berupa gambar\/scan/, 'scan message');
-    await clickText('Kembali ke draf');
+    await clickText('Kembali');
+    await clickText('Batal');
 
     // 5. Overwrite the open draft: confirmation, then undo.
     await page.waitForFunction(() => document.querySelector('h2.text-xl')?.textContent === 'Tur Ubud dan Tegallalang', { timeout: 20000 });
-    await clickText('Import teks/PDF');
+    await clickText('Isi ulang dari teks/PDF');
     await page.waitForSelector('#import-text');
-    await clickText('Tempel teks', {});
     await setTextarea(await readFixture('id-whatsapp-injection.txt'));
     await clickText('Baca teks');
     await clickText('Lihat hasil baca');
@@ -162,10 +165,13 @@ async function main() {
     await waitStatus('Import dibatalkan');
     assert.equal(await title(), 'Tur Ubud dan Tegallalang', 'undo restored the previous title');
 
-    // 6. Unsaved edits block a new import from the open draft.
+    // 6. Import waits until edits are saved before opening.
     await setField('trip.title', 'Judul sementara');
-    const blocked = await page.evaluate(() => [...document.querySelectorAll('button')].find(b => b.textContent?.trim() === 'Import teks/PDF')?.disabled ?? null);
-    assert.equal(blocked, true, 'import is blocked while the draft has unsaved changes');
+    await clickText('Isi ulang dari teks/PDF');
+    await page.waitForSelector('#import-text');
+    const savedBeforeImport = (await app.inject({ url: '/api/v1/itineraries' })).json().items as Array<{ title: string }>;
+    assert.ok(savedBeforeImport.some(item => item.title === 'Judul sementara'), 'import opens only after the edit is saved');
+    await clickText('Kembali ke draf');
     await setField('trip.title', 'Tur Ubud dan Tegallalang');
     await clickText('Simpan draft');
     await waitStatus('Tersimpan · revisi');
@@ -196,7 +202,7 @@ async function main() {
     assert.equal(external.length, 0, 'the browser made no external request');
     assert.equal(failures.length, 0, `console errors: ${failures.join(' | ')}`);
 
-    const summary = { modes: ['half_day', 'full_day', 'multi_day', 'destination_guide'], pdfText: true, scanRejected: true, overwriteUndo: true, unsavedBlocked: true, publishedNoSource: true, externalRequests: external.length, consoleErrors: failures.length };
+    const summary = { modes: ['half_day', 'full_day', 'multi_day', 'destination_guide'], pdfText: true, scanRejected: true, overwriteUndo: true, importWaitsForSave: true, publishedNoSource: true, externalRequests: external.length, consoleErrors: failures.length };
     await writeFile(path.join(evidenceDir, 'verification-summary.json'), JSON.stringify(summary, null, 2));
     console.log(JSON.stringify(summary));
   } finally {

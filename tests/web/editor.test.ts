@@ -257,13 +257,15 @@ test('5g. publish issues map to Indonesian messages, wizard steps per mode, and 
   const activityIssue = issues.find((issue) => issue.path === 'days[0].activities[0].title');
   assert.equal(activityIssue!.key.split('|')[0], empty.days[0].activities[0].id, 'activity issues carry the stable activity id');
   assert.equal(stepFor('places[1].name'), 'plan');
-  assert.equal(stepFor('emergencyContacts[0].value'), 'practical');
-  assert.deepEqual(stepsFor('destination_guide'), ['info', 'guide', 'summary', 'plan', 'practical', 'terms', 'ai', 'publish']);
-  assert.ok(stepsFor('full_day').includes('time'));
+  assert.equal(stepFor('emergencyContacts[0].value'), 'details');
+  assert.equal(stepFor('trip.startTime'), 'info');
+  assert.equal(stepFor('summary'), 'plan');
+  assert.deepEqual(stepsFor('destination_guide'), ['info', 'plan', 'details', 'publish']);
+  assert.deepEqual(stepsFor('full_day'), ['info', 'plan', 'details', 'publish']);
   assert.deepEqual(publishIssues(createContentV2('full_day')), [], 'a complete fixture has no issues');
-  const html = renderToStaticMarkup(React.createElement(EditorForm, { ...editorProps('full_day', createContentV2('full_day')), activeStep: 'summary' }));
+  const html = renderToStaticMarkup(React.createElement(EditorForm, { ...editorProps('full_day', createContentV2('full_day')), activeStep: 'plan' }));
   const visible = [...html.matchAll(/<div data-step="([a-z]+)"( hidden="")?/g)].filter((match) => !match[2]).map((match) => match[1]);
-  assert.deepEqual(visible, ['summary'], 'only the active step is visible');
+  assert.deepEqual(visible, ['plan'], 'only the active step is visible');
   assert.ok(html.includes('data-step="info" hidden=""'), 'hidden steps stay mounted');
 });
 

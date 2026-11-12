@@ -71,7 +71,12 @@ async function main() {
     catch { throw new Error(`Expected status "${text}"; saw "${await page.$eval('[role="status"]', element => element.textContent)}".`); }
   }
   async function goStep(title: string) {
-    await page.evaluate(text => { const b = [...document.querySelectorAll('button')].find(item => item.textContent?.includes(text)); if (!b) throw new Error(`step not found: ${text}`); b.click(); }, title);
+    const next = ({ 'Ringkasan': 'Susun perjalanan', 'Jadwal': 'Susun perjalanan', 'Tempat': 'Susun perjalanan', 'Info trip': 'Info perjalanan' } as Record<string, string>)[title] ?? title;
+    await page.evaluate(text => { const b = [...document.querySelectorAll('[aria-label="Langkah"] button')].find(item => item.textContent?.includes(text)) as HTMLButtonElement | undefined; if (!b) throw new Error(`step not found: ${text}`); b.click(); }, next);
+  }
+  async function detectLanguage() {
+    await page.waitForFunction(() => [...document.querySelectorAll<HTMLButtonElement>('button')].some(button => button.textContent?.trim() === 'Deteksi otomatis' && !button.disabled));
+    await click('Deteksi otomatis');
   }
   async function save() {
     try {
@@ -99,7 +104,7 @@ async function main() {
   try {
     await page.setViewport({ width: 1440, height: 1000 }); await page.goto(origin); await status('Engine tersambung');
     assert.equal(await page.$$eval('aside h2', headings => headings.filter(item => item.textContent?.trim() === 'Penulisan AI').length), 0, 'the old sidebar AI box is gone');
-    await page.click('[data-mode-card="full_day"]'); await status('Draft baru tersimpan');
+    await page.evaluate(() => [...document.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.trim() === 'Buat itinerary baru' && !b.disabled)?.click()); await page.waitForSelector('[data-mode-card="full_day"]:not([disabled])'); for (let attempt = 0; attempt < 20 && !(await page.$('[data-method="manual"]')); attempt++) { await page.click('[data-mode-card="full_day"]').catch(() => undefined); await new Promise(r => setTimeout(r, 250)); }  await page.waitForSelector('[data-method="manual"]'); await page.click('[data-method="manual"]'); await page.evaluate(() => [...document.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.trim() === 'Mulai isi')?.click());  await status('Draft baru tersimpan');
     assert.equal(await page.$$eval('[data-editor-section="ai-assist"] summary', items => items.filter(item => item.textContent?.trim() === 'Bantuan AI').length), 1);
     await page.locator(await field('Judul perjalanan')).fill('CP023 browser activity');
     await fillTextArea('Brief perjalanan', 'A relaxed visit through quiet gardens and historic lanes with a local guide sharing the culture and traditions of the region.'); await save();
@@ -112,12 +117,12 @@ async function main() {
         return original(input, init);
       };
     });
-    await click('Deteksi otomatis'); await page.waitForFunction(() => (window as any).__languageStarted === true);
+    await detectLanguage(); await page.waitForFunction(() => (window as any).__languageStarted === true);
     await fillTextArea('Brief perjalanan', 'Une promenade tranquille dans les jardins et les ruelles historiques avec un guide local qui présente la culture de la région.');
     await page.evaluate(() => (window as any).__releaseLanguage());
     await status('Hasil deteksi bahasa usang karena draft atau brief berubah. Deteksi ulang.');
     assert.equal(await page.evaluate(() => document.body.innerText.includes('Proposal bahasa:')), false);
-    await save(); await click('Deteksi otomatis'); await status('Bahasa terdeteksi: fr. Konfirmasi sebelum menyimpan.');
+    await save(); await detectLanguage(); await status('Bahasa terdeteksi: fr. Konfirmasi sebelum menyimpan.');
     await click('Konfirmasi bahasa'); await save(); assert.equal(await value('Bahasa konten'), 'fr');
     assert.equal(await value('Judul perjalanan'), 'CP023 browser activity');
     await page.select(await field('Bahasa konten'), 'en'); await save();
@@ -152,7 +157,7 @@ async function main() {
 
     await page.setViewport({ width: 390, height: 844 });
     await page.evaluate(() => [...document.querySelectorAll('button')].find(b => b.textContent?.trim() === 'Draf saya')?.click());
-    await page.click('[data-mode-card="destination_guide"]'); await status('Draft baru tersimpan');
+    await page.evaluate(() => [...document.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.trim() === 'Buat itinerary baru' && !b.disabled)?.click()); await page.waitForSelector('[data-mode-card="destination_guide"]:not([disabled])'); for (let attempt = 0; attempt < 20 && !(await page.$('[data-method="manual"]')); attempt++) { await page.click('[data-mode-card="destination_guide"]').catch(() => undefined); await new Promise(r => setTimeout(r, 250)); }  await page.waitForSelector('[data-method="manual"]'); await page.click('[data-method="manual"]'); await page.evaluate(() => [...document.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.trim() === 'Mulai isi')?.click());  await status('Draft baru tersimpan');
     await page.locator(await field('Judul perjalanan')).fill('CP023 browser spot'); await page.select(await field('Bahasa konten'), 'en'); await goStep('Tempat'); await click('Tambah tempat');
     await goStep('Tempat');
     await goStep('Tempat');

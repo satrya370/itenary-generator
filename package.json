@@ -21,7 +21,7 @@
     "test:web-preview": "tsx --test tests/web/preview.test.ts",
     "test:web-publication": "tsx --test tests/web/publication.test.ts",
     "test:web-editor": "tsx --test tests/web/editor.test.ts",
-    "test:web-import": "tsx --test tests/web/import-intake.test.ts tests/web/import-parser.test.ts tests/web/import-apply.test.ts",
+    "test:web-import": "tsx --test tests/web/import-intake.test.ts tests/web/import-parser.test.ts tests/web/import-apply.test.ts tests/web/import-retention.test.ts tests/web/import-source-removed.test.ts tests/web/import-capabilities.test.ts",
     "test:web-places": "tsx --test tests/web/places.test.ts tests/web/places-sources.test.ts",
     "test:web-ai": "tsx --test tests/web/ai*.test.ts",
     "verify:web-import-live": "tsx scripts/web/verify-import-live.ts",
@@ -46,7 +46,8 @@
     "start:web-app": "tsx src/server/main.ts",
     "test:web-render": "tsx --test tests/web/render.test.ts",
     "verify:web-render": "tsx scripts/web/render-fixture.ts",
-    "render:pdf": "node scripts/render-pdf.mjs"
+    "render:pdf": "node scripts/render-pdf.mjs",
+    "verify:web-create": "tsx scripts/web/verify-create.ts"
   },
   "dependencies": {
     "@fastify/multipart": "^10.1.2",

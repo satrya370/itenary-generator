@@ -1,7 +1,7 @@
 import type { ItineraryMode, WebItineraryContent } from '../contracts/types.js';
 import { validateForPublish } from '../contracts/validator.js';
 
-export type StepId = 'info' | 'time' | 'guide' | 'summary' | 'plan' | 'practical' | 'terms' | 'ai' | 'publish';
+export type StepId = 'info' | 'plan' | 'details' | 'publish';
 
 export interface PublishIssue { key: string; path: string; step: StepId; message: string }
 
@@ -19,20 +19,14 @@ const messages: Record<string, string> = {
 
 export function stepFor(path: string): StepId {
   if (/^trip\.(title|destination|country|region|language|colorTheme|startDate|mode)/.test(path)) return 'info';
-  if (/^(trip\.(startTime|endTime)|meeting|pickup)/.test(path)) return 'time';
-  if (/^(guide|cover)/.test(path)) return 'guide';
-  if (/^summary/.test(path)) return 'summary';
-  if (/^(days|places)/.test(path)) return 'plan';
-  if (/^(included|notIncluded|whatToBring|notSuitableFor|notAllowed|localTips|emergencyContacts)/.test(path)) return 'practical';
-  if (/^(policies|closingNote|disclaimer)/.test(path)) return 'terms';
+  if (/^(trip\.(startTime|endTime)|meeting|pickup)/.test(path)) return 'info';
+  if (/^(summary|days|places)/.test(path)) return 'plan';
+  if (/^(guide|cover|included|notIncluded|whatToBring|notSuitableFor|notAllowed|localTips|emergencyContacts|policies|closingNote|disclaimer)/.test(path)) return 'details';
   return 'info';
 }
 
-export function stepsFor(mode: ItineraryMode): StepId[] {
-  const base: StepId[] = ['info'];
-  if (mode !== 'destination_guide') base.push('time');
-  base.push('guide', 'summary', 'plan', 'practical', 'terms', 'ai', 'publish');
-  return base;
+export function stepsFor(_mode: ItineraryMode): StepId[] {
+  return ['info', 'plan', 'details', 'publish'];
 }
 
 function keyFor(content: WebItineraryContent, path: string): string {

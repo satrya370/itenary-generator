@@ -17,6 +17,8 @@ import { AiService, registerAiRoutes, type AiServiceLimits } from './ai/service.
 import { createPlacesProvider, defaultDailyLimit, type PlacesProvider } from './places/provider.js';
 import { registerImportRoutes } from './import/routes.js';
 import { ImportService } from './import/service.js';
+import { importRetentionDays, sweepImportSources } from './import/retention.js';
+import { MAX_PDF_BYTES, MAX_PDF_PAGES, MAX_TEXT_CHARS } from './import/intake.js';
 import type { ImportExtractor } from './ai/provider.js';
 
 export interface AppOptions {
@@ -87,6 +89,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
   const trustedShareOrigin = shareUrl.origin;
   const allowedOrigins = new Set(options.allowedOrigins || [origin, 'http://127.0.0.1:5173']);
   const store = openStore({ dataDir });
+  const importRetention = importRetentionDays(process.env.IMPORT_RETENTION_DAYS);
   let ai: AiService;
   let importExtractor: ImportExtractor | null = null;
   try {
@@ -140,7 +143,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
 
   app.get('/api/v1/itinerary-engine/context', async () => ({
     workspace: store.workspace(), accessMode: 'loopback', limits: { jsonBytes: 2 * 1024 * 1024, imageBytes: 5 * 1024 * 1024, imagePixels: 16_000_000 },
-    capabilities: { locales: ['la', 'fr', 'en', 'id', 'ja', 'zh-Hans'], render: 'available', ai: ai.contextSummary() }
+    capabilities: { locales: ['la', 'fr', 'en', 'id', 'ja', 'zh-Hans'], render: 'available', ai: ai.contextSummary(), import: { aiConfigured: importExtractor?.credentialState === 'configured', maxTextChars: MAX_TEXT_CHARS, maxPdfBytes: MAX_PDF_BYTES, maxPdfPages: MAX_PDF_PAGES, retentionDays: importRetention } }
   }));
   app.get('/api/v1/itinerary-engine/profile', async () => store.workspace());
   app.patch<{ Body: unknown }>('/api/v1/itinerary-engine/profile', async (request, reply) => {
@@ -315,6 +318,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
       return reply.code(502).send(error('PLACES_FAILED', 'Autocomplete tempat gagal; ketik manual.', undefined, request.id));
     }
   });
+  await sweepImportSources(store, dataDir, importRetention).catch(() => 0);
   registerImportRoutes(app, { store, dataDir, service: new ImportService({ store, dataDir, extractor: importExtractor }) });
   app.get('/api/health', async () => ({ status: 'ok' }));
   registerAiRoutes(app, ai);

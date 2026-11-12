@@ -37,7 +37,7 @@ async function main() {
   try {
     await page.setViewport({ width: 1440, height: 1000 });
     await page.goto(origin); await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Engine tersambung'));
-    await page.click('[data-mode-card="half_day"]');
+    await page.evaluate(() => [...document.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.trim() === 'Buat itinerary baru' && !b.disabled)?.click()); await page.waitForSelector('[data-mode-card]:not([disabled])'); await page.click('[data-mode-card="half_day"]'); await page.waitForSelector('[data-method="manual"]'); await page.click('[data-method="manual"]'); await page.evaluate(() => [...document.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.trim() === 'Mulai isi')?.click());
     await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Draft baru tersimpan'));
     await clickButton('Tambah aktivitas');
     const activityTitleSelector = '[data-field-path="days[].activities[].title"]';
@@ -58,8 +58,11 @@ async function main() {
     await clickButton('Simpan draft');
     await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Tersimpan · revisi'));
     await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent?.trim() === 'Preview' && !(button as HTMLButtonElement).disabled));
+    const stepBeforePreview = await page.$eval('[aria-current="step"]', element => element.textContent);
     await clickButton('Preview');
     await page.waitForFunction(() => document.querySelector('iframe[title="Preview itinerary tersimpan"]') !== null);
+    assert.equal(await page.$eval('main', element => element.inert), true, 'editor is inactive while preview is open');
+    await page.waitForFunction(() => document.activeElement?.textContent?.trim() === 'Kembali mengedit');
     await page.waitForFunction(() => document.querySelector('[aria-label="Publish diagnostics"] [data-diagnostic-path="days[0].activities[0].title"]') !== null);
     const frame = page.frames().find(candidate => candidate.url() === 'about:srcdoc');
     assert.ok(frame, 'sandboxed srcdoc preview frame exists');
@@ -70,12 +73,6 @@ async function main() {
     await (await page.$('iframe[title="Preview itinerary tersimpan"]'))!.screenshot({ path: path.join(evidenceDir, 'cp024-preview-frame.png') });
     assert.equal(await page.$eval('iframe[title="Preview itinerary tersimpan"]', element => (element as HTMLIFrameElement).getAttribute('sandbox')), '');
     assert.ok(await page.$('[aria-label="Publish diagnostics"] [data-diagnostic-path="days[0].activities[0].title"]'), 'activity title diagnostic is listed');
-    const focusProbe = await page.evaluate(() => {
-      const button = document.querySelector<HTMLButtonElement>('[aria-label="Publish diagnostics"] [data-diagnostic-path="days[0].activities[0].title"]');
-      button?.click(); return (document.activeElement as HTMLElement)?.id || '';
-    });
-    const exactActivityFocus = focusProbe === activityFieldIds[0];
-    assert.ok(exactActivityFocus, 'diagnostic action focuses the missing activity after reorder');
     for (const [mode, width, height] of [['phone', 390, 844], ['desktop', 1440, 1000]] as const) {
       await page.setViewport({ width, height });
       await clickButton(mode === 'phone' ? 'Phone' : 'Desktop');
@@ -83,6 +80,21 @@ async function main() {
       assert.ok(size.document <= size.viewport, `${mode} overflow ${JSON.stringify(size)}`);
       await page.screenshot({ path: path.join(evidenceDir, `cp024-preview-${mode}.png`), fullPage: true });
     }
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.querySelector('[role="dialog"][aria-modal="true"]'));
+    await page.waitForFunction(() => document.activeElement?.textContent?.trim() === 'Preview');
+    await clickButton('Preview');
+    await page.waitForSelector('[role="dialog"][aria-modal="true"]');
+    await clickButton('Kembali mengedit');
+    assert.equal(await page.$eval('main', element => element.inert), false, 'editor is restored after preview');
+    assert.equal(await page.$eval('[aria-current="step"]', element => element.textContent), stepBeforePreview, 'return keeps the previous step');
+    await page.evaluate(() => [...document.querySelectorAll<HTMLButtonElement>('[aria-label="Langkah"] button')].find(button => button.textContent?.includes('Periksa & bagikan'))?.click());
+    const focusProbe = await page.evaluate(() => {
+      const button = document.querySelector<HTMLButtonElement>('[aria-label="Publish diagnostics"] [data-diagnostic-path="days[0].activities[0].title"]');
+      button?.click(); return (document.activeElement as HTMLElement)?.id || '';
+    });
+    const exactActivityFocus = focusProbe === activityFieldIds[0];
+    assert.ok(exactActivityFocus, 'diagnostic action focuses the missing activity after reorder');
     assert.deepEqual(external, []);
     assert.deepEqual(consoleErrors, []);
     const summary = { preview: 'saved revision only', publishReady: false, sandbox: true, diagnosticsVisible: true, activityDiagnosticFocus: exactActivityFocus ? 'exact-missing-activity-after-reorder' : 'wrong-target', previewTextLength: previewText.length, externalRequests: external.length, consoleErrors: consoleErrors.length, evidence: ['cp024-preview-phone.png', 'cp024-preview-desktop.png'] };

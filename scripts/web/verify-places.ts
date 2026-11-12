@@ -84,7 +84,7 @@ async function main(source: PlacesSource) {
 
   try {
     await page.goto(origin); await waitStatus('Engine tersambung');
-    await page.click('[data-mode-card="full_day"]');
+    await page.evaluate(() => [...document.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.trim() === 'Buat itinerary baru' && !b.disabled)?.click()); await page.waitForSelector('[data-mode-card]:not([disabled])'); await page.click('[data-mode-card="full_day"]'); await page.waitForSelector('[data-method="manual"]'); await page.click('[data-method="manual"]'); await page.evaluate(() => [...document.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.trim() === 'Mulai isi')?.click());
     await waitStatus('Draft baru tersimpan');
     await set('trip.title', 'Bali places'); await set('trip.destination', 'Bali'); await set('trip.country', 'Indonesia'); await set('trip.language', 'en');
     await set('summary', 'A day around Ubud and the south coast.');

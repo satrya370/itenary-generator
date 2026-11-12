@@ -51,6 +51,16 @@ async function main() {
     const first = await readStatus(); assert.equal(first.active, true);
     const stableUrl = first.shareUrl as string; const oldToken = stableUrl.split('/').at(-1)!;
     assert.ok(stableUrl.startsWith(origin));
+    await page.evaluate(() => { new Function("Object.defineProperty(navigator, 'share', { configurable: true, value: async data => { window.__shared = data.url; } }); Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async text => { window.__copied = text; } } });")(); });
+    await clickButton('Bagikan');
+    await page.waitForFunction(() => Boolean((window as any).__shared));
+    assert.equal(await page.evaluate(() => (window as any).__shared), stableUrl, 'native share uses the public link');
+    await page.evaluate(() => { Object.defineProperty(navigator, 'share', { configurable: true, value: undefined }); });
+    await clickButton('Bagikan'); await waitStatus('Link publik disalin');
+    assert.equal(await page.evaluate(() => (window as any).__copied), stableUrl, 'sharing falls back to clipboard');
+    await page.evaluate(() => { new Function("Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async () => { throw new Error('unavailable'); } } });")(); });
+    await clickButton('Salin link'); await waitStatus('Clipboard tidak tersedia');
+    assert.equal(await page.$eval('[aria-label="Publikasi"] a', element => (element as HTMLAnchorElement).href), stableUrl, 'link remains visible for manual copying');
     const publicPage = await browser.newPage();
     await publicPage.goto(stableUrl);
     assert.equal(await publicPage.title(), 'CP025 OG Fixture');
@@ -77,13 +87,14 @@ async function main() {
     assert.equal(await updatedPage.title(), 'CP025 Updated Fixture'); await updatedPage.close();
     await clickButton('Cabut link'); await waitStatus('Link dicabut');
     assert.equal((await readStatus()).active, false);
+    assert.equal(await page.evaluate(() => [...document.querySelectorAll('button')].some(button => button.textContent?.trim() === 'Bagikan')), false, 'revoked links cannot be shared');
     const old = await browser.newPage(); assert.equal((await old.goto(stableUrl))?.status(), 404); assert.equal((await old.goto(`${stableUrl}/og-image`))?.status(), 404); await old.close();
     await clickButton('Publish itinerary'); await waitStatus('Itinerary berhasil dipublish');
     const rotated = await readStatus(); assert.notEqual(rotated.shareUrl, stableUrl);
     const oldAgain = await browser.newPage(); assert.equal((await oldAgain.goto(stableUrl))?.status(), 404); await oldAgain.close();
     assert.deepEqual(external, []); assert.deepEqual(failures, []);
     const safeMetadata = { ...initialMetadata, 'og:url': `${origin}/i/[REDACTED]`, 'og:image': `${origin}/i/[REDACTED]/og-image` };
-    const summary = { initialLinkStableOnRepublish: true, revokedTokenPermanentlyDenied: true, rotatedTokenAfterRevoke: rotated.shareUrl !== stableUrl, ogMetadata: safeMetadata, ogImage: image, privateBriefAbsent: true, externalRequests: external.length, consoleErrors: failures.length, mobileAndDesktop: true };
+    const summary = { initialLinkStableOnRepublish: true, revokedTokenPermanentlyDenied: true, rotatedTokenAfterRevoke: rotated.shareUrl !== stableUrl, nativeShareAndClipboardFallback: true, ogMetadata: safeMetadata, ogImage: image, privateBriefAbsent: true, externalRequests: external.length, consoleErrors: failures.length, mobileAndDesktop: true };
     await writeFile(path.join(evidenceDir, 'verification-summary.json'), JSON.stringify(summary, null, 2)); console.log(JSON.stringify(summary));
   } finally { await browser.close(); await app.close(); await rm(dataDir, { recursive: true, force: true }); }
 }

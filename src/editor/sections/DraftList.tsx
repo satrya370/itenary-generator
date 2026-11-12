@@ -1,9 +1,9 @@
 import React from 'react';
 import { modeCopy } from '../labels.js';
 
-export function DraftList({ records, modeCopyBadge, onOpen, busy }: {
+export function DraftList({ records, onOpen, busy }: {
   records: Array<{ id: string; revision: number; mode: string; title: string; updatedAt: string }>;
-  modeCopyBadge: Record<string, string>; onOpen: (id: string) => void; busy: boolean;
+  onOpen: (id: string) => void; busy: boolean;
 }) {
   const relative = new Intl.RelativeTimeFormat('id', { numeric: 'auto' });
   function relativeText(iso: string): string {
@@ -20,13 +20,13 @@ export function DraftList({ records, modeCopyBadge, onOpen, busy }: {
     return new Date(iso).toLocaleDateString('id');
   }
   return (
-    <ul className="mt-4 space-y-2">
+    <ul className="mt-2 divide-y divide-slate-100">
       {records.map((item) => (
         <li key={item.id}>
-          <button type="button" disabled={busy} onClick={() => onOpen(item.id)} className="w-full rounded-md border border-slate-200 p-3 text-left hover:border-teal-600 focus-visible:outline-2 focus-visible:outline-teal-700 disabled:opacity-50">
-            <span className="block font-medium">{item.title || 'Tanpa judul'}</span>
-            <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${modeCopyBadge[item.mode] ?? 'bg-slate-100 text-slate-900'}`}>{modeCopy[item.mode]?.title ?? item.mode.replaceAll('_', ' ')}</span>
-            <span className="mt-1 block text-xs text-slate-500">diubah {relativeText(item.updatedAt)} · revisi {item.revision}</span>
+          <button type="button" disabled={busy} onClick={() => onOpen(item.id)} className="flex min-h-[64px] w-full items-center justify-between gap-3 rounded-md px-2 py-3 text-left hover:bg-teal-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 active:bg-teal-100 disabled:opacity-50">
+            <span className="min-w-0"><span className="block break-words font-medium text-slate-900">{item.title || 'Tanpa judul'}</span>
+            <span className="mt-1 block text-sm text-slate-600">{modeCopy[item.mode]?.title ?? item.mode.replaceAll('_', ' ')} · diubah {relativeText(item.updatedAt)}</span></span>
+            <span aria-hidden="true" className="text-xl text-slate-400">›</span>
           </button>
         </li>
       ))}

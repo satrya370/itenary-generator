@@ -142,3 +142,12 @@ export async function storeSourceText(dataDir: string, id: string, text: string)
 export async function readSourceText(dataDir: string, id: string): Promise<string> {
   return readFile(path.join(dataDir, 'imports', `${id}.txt`), 'utf8');
 }
+
+/** Null only when the stored text is gone (removed by the retention sweep or by hand). Any other read error is still thrown. */
+export async function readSourceTextOrNull(dataDir: string, id: string): Promise<string | null> {
+  try { return await readSourceText(dataDir, id); }
+  catch (cause) { if ((cause as NodeJS.ErrnoException)?.code === 'ENOENT') return null; throw cause; }
+}
+
+export const SOURCE_TEXT_REMOVED_MESSAGE = 'Teks sumber sudah dihapus otomatis sesuai batas simpan. Tempel ulang atau upload ulang dokumennya untuk membuat import baru.';
+export const SOURCE_TEXT_REMOVED_CODE = 'IMPORT_SOURCE_TEXT_REMOVED';
