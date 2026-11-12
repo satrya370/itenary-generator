@@ -108,6 +108,14 @@ async function main() {
     assert.ok((await bodyText()).includes('Masih kosong dan wajib diisi'), 'missing required fields are listed in the report');
     await page.evaluate(() => document.querySelector('section[aria-label="Hasil import"]')?.scrollIntoView());
     await screenshot('cp032-report-1280.png', 1280);
+    const reportText = await page.evaluate(() => document.querySelector('section[aria-label="Hasil import"]')?.textContent ?? '');
+    assert.ok(!/\w\[\d*\]|\w\.\w+\[/.test(reportText), `report shows labels, not developer paths: ${reportText.slice(0, 300)}`);
+    const jumpTargets = await page.$$('section[aria-label="Hasil import"] ul button');
+    assert.ok(jumpTargets.length > 0, 'report lists at least one missing field to jump to');
+    await jumpTargets[jumpTargets.length - 1].click();
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const focused = await page.evaluate(() => { const el = document.activeElement as HTMLElement | null; return { tag: el?.tagName ?? '', path: el?.dataset?.fieldPath ?? el?.closest<HTMLElement>('[data-field-path]')?.dataset.fieldPath ?? '' }; });
+    assert.ok(focused.path.length > 0, `a jump from the report lands on a field (got ${focused.tag})`);
 
     // 2. Four modes from paste (one draft each).
     await pasteAndProcess('id-full-day-tidy.txt', 'full_day', 'Tur Ubud dan Tegallalang');

@@ -105,3 +105,70 @@ export function missingAfterImport(content: WebItineraryContent): string[] {
 export function newDraftBase(mode: ItineraryMode, profile: { defaultCountry?: string; defaultLanguage?: string | null }): WebItineraryContent {
   return { schemaVersion: 'web-2.1.0', trip: { mode, title: '', destination: '', country: profile.defaultCountry ?? '', region: null, language: profile.defaultLanguage ?? null, colorTheme: 'mixed', startDate: null, startTime: null, endTime: null }, guide: { name: null, phone: null }, meeting: { place: null, mapsUrl: null, time: null, note: null }, pickup: { offered: false, area: null, time: null, dropoffNote: null }, cover: null, summary: '', days: mode === 'multi_day' ? [blankDay(mode, 1), blankDay(mode, 2)] : mode === 'destination_guide' ? [] : [blankDay(mode, 1)], places: [], included: [], notIncluded: [], notSuitableFor: [], notAllowed: [], whatToBring: [], localTips: [], emergencyContacts: [], policies: null, closingNote: null, disclaimer: null };
 }
+
+/** A document can hold a line longer than a field allows. Nothing is rejected: text is cut at a word boundary, the cut part of an
+ * activity title moves to its description, and every cut is reported so the guide can finish it by hand. */
+function clip(text: string, max: number): { kept: string; rest: string } {
+  if (text.length <= max) return { kept: text, rest: '' };
+  const window = text.slice(0, max);
+  const space = window.lastIndexOf(' ');
+  const cut = space > max * 0.6 ? space : max;
+  return { kept: text.slice(0, cut).trimEnd(), rest: text.slice(cut).trim() };
+}
+
+export function fitToLimits(content: WebItineraryContent): string[] {
+  const notes: string[] = [];
+  const cut = (label: string, count = 1) => notes.push(count > 1 ? `${label}: ${count} isian terlalu panjang dan dipotong; lengkapi dari teks sumber.` : `${label}: isian terlalu panjang dan dipotong; lengkapi dari teks sumber.`);
+  const fitString = (label: string, value: string | null, max: number, assign: (next: string) => void) => {
+    if (typeof value !== 'string' || value.length <= max) return;
+    assign(clip(value, max).kept); cut(label);
+  };
+  const fitList = (label: string, list: string[], maxItem: number, maxItems: number) => {
+    if (list.length > maxItems) { notes.push(`${label}: hanya ${maxItems} butir pertama dipakai; ${list.length - maxItems} butir lain tidak dimasukkan.`); list.length = maxItems; }
+    let clipped = 0;
+    list.forEach((item, index) => { if (item.length > maxItem) { list[index] = clip(item, maxItem).kept; clipped += 1; } });
+    if (clipped) cut(label, clipped);
+  };
+
+  const { trip, guide, meeting } = content;
+  fitString('Judul', trip.title, 200, (v) => { trip.title = v; });
+  fitString('Destinasi', trip.destination, 200, (v) => { trip.destination = v; });
+  fitString('Negara', trip.country, 120, (v) => { trip.country = v; });
+  fitString('Nama guide', guide.name, 160, (v) => { guide.name = v; });
+  fitString('Nomor guide', guide.phone, 80, (v) => { guide.phone = v; });
+  fitString('Titik kumpul', meeting.place, 240, (v) => { meeting.place = v; });
+  if (meeting.mapsUrl && meeting.mapsUrl.length > 2048) { meeting.mapsUrl = null; notes.push('Link peta titik kumpul terlalu panjang dan tidak dimasukkan.'); }
+  fitString('Ringkasan', content.summary, 4000, (v) => { content.summary = v; });
+  fitString('Kebijakan', content.policies, 4000, (v) => { content.policies = v; });
+  fitString('Catatan penutup', content.closingNote, 2000, (v) => { content.closingNote = v; });
+
+  fitList('Sudah termasuk', content.included, 500, 50);
+  fitList('Tidak termasuk', content.notIncluded, 500, 50);
+  fitList('Yang perlu dibawa', content.whatToBring, 500, 50);
+  fitList('Tidak cocok untuk', content.notSuitableFor, 500, 50);
+  fitList('Tidak diperbolehkan', content.notAllowed, 500, 50);
+  fitList('Tips lokal', content.localTips, 1200, 50);
+
+  if (content.emergencyContacts.length > 30) { notes.push(`Kontak darurat: hanya 30 pertama dipakai; ${content.emergencyContacts.length - 30} lain tidak dimasukkan.`); content.emergencyContacts.length = 30; }
+  for (const contact of content.emergencyContacts) { contact.label = clip(contact.label, 120).kept; contact.value = clip(contact.value, 240).kept; }
+
+  content.days.forEach((day, dayIndex) => {
+    fitString(`Hari ${dayIndex + 1}, judul`, day.title, 200, (v) => { day.title = v; });
+    if (day.activities.length > 30) { notes.push(`Hari ${dayIndex + 1}: hanya 30 aktivitas pertama dipakai; ${day.activities.length - 30} aktivitas lain tidak dimasukkan.`); day.activities.length = 30; }
+    for (const activity of day.activities) {
+      if (activity.title.length > 200) {
+        const { kept, rest } = clip(activity.title, 200);
+        activity.title = kept;
+        if (rest) activity.description = activity.description ? `${rest}\n${activity.description}` : rest;
+        notes.push(`Hari ${dayIndex + 1}: judul aktivitas "${kept.slice(0, 40)}…" terlalu panjang; sisanya dipindah ke deskripsi.`);
+      }
+      if (activity.place && activity.place.length > 200) activity.place = clip(activity.place, 200).kept;
+      if (activity.description.length > 4000) activity.description = clip(activity.description, 4000).kept;
+      if (activity.tip && activity.tip.length > 4000) activity.tip = clip(activity.tip, 4000).kept;
+    }
+  });
+  content.places.forEach((place) => {
+    place.name = clip(place.name, 200).kept; place.area = clip(place.area ?? '', 160).kept; place.description = clip(place.description ?? '', 6000).kept;
+  });
+  return notes;
+}

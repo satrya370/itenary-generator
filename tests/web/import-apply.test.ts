@@ -305,3 +305,42 @@ test('validation: unknown fields, a bad operation id, and a missing target are r
   assert.equal((await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'auto' })).statusCode, 422);
   assert.equal(d.calls.length, 0);
 });
+
+test('over-long values never fail the import: they are cut, moved or dropped, and reported', async (t) => {
+  const d = double([]);
+  const app = await fixture(t, d.extractor);
+  const long = 'Kunjungan ' + 'panjang sekali '.repeat(20);
+  const many = Array.from({ length: 31 }, (_, i) => `${String(8 + Math.floor(i / 4)).padStart(2, '0')}:${String((i % 4) * 15).padStart(2, '0')} Titik ${i}`).join('\n');
+  const text = `Hari 1\n09:00 ${long}\n${many}\n\nTermasuk:\n- ${'bahan '.repeat(100)}\n`;
+  const response = await apply(app, await source(app, text), { operationId: op(), target: 'new', mode: 'multi_day', outputLanguage: 'id' });
+  assert.equal(response.statusCode, 201, response.body);
+  const body = response.json();
+  const content = body.itinerary.draftContent as WebItineraryContent;
+  assert.ok(content.days[0].activities.length <= 30);
+  assert.ok(content.days[0].activities.every((a) => a.title.length <= 200));
+  assert.ok(content.included.every((item) => item.length <= 500));
+  assert.ok(body.report.notes.some((note: string) => /terlalu panjang|tidak dimasukkan/.test(note)));
+});
+
+test('a model value that is only part of a sentence quote is dropped, and engine markers cannot be quoted', async (t) => {
+  const d = double([JSON.stringify({
+    policies: { value: 'termasuk tiket masuk', quote: 'Tidak termasuk tiket masuk' },
+    summary: { value: '[summary] Perjalanan santai di Ubud.', quote: '[summary] Perjalanan santai di Ubud.' }
+  })]);
+  const app = await fixture(t, d.extractor);
+  const text = 'Hari 1\n09:00 Sarapan\nPerjalanan santai di Ubud.\nTidak termasuk tiket masuk\n';
+  const response = await apply(app, await source(app, text), { operationId: op(), target: 'new', mode: 'full_day', outputLanguage: 'id' });
+  assert.equal(response.statusCode, 201, response.body);
+  const content = response.json().itinerary.draftContent as WebItineraryContent;
+  assert.equal(content.policies, null);
+  assert.notEqual(content.summary, '[summary] Perjalanan santai di Ubud.');
+  assert.ok(!content.summary.includes('['));
+});
+
+test('a new import does not copy the source into the writing brief', async (t) => {
+  const d = double([]);
+  const app = await fixture(t, d.extractor);
+  const response = await apply(app, await source(app, await fixtureText('id-full-day-tidy.txt')), { operationId: op(), target: 'new', mode: 'full_day', outputLanguage: 'id' });
+  assert.equal(response.statusCode, 201, response.body);
+  assert.equal(response.json().itinerary.writingContext.brief, '');
+});

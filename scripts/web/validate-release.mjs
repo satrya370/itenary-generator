@@ -19,6 +19,29 @@ for (const locale of ['la', 'fr', 'en', 'id', 'ja', 'zh-Hans']) assert.ok(await 
 for (const name of Object.keys(pkg.dependencies)) assert.ok(!forbidden.test(name), `forbidden runtime dependency ${name}`);
 for (const name of Object.keys(lock.packages)) assert.ok(!forbidden.test(name), `forbidden package in runtime lock ${name}`);
 
+
+// Every bare package the shipped server code imports (static, dynamic, or resolved by name) must be a runtime dependency.
+async function serverSources(directory) {
+  const result = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const full = path.join(directory, entry.name);
+    if (entry.isDirectory()) result.push(...await serverSources(full));
+    else if (entry.isFile() && entry.name.endsWith('.js')) result.push(full);
+  }
+  return result;
+}
+const builtins = new Set((await import('node:module')).builtinModules);
+const specifier = /(?:from\s*|import\s*\(\s*|import\.meta\.resolve\(\s*)['"]([^'".\/][^'"]*)['"]/g;
+for (const file of await serverSources(path.join(root, 'server'))) {
+  const text = await readFile(file, 'utf8');
+  for (const match of text.matchAll(specifier)) {
+    const spec = match[1];
+    if (spec.startsWith('node:') || builtins.has(spec.split('/')[0])) continue;
+    const name = spec.startsWith('@') ? spec.split('/').slice(0, 2).join('/') : spec.split('/')[0];
+    assert.ok(pkg.dependencies[name], `server imports ${name} (${path.relative(root, file)}) but the release does not ship it`);
+  }
+}
+
 async function files(directory, prefix = '') {
   const result = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {

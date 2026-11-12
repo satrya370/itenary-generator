@@ -125,7 +125,7 @@ function App() {
   function canDiscard() { return !dirty || confirm(`Draft memiliki perubahan belum disimpan. Buang draft lokal dan lanjutkan?${profileDirty ? ' Perubahan profil akan tetap tersimpan di formulir.' : ''}`); }
   async function open(id: string) {
     if (!canDiscard()) return;
-    setBusy(true); try { const loaded = await api.get(id); installRecord(loaded); const [published, history] = await Promise.all([api.publication(id), api.versions(id)]); setPublication(published); setVersions(history.items); setStatus(`Draft dibuka · revisi ${loaded.revision}`); api.latestImport(id).then(({ operation }) => setImportOperation(operation && operation.status === 'completed' ? operation : null)).catch(() => {}); } catch (e) { setStatus((e as Error).message); } finally { setBusy(false); }
+    setBusy(true); try { const loaded = await api.get(id); installRecord(loaded); const [published, history] = await Promise.all([api.publication(id), api.versions(id)]); setPublication(published); setVersions(history.items); setStatus(`Draft dibuka · revisi ${loaded.revision}`); api.latestImport(id).then(({ operation }) => setImportOperation(operation && operation.status === 'completed' && !importReportClosed(operation.operationId) ? operation : null)).catch(() => {}); } catch (e) { setStatus((e as Error).message); } finally { setBusy(false); }
   }
   async function create(mode: ItineraryMode) {
     if (!canDiscard()) return;
@@ -324,6 +324,7 @@ function App() {
   function labelFor(path: string, mode: ItineraryMode) {
     try { return fieldMeta(templatePath(path), mode).label; } catch { return path; }
   }
+  function importReportClosed(operationId: string) { try { return localStorage.getItem(`import-report-closed:${operationId}`) === '1'; } catch { return false; } }
   function focusDiagnostic(d: { path: string; targetId?: string }) {
     const template = templatePath(d.path);
     const scoped = d.targetId ? document.querySelector<HTMLElement>(`[data-target-id="${CSS.escape(d.targetId)}"]`) : null;
@@ -494,7 +495,7 @@ function App() {
       </aside>
       <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-7">
         {importing ? <ImportScreen target={importing} draftMode={activeMode ?? null} draftId={record?.id ?? null} draftRevision={record?.revision ?? null} aiActive={capabilities.ai?.credentialState === 'configured'} onCancel={() => setImporting(null)} onDone={finishImport} /> : !content || !activeMode ? <div className="grid min-h-80 place-items-center text-center text-slate-500">Pilih atau buat draft untuk mulai.</div> : <>
-          {importOperation && <ImportReport operation={importOperation} busy={busy} onJump={(path) => focusDiagnostic({ path })} onUndo={undoImport} onClose={() => setImportOperation(null)} />}
+          {importOperation && <ImportReport operation={importOperation} busy={busy} labelFor={(path) => labelFor(path, activeMode ?? 'half_day')} onJump={(path) => focusDiagnostic({ path, targetId: draftRef.current ? targetIdFor(draftRef.current, path) : undefined })} onUndo={undoImport} onClose={() => { try { localStorage.setItem(`import-report-closed:${importOperation.operationId}`, '1'); } catch { /* storage unavailable: the panel just returns next time */ } setImportOperation(null); }} />}
           <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4"><div><div className="flex flex-wrap items-center gap-2"><h2 className="text-xl font-semibold">{content.trip.title || 'Tanpa judul'}</h2><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${modeCopy[activeMode].badge}`}>{modeCopy[activeMode].title}</span></div><p className="mt-1 text-sm text-slate-600">{dirty ? 'Belum disimpan' : `Tersimpan · revisi ${record?.revision}`}{profileDirty ? ' · profil belum disimpan' : ''}</p></div><div className="flex gap-2"><button type="button" disabled={busy || dirty || !record} onClick={() => { goToStep(steps.indexOf('publish')); void previewSaved(); }} className={buttonClass}>Preview</button><button type="button" disabled={busy || !dirty || Boolean(localeError)} onClick={save} className={primaryClass}>Simpan draft</button></div></div>
           <div className="lg:grid lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-6">
           <div className="sticky top-0 z-10 -mx-1 mb-4 bg-white px-1 py-2 lg:top-4 lg:z-0 lg:mx-0 lg:mb-0 lg:self-start lg:px-0"><Stepper steps={steps} mode={activeMode ?? 'half_day'} current={stepIndex} issueCounts={issueCounts} onSelect={goToStep} /><p className="mt-2 text-xs font-semibold text-slate-700 lg:hidden">Langkah {stepIndex + 1} dari {steps.length} · {stepTitle(current, activeMode ?? 'half_day')}</p></div>

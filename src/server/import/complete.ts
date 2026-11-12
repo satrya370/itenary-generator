@@ -23,25 +23,33 @@ const validateCompletion = new Ajv({ allErrors: true, strict: false }).compile(c
 export const MAX_SEGMENT_CHARS = 20_000;
 export const MAX_AI_ATTEMPTS = 2;
 
-/** Quote guard: quote is a substring of the segments, and value is a substring of quote (both folded). */
-export function quoteHolds(item: TextValue, foldedSource: string): boolean {
+const trimEnd = (text: string) => text.replace(/[\s.,;:!]+$/, '');
+
+/** Quote guard: the quote is a substring of the document text (folded). A "part" value (a name or an area) may be a piece of
+ * its quote; a "whole" value (a sentence) must be the whole quote, so a cut such as "Tidak termasuk X" -> "termasuk X" cannot flip the meaning. */
+export function quoteHolds(item: TextValue, foldedSource: string, kind: 'part' | 'whole' = 'part'): boolean {
   const quote = fold(item.quote);
   const value = fold(item.value);
-  return value.length > 0 && quote.length > 0 && foldedSource.includes(quote) && quote.includes(value);
+  if (value.length === 0 || quote.length === 0 || !foldedSource.includes(quote)) return false;
+  return kind === 'whole' ? trimEnd(value) === trimEnd(quote) : quote.includes(value);
 }
 
 export function isDayMode(mode: ItineraryMode): boolean { return mode !== 'destination_guide'; }
 
-/** Splits the parser's unconsumed lines into the text the model may quote from. */
-export function segmentsOf(parse: ParseResult): string[] {
-  const out: string[] = [];
+/** Splits the parser's unconsumed lines into the text the model may quote from.
+ * `sent` carries the engine's section hint for the model; `plain` is the document text only and is what the quote guard checks,
+ * so an echoed engine marker can never pass as a quote. */
+export function segmentsOf(parse: ParseResult): { sent: string[]; plain: string[] } {
+  const sent: string[] = [];
+  const plain: string[] = [];
   let length = 0;
   for (const line of parse.unconsumed) {
     if (length + line.text.length > MAX_SEGMENT_CHARS) break;
-    out.push(line.section ? `[${line.section}] ${line.text}` : line.text);
+    sent.push(line.section ? `[${line.section}] ${line.text}` : line.text);
+    plain.push(line.text);
     length += line.text.length + 1;
   }
-  return out;
+  return { sent, plain };
 }
 
 /** Keeps only values that pass the guards and apply to the mode and the path. Everything else is reported as dropped. */
@@ -51,7 +59,7 @@ export function filterCompletion(completion: Completion, segmentsText: string, p
   const accepted: Completion = { places: [], activityDetails: [] };
   const textPath = (name: 'summary' | 'closingNote' | 'policies', item: TextValue | null | undefined) => {
     if (!item) return;
-    if (!quoteHolds(item, source)) { dropped.push({ path: name, code: 'IMPORT_QUOTE_NOT_FOUND' }); return; }
+    if (!quoteHolds(item, source, 'whole')) { dropped.push({ path: name, code: 'IMPORT_QUOTE_NOT_FOUND' }); return; }
     accepted[name] = item;
   };
   textPath('summary', completion.summary);
@@ -62,7 +70,7 @@ export function filterCompletion(completion: Completion, segmentsText: string, p
     if (mode !== 'destination_guide') { dropped.push({ path: 'places', code: 'IMPORT_NOT_APPLICABLE' }); break; }
     if (!quoteHolds(place.name, source)) { dropped.push({ path: 'places[].name', code: 'IMPORT_QUOTE_NOT_FOUND' }); continue; }
     const area = place.area && quoteHolds(place.area, source) ? place.area : null;
-    const description = place.description && quoteHolds(place.description, source) ? place.description : null;
+    const description = place.description && quoteHolds(place.description, source, 'whole') ? place.description : null;
     if (place.area && !area) dropped.push({ path: 'places[].area', code: 'IMPORT_QUOTE_NOT_FOUND' });
     if (place.description && !description) dropped.push({ path: 'places[].description', code: 'IMPORT_QUOTE_NOT_FOUND' });
     accepted.places!.push({ name: place.name, area, description });
@@ -78,7 +86,7 @@ export function filterCompletion(completion: Completion, segmentsText: string, p
     const target = matches[0];
     const keep = (field: 'place' | 'description' | 'tip', item: TextValue | null | undefined) => {
       if (!item) return null;
-      if (!quoteHolds(item, source)) { dropped.push({ path: `activities[${detail.title}].${field}`, code: 'IMPORT_QUOTE_NOT_FOUND' }); return null; }
+      if (!quoteHolds(item, source, field === 'place' ? 'part' : 'whole')) { dropped.push({ path: `activities[${detail.title}].${field}`, code: 'IMPORT_QUOTE_NOT_FOUND' }); return null; }
       return item;
     };
     accepted.activityDetails!.push({ title: target.title, place: keep('place', detail.place), description: keep('description', detail.description), tip: keep('tip', detail.tip) });
@@ -107,7 +115,7 @@ export async function requestCompletion(extractor: ImportExtractor, args: { mode
   while (attempts < MAX_AI_ATTEMPTS) {
     attempts += 1;
     try {
-      const result = await extractor.extract({ mode: args.mode, locale: args.locale, segments: args.segments, maxTokens: 1500 }, 120_000);
+      const result = await extractor.extract({ mode: args.mode, locale: args.locale, segments: args.segments, maxTokens: 3000 }, 120_000);
       addUsage(result.usage);
       try {
         const json = parseCompletionText(result.text);

@@ -5,7 +5,7 @@ import type { ItineraryMode, WebItineraryContent } from '../../contracts/types.j
 import { readSourceText } from './intake.js';
 import { parseDocument } from './parse/extract.js';
 import { filterCompletion, requestCompletion, segmentsOf, type Completion, type Dropped } from './complete.js';
-import { missingAfterImport, mergeContent, newDraftBase } from './merge.js';
+import { fitToLimits, missingAfterImport, mergeContent, newDraftBase } from './merge.js';
 
 /** Import service (CP031): deterministic parse, optional AI completion, merge into a new or the open draft, ledger, undo. */
 
@@ -97,7 +97,7 @@ export class ImportService {
     const { target, mode, saved, outputLanguage, operationId, sourceId } = args;
     const text = await readSourceText(dataDir, sourceId);
     const parse = parseDocument(text, mode);
-    const segments = segmentsOf(parse);
+    const { sent: segments, plain: plainSegments } = segmentsOf(parse);
     const notes = [...parse.notes];
     const proposal = JSON.parse(args.sourceLanguageJson) as { status: string; locale: string | null };
     const profile = store.workspace().profile as { defaultCountry?: string; defaultLanguage?: string | null; guides?: Array<{ id: string; name: string; phone: string }> };
@@ -132,17 +132,19 @@ export class ImportService {
 
     const base = target === 'overwrite' ? (saved!.draftContent as WebItineraryContent) : newDraftBase(mode, profile);
     const merged = mergeContent(base, { mode, parse, completion, guides, locale: language.locale });
+    notes.push(...fitToLimits(merged.content));
     const checked = validateDraft(merged.content);
     if (!checked.ok) {
       store.db.prepare("UPDATE import_operations SET status='failed', error_code='IMPORT_DRAFT_INVALID', updated_at=? WHERE operation_id=?").run(new Date().toISOString(), operationId);
-      return error(422, 'IMPORT_DRAFT_INVALID', 'Hasil import tidak sesuai bentuk draf; tidak ada yang disimpan.');
+      const first = checked.errors[0];
+      return error(422, 'IMPORT_DRAFT_INVALID', `Hasil import tidak sesuai bentuk draf${first?.path ? ` (bagian: ${first.path})` : ''}; tidak ada yang disimpan.`);
     }
     const languageContext = language.source === 'unresolved' && target === 'overwrite'
       ? saved!.languageContext
       : language.locale
         ? { requestedLanguage: language.source === 'detected' ? 'auto' : language.locale, outputLanguage: language.locale, source: language.source }
         : { requestedLanguage: 'auto', outputLanguage: null, source: 'unresolved' };
-    const writing = target === 'overwrite' ? saved!.writingContext : { brief: [...text].slice(0, 20000).join(''), notes: [] };
+    const writing = target === 'overwrite' ? saved!.writingContext : { brief: '', notes: [] };
 
     const record = target === 'new'
       ? store.createItinerary(checked.value, languageContext, writing)
@@ -154,7 +156,7 @@ export class ImportService {
     const report = {
       filled: [...new Set(merged.filled)],
       missingRequired: missingAfterImport(checked.value as WebItineraryContent),
-      skipped: dropped.map((item) => ({ path: item.path, message: DROP_MESSAGES[item.code] })),
+      skipped: dropped.map((item) => ({ path: item.path, label: skippedLabel(item.path), message: DROP_MESSAGES[item.code] })),
       notes,
       sourceCount: { days: parse.fields.days.length, activities: parse.fields.days.reduce((n, d) => n + d.activities.length, 0), unconsumed: parse.unconsumed.length }
     };
@@ -187,6 +189,15 @@ export class ImportService {
     const undoAvailable = row.target === 'overwrite' && row.status === 'completed' && !row.undone_at && current?.revision === row.result_revision;
     return { status: 200, body: { operation: { operationId: row.operation_id, sourceId: row.source_id, status: row.status, target: row.target, report: row.report_json ? JSON.parse(String(row.report_json)) : null, usage: usageOf(row), undoAvailable } } };
   }
+}
+
+const SKIPPED_LABELS: Record<string, string> = { summary: 'Ringkasan', closingNote: 'Catatan penutup', policies: 'Kebijakan', places: 'Tempat', 'places[].name': 'Nama tempat', 'places[].area': 'Area tempat', 'places[].description': 'Deskripsi tempat', activityDetails: 'Detail aktivitas' };
+const ACTIVITY_FIELDS: Record<string, string> = { place: 'tempat', description: 'deskripsi', tip: 'tips' };
+function skippedLabel(path: string): string {
+  if (SKIPPED_LABELS[path]) return SKIPPED_LABELS[path];
+  const named = /^(?:activityDetails|activities)\[(.*?)\](?:\.(\w+))?$/.exec(path);
+  if (named) return `Aktivitas "${named[1]}"${named[2] ? `: ${ACTIVITY_FIELDS[named[2]] ?? named[2]}` : ''}`;
+  return path;
 }
 
 function usageOf(row: Record<string, unknown>) {

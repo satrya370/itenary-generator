@@ -4,7 +4,7 @@ import path from 'node:path';
 
 const root = process.cwd();
 const output = path.join(root, 'output/releases/standalone');
-const runtimePackages = ['@fastify/multipart', '@fastify/static', 'ajv', 'ajv-formats', 'fastify', 'franc', 'sharp', '@fontsource-variable/noto-sans', '@fontsource-variable/noto-sans-jp', '@fontsource-variable/noto-sans-sc'];
+const runtimePackages = ['@fastify/multipart', '@fastify/static', 'ajv', 'ajv-formats', 'fastify', 'franc', 'sharp', 'unpdf', '@fontsource-variable/noto-sans', '@fontsource-variable/noto-sans-jp', '@fontsource-variable/noto-sans-sc'];
 const sourceLock = JSON.parse(await readFile(path.join(root, 'package-lock.json'), 'utf8'));
 const sourcePackage = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
 const lockPackages = sourceLock.packages;

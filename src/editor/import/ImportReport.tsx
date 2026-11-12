@@ -4,8 +4,8 @@ import { buttonClass } from '../fields.js';
 import { importCopy } from './copy.js';
 
 /** Panel shown at the top of an imported draft: what was filled, what is still missing, source text, undo. */
-export function ImportReport({ operation, onJump, onUndo, onClose, busy }: {
-  operation: ImportOperationDto; onJump: (path: string) => void; onUndo: () => void; onClose: () => void; busy: boolean;
+export function ImportReport({ operation, labelFor, onJump, onUndo, onClose, busy }: {
+  operation: ImportOperationDto; labelFor: (path: string) => string; onJump: (path: string) => void; onUndo: () => void; onClose: () => void; busy: boolean;
 }) {
   const [source, setSource] = useState<string | null>(null);
   const [sourceError, setSourceError] = useState<string | null>(null);
@@ -33,7 +33,7 @@ export function ImportReport({ operation, onJump, onUndo, onClose, busy }: {
         <h4 className="font-medium">{importCopy.reportMissing}</h4>
         {report.missingRequired.length === 0 ? <p className="text-slate-700">{importCopy.reportNone}</p> : (
           <ul className="mt-1 list-disc pl-5">
-            {report.missingRequired.map((path) => <li key={path}><button type="button" className="text-left underline underline-offset-2" onClick={() => onJump(path)}>{path}</button></li>)}
+            {report.missingRequired.map((path) => <li key={path}><button type="button" className="text-left underline underline-offset-2" onClick={() => onJump(path)}>{labelFor(path)}</button></li>)}
           </ul>
         )}
       </div>
@@ -41,7 +41,7 @@ export function ImportReport({ operation, onJump, onUndo, onClose, busy }: {
       {report.skipped.length > 0 && (
         <div>
           <h4 className="font-medium">{importCopy.reportSkipped}</h4>
-          <ul className="mt-1 list-disc pl-5 text-slate-700">{report.skipped.map((item, index) => <li key={`${item.path}-${index}`}>{item.path}: {item.message}</li>)}</ul>
+          <ul className="mt-1 list-disc pl-5 text-slate-700">{report.skipped.map((item, index) => <li key={`${item.path}-${index}`}>{item.label ?? item.path}: {item.message}</li>)}</ul>
         </div>
       )}
       {report.notes.length > 0 && (
