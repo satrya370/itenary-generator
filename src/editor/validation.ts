@@ -14,13 +14,14 @@ const messages: Record<string, string> = {
   ACTIVITY_ORDER: 'Urutkan jam aktivitas dari yang paling awal.',
   DURATION_CAP_EXCEEDED: 'Total durasi melebihi batas untuk tipe ini.',
   TIME_RANGE_INVALID: 'Jam selesai harus setelah jam mulai.',
-  PHOTO_ATTRIBUTION_REQUIRED: 'Isi nama fotografer untuk foto ini.'
+  PHOTO_ATTRIBUTION_REQUIRED: 'Isi nama fotografer untuk foto ini.',
+  ACTIVITY_DETAILS_REQUIRED: 'Isi detail aktivitas dulu.'
 };
 
 export function stepFor(path: string): StepId {
   if (/^trip\.(title|destination|country|region|language|colorTheme|startDate|mode)/.test(path)) return 'info';
   if (/^(trip\.(startTime|endTime)|meeting|pickup)/.test(path)) return 'info';
-  if (/^(summary|days|places)/.test(path)) return 'plan';
+  if (/^(summary|days|places|activity)/.test(path)) return 'plan';
   if (/^(guide|cover|included|notIncluded|whatToBring|notSuitableFor|notAllowed|localTips|emergencyContacts|policies|closingNote|disclaimer)/.test(path)) return 'details';
   return 'info';
 }

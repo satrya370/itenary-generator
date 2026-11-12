@@ -288,8 +288,8 @@ test('Open Graph tags and the stored snapshot come from the v2 trip title, summa
   assert.match(page.body, /property="og:title" content="Ubud in a day"/);
   assert.match(page.body, /property="og:description" content="Explore the landscape and culture at an unhurried pace\."/);
   const version = (f.app as any).store.db.prepare('SELECT schema_version,snapshot_json FROM published_versions').get();
-  assert.equal(version.schema_version, 'web-2.1.0');
-  assert.equal(JSON.parse(version.snapshot_json).schemaVersion, 'web-2.1.0');
+  assert.equal(version.schema_version, 'web-2.2.0');
+  assert.equal(JSON.parse(version.snapshot_json).schemaVersion, 'web-2.2.0');
 });
 
 test('publishing through the real renderer uses the workspace profile and never leaks the private writing brief', async (t) => {

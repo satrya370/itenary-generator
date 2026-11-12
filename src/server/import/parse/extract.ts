@@ -3,16 +3,25 @@ import { kindFromText, dateFromText, type ActivityKind } from '../normalize.js';
 import { classifyLines, keyFor, type HeadingTarget, type SourceLine } from './lines.js';
 import { dayMarkerFor } from './days.js';
 import { readTimeLine } from './time.js';
+import { ageRangeFrom, categoryFrom, difficultyFrom, durationFrom, languagesFrom, sessionsFrom, stepFrom, wholeNumberFrom, type ActivityCategory, type ActivityDifficulty } from './activity.js';
 import { dict } from './text.js';
 
 export const LIST_SECTIONS = ['included', 'notIncluded', 'whatToBring', 'notSuitableFor', 'notAllowed', 'localTips'] as const;
 export type ListSection = (typeof LIST_SECTIONS)[number];
 export const MAX_DAYS = 14;
+export const MAX_HIGHLIGHTS = 5;
+export const MAX_STEPS = 12;
 const URL_IN_TEXT = /(https?:\/\/\S+|maps\.app\.goo\.gl\/\S+|goo\.gl\/maps\/\S+|google\.[a-z.]+\/maps\S*)/i;
 
 export interface ParsedActivity { time: string | null; durationMinutes: number | null; title: string; kind: ActivityKind; ambiguousTime: boolean; line: number }
 export interface ParsedDay { dayNumber: number; title: string | null; activities: ParsedActivity[]; line: number }
 export interface UnconsumedLine { index: number; text: string; section: string | null }
+/** What the activity mode reads from the text (web-2.2.0). Empty for every other mode. */
+export interface ParsedActivityMode {
+  category?: ActivityCategory; durationMinutes?: number; sessionTimes: string[]; difficulty?: ActivityDifficulty;
+  ageMin?: number; ageMax?: number; weightMaxKg?: number; guideLanguages: string[]; operator?: string; bestTime?: string;
+  highlights: string[]; steps: Array<{ title: string; minutes: number | null }>;
+}
 
 export interface ParseResult {
   mode: ItineraryMode;
@@ -23,6 +32,7 @@ export interface ParseResult {
     lists: Partial<Record<ListSection, string[]>>;
     emergencyContacts: Array<{ label: string; value: string }>;
     days: ParsedDay[];
+    activity: ParsedActivityMode;
   };
   unconsumed: UnconsumedLine[];
   totalLines: number;
@@ -32,13 +42,13 @@ export interface ParseResult {
 
 /** Deterministic parse of the document. Copies text that exists; never invents values. Unknown text stays in `unconsumed`. */
 export function parseDocument(text: string, mode: ItineraryMode): ParseResult {
-  const lines = classifyLines(text).filter((line) => line.kind !== 'blank');
+  const lines = classifyLines(text, mode).filter((line) => line.kind !== 'blank');
   const result: ParseResult = {
     mode,
-    fields: { trip: { mode }, guide: {}, meeting: {}, lists: {}, emergencyContacts: [], days: [] },
+    fields: { trip: { mode }, guide: {}, meeting: {}, lists: {}, emergencyContacts: [], days: [], activity: { sessionTimes: [], guideLanguages: [], highlights: [], steps: [] } },
     unconsumed: [], totalLines: lines.length, consumedLines: 0, notes: []
   };
-  const dayMode = mode !== 'destination_guide';
+  const dayMode = mode === 'half_day' || mode === 'full_day' || mode === 'multi_day';
   const singleDay = mode === 'half_day' || mode === 'full_day';
   let section: HeadingTarget | null = null;
   let titleDone = false;
@@ -50,6 +60,8 @@ export function parseDocument(text: string, mode: ItineraryMode): ParseResult {
 
   const keep = (line: SourceLine) => result.unconsumed.push({ index: line.index, text: line.text, section });
   const consume = () => { result.consumedLines += 1; };
+  let highlightsCapped = false;
+  let stepsCapped = false;
 
   for (const line of lines) {
     if (line.kind === 'heading') { section = line.heading ?? null; consume(); continue; }
@@ -93,6 +105,17 @@ export function parseDocument(text: string, mode: ItineraryMode): ParseResult {
     if (section === 'meeting' && line.kind === 'url') {
       const url = URL_IN_TEXT.exec(line.text)?.[0];
       if (url && !result.fields.meeting.mapsUrl) { result.fields.meeting.mapsUrl = url.startsWith('http') ? url : `https://${url}`; consume(); continue; }
+    }
+
+    if (mode === 'activity' && line.kind === 'bullet' && line.bullet && section === 'highlights') {
+      if (result.fields.activity.highlights.length < MAX_HIGHLIGHTS) result.fields.activity.highlights.push(line.bullet);
+      else if (!highlightsCapped) { highlightsCapped = true; result.notes.push(`Highlight dibatasi ${MAX_HIGHLIGHTS} poin; sisanya tidak dimasukkan.`); }
+      consume(); continue;
+    }
+    if (mode === 'activity' && line.kind === 'bullet' && line.bullet && section === 'steps') {
+      if (result.fields.activity.steps.length < MAX_STEPS) result.fields.activity.steps.push(stepFrom(line.bullet));
+      else if (!stepsCapped) { stepsCapped = true; result.notes.push(`Jalannya kegiatan dibatasi ${MAX_STEPS} langkah; sisanya tidak dimasukkan.`); }
+      consume(); continue;
     }
 
     if (section && (LIST_SECTIONS as readonly string[]).includes(section) && line.kind === 'bullet' && line.bullet) {
@@ -143,6 +166,57 @@ function handleKeyValue(result: ParseResult, key: keyof typeof dict.keyValue, va
       else result.notes.push(`Baris ${index + 1}: jam kumpul tidak jelas; isi manual.`);
       return true;
     }
+    default: return handleActivityKey(result, key, value, index);
+  }
+}
+
+/** Activity facts written as "Label: value". Every case needs mode "activity"; elsewhere the line stays for the AI step. */
+function handleActivityKey(result: ParseResult, key: keyof typeof dict.keyValue, value: string, index: number): boolean {
+  if (result.mode !== 'activity') return false;
+  const line = `Baris ${index + 1}`;
+  const activity = result.fields.activity;
+  switch (key) {
+    case 'category': {
+      const category = categoryFrom(value);
+      if (category) activity.category = category; else result.notes.push(`${line}: jenis kegiatan "${value}" tidak dikenali; pilih manual.`);
+      return true;
+    }
+    case 'duration': {
+      const minutes = durationFrom(value);
+      if (minutes !== null) activity.durationMinutes = minutes; else result.notes.push(`${line}: durasi "${value}" tidak jelas (15 menit sampai 12 jam); isi manual.`);
+      return true;
+    }
+    case 'sessions': {
+      const { times, unclear } = sessionsFrom(value);
+      if (times.length) activity.sessionTimes = times;
+      if (unclear.length) result.notes.push(`${line}: jam sesi tidak jelas untuk ${unclear.map((item) => `"${item}"`).join(', ')}; isi manual.`);
+      return true;
+    }
+    case 'difficulty': {
+      const level = difficultyFrom(value);
+      if (level) activity.difficulty = level; else result.notes.push(`${line}: tingkat kesulitan "${value}" tidak dikenali; pilih manual.`);
+      return true;
+    }
+    case 'age': {
+      const range = ageRangeFrom(value);
+      if (range) { if (range.min !== null) activity.ageMin = range.min; if (range.max !== null) activity.ageMax = range.max; }
+      else result.notes.push(`${line}: usia "${value}" tidak jelas; isi manual.`);
+      return true;
+    }
+    case 'ageMin': case 'ageMax': {
+      const age = wholeNumberFrom(value, 0, 99);
+      if (age === null) result.notes.push(`${line}: usia "${value}" tidak jelas; isi manual.`);
+      else if (key === 'ageMin') activity.ageMin = age; else activity.ageMax = age;
+      return true;
+    }
+    case 'weightMax': {
+      const weight = wholeNumberFrom(value, 20, 250);
+      if (weight !== null) activity.weightMaxKg = weight; else result.notes.push(`${line}: batas berat "${value}" tidak jelas; isi manual.`);
+      return true;
+    }
+    case 'guideLanguages': { const languages = languagesFrom(value); if (languages.length) activity.guideLanguages = languages; return true; }
+    case 'operator': activity.operator = value; return true;
+    case 'bestTime': activity.bestTime = value; return true;
     default: return false;
   }
 }

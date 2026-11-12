@@ -16,7 +16,8 @@ const SECTIONS: Record<ItineraryMode, string[]> = {
   half_day: [...SCHEDULED_BASE, 'schedule', ...TAIL],
   full_day: [...SCHEDULED_BASE, 'schedule', ...TAIL],
   multi_day: [...SCHEDULED_BASE, 'days', ...TAIL],
-  destination_guide: ['trip-info', 'summary', 'ai-assist', 'places', ...TAIL]
+  destination_guide: ['trip-info', 'summary', 'ai-assist', 'places', ...TAIL],
+  activity: ['trip-info', 'time-meeting', 'summary', 'ai-assist', 'activity-details', ...TAIL]
 };
 
 async function availablePort() {
@@ -228,6 +229,21 @@ async function main() {
     assert.equal(await count('[data-editor-section="days"] div[data-target-id]'), 14);
 
     // 5. Guide: details, lists, photo credit, language note, mode change, then the 60-place limit.
+    // Activity mode (SI1): sections, the activity block is filled and saved, and it publishes without days.
+    await createMode('activity');
+    assert.equal(await count(sel('activity.category')), 1, 'activity category field is shown');
+    await set('trip.title', 'SI1 rafting'); await set('trip.destination', 'Ubud'); await set('summary', 'A morning of rafting on the Ayung river.');
+    await set('activity.category', 'water'); await set('activity.durationMinutes', '180');
+    // Session picker: quick choices, a custom time and one highlight with its counter.
+    await clickButton('Pagi 08:00'); await clickButton('Sore 15:00');
+    assert.deepEqual(await values('activity.sessionTimes[]'), ['08:00', '15:00'], 'quick session choices are added in order');
+    await clickButton('Tambah jam lain');
+    assert.equal((await values('activity.sessionTimes[]')).length, 3, 'a custom session row is added');
+    await clickButton('Tambah highlight'); await set('activity.highlights[]', 'Grade III rapids');
+    assert.match(await page.evaluate(() => document.querySelector('[data-editor-field="activity-highlights"]')?.textContent ?? ''), /\(1\/5\)/);
+    await save();
+    assert.deepEqual(await values('activity.sessionTimes[]'), ['08:00', '10:00', '15:00'], 'saved sessions stay sorted');
+    assert.equal(await count(sel('days[].title')), 0, 'an activity has no day fields');
     const guideId = await createMode('destination_guide');
     assert.equal(await count(sel('places[].name')), 0);
     await clickButton('Tambah tempat');

@@ -2,7 +2,7 @@ import type { StandaloneItineraryContent } from './itinerary.generated.js';
 import type { StandaloneItineraryContent as StandaloneItineraryContentV1 } from './itinerary-v1.generated.js';
 export type { Activity, Day, EmergencyContact, Guide, Hotel, Meals, Meeting, Photo, PhotoCredit, Pickup, Place, Trip } from './itinerary.generated.js';
 
-export const SCHEMA_VERSION = 'web-2.1.0' as const;
+export const SCHEMA_VERSION = 'web-2.2.0' as const;
 export const LEGACY_SCHEMA_VERSION = 'web-1.0.0' as const;
 export const PREVIOUS_SCHEMA_VERSION = 'web-2.0.0' as const;
 

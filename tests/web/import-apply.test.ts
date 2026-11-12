@@ -58,7 +58,7 @@ test('the extraction prompt names the exact reply keys, so the model cannot inve
   const provider = new OpenRouterProvider({ state: 'configured', source: 'environment', key: 'sk-or-test-key' }, fakeFetch);
   await provider.extract({ mode: 'destination_guide', locale: 'id', segments: ['- Candi Prambanan'], maxTokens: 100 }, 5000);
   const system = bodies[0].messages[0].content;
-  for (const key of ['places', 'activityDetails', 'summary', 'closingNote', 'policies']) assert.ok(system.includes(`"${key}"`), `prompt names ${key}`);
+  for (const key of ['places', 'activityDetails', 'summary', 'closingNote', 'policies', 'highlights', 'steps']) assert.ok(system.includes(`"${key}"`), `prompt names ${key}`);
   assert.ok(system.includes('Do not use any other key names'));
 });
 
@@ -343,4 +343,98 @@ test('a new import does not copy the source into the writing brief', async (t) =
   const response = await apply(app, await source(app, await fixtureText('id-full-day-tidy.txt')), { operationId: op(), target: 'new', mode: 'full_day', outputLanguage: 'id' });
   assert.equal(response.statusCode, 201, response.body);
   assert.equal(response.json().itinerary.writingContext.brief, '');
+});
+
+// ---- Activity mode (SI1, web-2.2.0) ----
+
+test('activity import: code fills the facts, lists and steps; the summary comes from the model; the draft has no days', async (t) => {
+  const summary = 'Arung jeram santai di Sungai Ayung dengan pemandu berlisensi.';
+  const d = double([JSON.stringify({ summary: { value: summary, quote: summary } })]);
+  const app = await fixture(t, d.extractor);
+  const response = await apply(app, await source(app, await fixtureText('id-activity-rafting.txt')), { operationId: op(), target: 'new', mode: 'activity', outputLanguage: 'id' });
+  assert.equal(response.statusCode, 201, response.body);
+  const body = response.json();
+  const content = body.itinerary.draftContent as WebItineraryContent;
+  assert.equal(content.trip.mode, 'activity');
+  assert.equal(content.schemaVersion, 'web-2.2.0');
+  assert.deepEqual(content.days, []);
+  assert.equal(content.trip.title, 'Rafting Sungai Ayung');
+  assert.equal(content.summary, summary);
+  assert.equal(content.activity!.category, 'water');
+  assert.equal(content.activity!.durationMinutes, 180);
+  assert.deepEqual(content.activity!.sessionTimes, ['08:00', '13:00']);
+  assert.deepEqual(content.activity!.highlights, ['Jeram grade II-III', 'Pemandangan tebing hijau', 'Makan siang buffet termasuk']);
+  assert.deepEqual(content.activity!.steps.map((step) => [step.title, step.minutes]), [['Briefing keselamatan', 15], ['Arung jeram', 120], ['Mandi dan makan siang', 45]]);
+  assert.equal(content.meeting.place, 'Lobi hotel Ubud');
+  assert.ok(body.report.filled.includes('activity.durationMinutes'));
+  assert.ok(!body.report.missingRequired.includes('activity.category'), 'a category read from the text is not reported as missing');
+  assert.ok(!body.report.missingRequired.includes('activity.durationMinutes'));
+  assert.equal(d.calls.length, 1, 'only the unread summary line was sent to the model');
+  assert.ok(!d.calls[0].segments.join('\n').includes('Highlights'), 'lines the code already read are not sent');
+});
+
+test('activity import: a missing category or duration is reported as required, never invented', async (t) => {
+  const d = double([]);
+  const app = await fixture(t, d.extractor);
+  const response = await apply(app, await source(app, 'Kelas memasak Ubud\nUsia minimal: 10 tahun\n'), { operationId: op(), target: 'new', mode: 'activity', outputLanguage: 'id' });
+  assert.equal(response.statusCode, 201, response.body);
+  const body = response.json();
+  const content = body.itinerary.draftContent as WebItineraryContent;
+  assert.equal(content.activity!.category, null);
+  assert.equal(content.activity!.durationMinutes, null);
+  assert.equal(content.activity!.ageMin, 10);
+  assert.ok(body.report.missingRequired.includes('activity.category'));
+  assert.ok(body.report.missingRequired.includes('activity.durationMinutes'));
+});
+
+test('activity import: model highlights must be whole lines and never replace a list the code read', async (t) => {
+  const text = 'Snorkeling Blue Lagoon\nKategori: Air\nDurasi: 2 jam\nAir jernih dan penuh ikan warna-warni.\nCocok untuk pemula.\nTidak termasuk alat selam pribadi.\n';
+  const reply = JSON.stringify({ highlights: [
+    { value: 'Air jernih dan penuh ikan warna-warni.', quote: 'Air jernih dan penuh ikan warna-warni.' },
+    { value: 'termasuk alat selam pribadi.', quote: 'Tidak termasuk alat selam pribadi.' },
+    { value: 'Cocok untuk pemula', quote: 'Cocok untuk pemula.' }
+  ] });
+  const d = double([reply]);
+  const app = await fixture(t, d.extractor);
+  const response = await apply(app, await source(app, text), { operationId: op(), target: 'new', mode: 'activity', outputLanguage: 'id' });
+  assert.equal(response.statusCode, 201, response.body);
+  const body = response.json();
+  const content = body.itinerary.draftContent as WebItineraryContent;
+  assert.deepEqual(content.activity!.highlights, ['Air jernih dan penuh ikan warna-warni.', 'Cocok untuk pemula'], 'the cut quote that flips the meaning is dropped');
+  assert.ok(body.report.skipped.some((item: { path: string }) => item.path === 'highlights'));
+
+  // The code already read a Highlights list: the model's list is ignored.
+  const second = double([reply]);
+  const app2 = await fixture(t, second.extractor);
+  const withList = await apply(app2, await source(app2, `${text}Highlights\n- Dibaca oleh kode\n`), { operationId: op(), target: 'new', mode: 'activity', outputLanguage: 'id' });
+  assert.equal(withList.statusCode, 201, withList.body);
+  assert.deepEqual((withList.json().itinerary.draftContent as WebItineraryContent).activity!.highlights, ['Dibaca oleh kode']);
+});
+
+test('activity import: overwrite replaces only the facts the document states and keeps the rest', async (t) => {
+  const d = double([]);
+  const app = await fixture(t, d.extractor);
+  const first = await apply(app, await source(app, await fixtureText('id-activity-rafting.txt')), { operationId: op(), target: 'new', mode: 'activity', outputLanguage: 'id' });
+  assert.equal(first.statusCode, 201, first.body);
+  const created = first.json().itinerary;
+  const second = await apply(app, await source(app, 'Rafting Sungai Ayung\nDurasi: 4 jam\n'), { operationId: op(), target: 'overwrite', itineraryId: created.id, expectedRevision: created.revision });
+  assert.equal(second.statusCode, 200, second.body);
+  const content = second.json().itinerary.draftContent as WebItineraryContent;
+  assert.equal(content.activity!.durationMinutes, 240, 'the stated duration is replaced');
+  assert.equal(content.activity!.category, 'water', 'a field the document does not state keeps its value');
+  assert.equal(content.activity!.highlights.length, 3);
+  assert.equal(content.activity!.ageMax, 60);
+});
+
+test('activity import: one very long highlight and an age range that is reversed never fail the import', async (t) => {
+  const d = double([]);
+  const app = await fixture(t, d.extractor);
+  const text = `Tur\nUsia minimal: 70 tahun\nUsia maksimal: 20 tahun\nHighlights\n- ${'sangat '.repeat(60)}\n`;
+  const response = await apply(app, await source(app, text), { operationId: op(), target: 'new', mode: 'activity', outputLanguage: 'id' });
+  assert.equal(response.statusCode, 201, response.body);
+  const body = response.json();
+  const content = body.itinerary.draftContent as WebItineraryContent;
+  assert.ok(content.activity!.highlights[0].length <= 160);
+  assert.equal(content.activity!.ageMax, null);
+  assert.ok(body.report.notes.some((note: string) => /Usia minimal lebih besar/.test(note)));
 });

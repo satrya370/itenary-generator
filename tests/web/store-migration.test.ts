@@ -95,9 +95,9 @@ test('migration 3 upgrades v1 drafts in place, keeps revisions/timestamps/IDs, s
   const upgraded = store.db.prepare('SELECT * FROM itineraries ORDER BY id').all() as any[];
   assert.equal(upgraded.length, 3);
   for (const row of upgraded) {
-    assert.equal(row.schema_version, 'web-2.1.0');
+    assert.equal(row.schema_version, 'web-2.2.0');
     const draft = JSON.parse(row.draft_json);
-    assert.equal(draft.schemaVersion, 'web-2.1.0');
+    assert.equal(draft.schemaVersion, 'web-2.2.0');
     assert.equal(validateDraft(draft).ok, true, `${row.id}: ${JSON.stringify(validateDraft(draft).errors)}`);
   }
   for (const [idx, row] of upgraded.entries()) {
@@ -168,7 +168,7 @@ test('a draft that cannot be upgraded rolls migration 3 back, refuses to start, 
   assert.equal(existsSync(backupPath), true);
   const store = openStore({ dataDir });
   assert.deepEqual(versionsOf(store.db), [1, 2, 3, 4, 5, 6, 7]);
-  assert.equal((store.db.prepare('SELECT schema_version FROM itineraries').get() as any).schema_version, 'web-2.1.0');
+  assert.equal((store.db.prepare('SELECT schema_version FROM itineraries').get() as any).schema_version, 'web-2.2.0');
   store.close();
   const backup = new DatabaseSync(backupPath, { readOnly: true });
   assert.equal(Number((backup.prepare("SELECT count(*) AS count FROM itineraries WHERE id='it-corrupt'").get() as any).count), 1, 'the first backup is not overwritten');
@@ -182,7 +182,7 @@ test('an upgraded draft that fails v2 validation is reported by itinerary and er
   oversized.schedule = Array.from({ length: 15 }, (_, index) => ({ ...structuredClone(createContentV1('full_day').schedule[0]), id: `10000000-0000-5000-8000-${String(index + 1).padStart(12, '0')}`, dayStart: 1, dayEnd: 1, activities: [] }));
   insertV1(db, 'it-too-many-days', oversized);
   db.close();
-  assert.throws(() => openStore({ dataDir }), /itinerary it-too-many-days cannot be upgraded to web-2\.1\.0: SCHEMA_VALIDATION_FAILED@days/);
+  assert.throws(() => openStore({ dataDir }), /itinerary it-too-many-days cannot be upgraded to web-2\.2\.0: SCHEMA_VALIDATION_FAILED@days/);
   const after = new DatabaseSync(path.join(dataDir, 'engine.sqlite'));
   assert.equal((after.prepare('SELECT schema_version FROM itineraries').get() as any).schema_version, 'web-1.0.0');
   after.close();
@@ -285,10 +285,10 @@ test('migration 4 upgrades stored web-2.0.0 drafts once: healthSafety becomes lo
     .run('itin-20', 'ws-1', JSON.stringify(draft), JSON.stringify(LANGUAGE), JSON.stringify(WRITING), '2026-10-07T00:30:00.000Z', '2026-10-07T01:00:00.000Z');
   runMigrations(db, { dataDir }, MIGRATIONS);
   const row = db.prepare('SELECT schema_version, revision, draft_json FROM itineraries WHERE id=?').get('itin-20') as { schema_version: string; revision: number; draft_json: string };
-  assert.equal(row.schema_version, 'web-2.1.0');
+  assert.equal(row.schema_version, 'web-2.2.0');
   assert.equal(row.revision, 7, 'revision is not bumped by a migration');
   const upgraded = JSON.parse(row.draft_json);
-  assert.equal(upgraded.schemaVersion, 'web-2.1.0');
+  assert.equal(upgraded.schemaVersion, 'web-2.2.0');
   assert.equal('healthSafety' in upgraded, false);
   assert.ok(upgraded.localTips.includes('Carry water'));
   assert.ok(existsSync(path.join(dataDir, 'backups', 'pre-migration-4.sqlite')), 'backup written before the change');

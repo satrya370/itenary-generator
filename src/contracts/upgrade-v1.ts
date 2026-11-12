@@ -258,7 +258,8 @@ export function upgradeV1ToV2(input: unknown, profile: AgencyProfile = {}): Upgr
 
   const colorTheme = (COLOR_THEMES as readonly string[]).includes(brochure.destinationType) ? brochure.destinationType : 'mixed';
   const value = {
-    schemaVersion: 'web-2.1.0',
+    schemaVersion: 'web-2.2.0',
+    activity: null,
     trip: {
       mode, title: clean(brochure.tripTitle), destination: clean(brochure.destination), country: clean(brochure.country), region: orNull(brochure.region),
       language: orNull(brochure.outputLanguage), colorTheme, startDate, startTime: null, endTime: null
@@ -298,6 +299,7 @@ export function upgradeV20ToV21(input: unknown): { ok: boolean; value: Record<st
   delete doc.healthSafety;
   doc.notSuitableFor = Array.isArray(doc.notSuitableFor) ? doc.notSuitableFor : [];
   doc.notAllowed = Array.isArray(doc.notAllowed) ? doc.notAllowed : [];
-  doc.schemaVersion = 'web-2.1.0';
+  doc.schemaVersion = 'web-2.2.0';
+  if (doc.activity === undefined) doc.activity = null;
   return { ok: true, value: doc, warnings };
 }

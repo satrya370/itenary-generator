@@ -45,7 +45,7 @@ function validGuides(value: unknown): boolean {
     && typeof guide.name === 'string' && guide.name.trim().length >= 1 && guide.name.length <= 120
     && typeof guide.phone === 'string' && guide.phone.length <= 40);
 }
-const modes = new Set<ItineraryMode>(['half_day', 'full_day', 'multi_day', 'destination_guide']);
+const modes = new Set<ItineraryMode>(['half_day', 'full_day', 'multi_day', 'destination_guide', 'activity']);
 const defaultLanguage: LanguageContext = { requestedLanguage: 'auto', outputLanguage: null, source: 'unresolved' };
 const defaultWriting = { brief: '', notes: [] as Array<{ targetId: string; text: string }> };
 function envLimit(name: string, fallback: number, min: number, max: number) {

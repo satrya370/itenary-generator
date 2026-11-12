@@ -34,6 +34,21 @@
         }
       }
     },
+    "highlights": {
+      "type": "array",
+      "maxItems": 12,
+      "items": { "$ref": "#/$defs/textValue" }
+    },
+    "steps": {
+      "type": "array",
+      "maxItems": 24,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title"],
+        "properties": { "title": { "$ref": "#/$defs/textValue" } }
+      }
+    },
     "activityDetails": {
       "type": "array",
       "maxItems": 120,

@@ -155,3 +155,75 @@ test('normalizers: kind keywords, guide match, OTA option match, explicit dates 
   assert.equal(dateFromText('12 Desember').date, null, 'no year, no date');
   assert.equal(dateFromText('31 Februari 2026').date, null, 'impossible dates are rejected');
 });
+
+// ---- Activity mode (SI1, web-2.2.0) ----
+
+test('activity (id): facts, sessions, highlights and steps are read by code; the summary is left for the AI step', () => {
+  const r = parseFixture('id-activity-rafting.txt', 'activity');
+  assert.equal(r.fields.trip.title, 'Rafting Sungai Ayung');
+  assert.equal(r.fields.meeting.place, 'Lobi hotel Ubud');
+  assert.equal(r.fields.meeting.time, '07:30');
+  const a = r.fields.activity;
+  assert.equal(a.category, 'water');
+  assert.equal(a.durationMinutes, 180);
+  assert.deepEqual(a.sessionTimes, ['08:00', '13:00']);
+  assert.equal(a.difficulty, 'moderate');
+  assert.equal(a.ageMin, 8);
+  assert.equal(a.ageMax, 60);
+  assert.equal(a.weightMaxKg, 120);
+  assert.deepEqual(a.guideLanguages, ['Indonesia', 'Inggris']);
+  assert.equal(a.operator, 'Ayung Adventure');
+  assert.equal(a.bestTime, 'Musim hujan (Nov-Mar)');
+  assert.deepEqual(a.highlights, ['Jeram grade II-III', 'Pemandangan tebing hijau', 'Makan siang buffet termasuk']);
+  assert.deepEqual(a.steps, [
+    { title: 'Briefing keselamatan', minutes: 15 },
+    { title: 'Arung jeram', minutes: 120 },
+    { title: 'Mandi dan makan siang', minutes: 45 }
+  ]);
+  assert.deepEqual(r.fields.lists.included, ['Jemput hotel', 'Helm dan pelampung', 'Makan siang']);
+  assert.deepEqual(r.fields.lists.notSuitableFor, ['Ibu hamil', 'Penderita masalah jantung']);
+  assert.equal(r.fields.days.length, 0, 'an activity has no days');
+  assert.deepEqual(r.unconsumed.map((line) => line.text), ['Arung jeram santai di Sungai Ayung dengan pemandu berlisensi.']);
+});
+
+test('activity: "Highlights" is a list here and a summary heading in every other mode', () => {
+  assert.equal(headingFor('Highlights', 'activity'), 'highlights');
+  assert.equal(headingFor('Highlights'), 'summary');
+  assert.equal(headingFor('Highlights', 'full_day'), 'summary');
+  assert.equal(headingFor('Jalannya kegiatan', 'activity'), 'steps');
+  assert.equal(headingFor('Jalannya kegiatan'), undefined);
+});
+
+test('activity: unclear values stay empty with a note, and are never guessed', () => {
+  const r = parseDocument([
+    'Snorkeling', 'Kategori: Rafting', 'Durasi: sebentar', 'Jam sesi: 8, 13:00', 'Tingkat kesulitan: lumayan',
+    'Usia minimal: delapan', 'Berat maksimal: 5 kg', 'Usia: 8-60'
+  ].join('\n'), 'activity');
+  const a = r.fields.activity;
+  assert.equal(a.category, undefined, '"Rafting" is not one of the six categories');
+  assert.equal(a.durationMinutes, undefined);
+  assert.deepEqual(a.sessionTimes, ['13:00'], 'the bare "8" is not a clock time');
+  assert.equal(a.difficulty, undefined);
+  assert.equal(a.ageMin, 8, 'the range line sets the bounds that it writes');
+  assert.equal(a.ageMax, 60);
+  assert.equal(a.weightMaxKg, undefined, '5 kg is outside the supported weight range');
+  assert.ok(r.notes.length >= 5, r.notes.join(' | '));
+  assert.ok(r.notes.every((note) => /^Baris \d+:/.test(note)));
+});
+
+test('activity: highlights and steps are capped, extra lines are reported, and ages are ranges or open ends', () => {
+  const r = parseDocument(['Tur', 'Highlights', ...Array.from({ length: 7 }, (_, i) => `- Poin ${i + 1}`), 'Alur kegiatan', ...Array.from({ length: 14 }, (_, i) => `- Langkah ${i + 1}`), 'Usia: 12+'].join('\n'), 'activity');
+  assert.equal(r.fields.activity.highlights.length, 5);
+  assert.equal(r.fields.activity.steps.length, 12);
+  assert.equal(r.fields.activity.ageMin, 12);
+  assert.equal(r.fields.activity.ageMax, undefined);
+  assert.ok(r.notes.some((note) => /Highlight dibatasi 5/.test(note)));
+  assert.ok(r.notes.some((note) => /dibatasi 12 langkah/.test(note)));
+});
+
+test('the activity labels do nothing in the other modes: the line stays for the AI step', () => {
+  const r = parseDocument('Tur Ubud\nOperator: Ayung Adventure\nKategori: Air\nDurasi: 3 jam', 'full_day');
+  assert.equal(r.fields.activity.operator, undefined);
+  assert.equal(r.fields.activity.category, undefined);
+  assert.deepEqual(r.unconsumed.map((line) => line.text), ['Operator: Ayung Adventure', 'Kategori: Air', 'Durasi: 3 jam']);
+});

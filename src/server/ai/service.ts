@@ -67,8 +67,12 @@ function buildSuggestionContext(record: any, task: 'overview' | 'description', t
   };
   let context: Record<string, unknown>;
   if (task === 'overview') {
+    const activity = content.trip.mode === 'activity' && content.activity
+      ? { category: content.activity.category, durationMinutes: content.activity.durationMinutes, difficulty: content.activity.difficulty, highlights: content.activity.highlights, ageMin: content.activity.ageMin, ageMax: content.activity.ageMax }
+      : null;
     context = {
       ...common,
+      ...(activity ? { activity } : {}),
       route: content.trip.mode === 'destination_guide'
         ? content.places.map((place: any) => ({ name: place.name, area: place.area }))
         : content.days.flatMap((day: any) => day.activities.map((activity: any) => ({ day: day.dayNumber, title: activity.title, area: activity.place, kind: activity.kind })))

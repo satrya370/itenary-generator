@@ -1,6 +1,7 @@
 import { dict, fold } from './text.js';
 
-export type HeadingTarget = keyof typeof dict.headings;
+/** Shared headings plus the two that only the activity mode reads. */
+export type HeadingTarget = keyof typeof dict.headings | 'highlights' | 'steps';
 export type LineKind = 'blank' | 'heading' | 'bullet' | 'key-value' | 'url' | 'text';
 
 export interface SourceLine { index: number; raw: string; text: string; kind: LineKind; heading?: HeadingTarget; label?: string; value?: string; bullet?: string }
@@ -10,9 +11,18 @@ for (const [target, names] of Object.entries(dict.headings) as Array<[HeadingTar
   for (const name of names) headingIndex.set(fold(name).replace(/[:.]$/, ''), target);
 }
 
-export function headingFor(value: string): HeadingTarget | undefined {
+const activityHeadingIndex = new Map<string, HeadingTarget>();
+for (const [target, names] of Object.entries(dict.activityHeadings)) {
+  if (!Array.isArray(names)) continue;
+  for (const name of names) activityHeadingIndex.set(fold(name).replace(/[:.]$/, ''), target as HeadingTarget);
+}
+
+/** `mode` only matters for "activity", where its own headings are checked first. */
+export function headingFor(value: string, mode?: string): HeadingTarget | undefined {
   const key = fold(value).replace(/:$/, '').trim();
-  return key.length <= 60 ? headingIndex.get(key) : undefined;
+  if (key.length > 60) return undefined;
+  if (mode === 'activity') { const own = activityHeadingIndex.get(key); if (own) return own; }
+  return headingIndex.get(key);
 }
 
 const BULLET = /^\s*(?:[-*•·]|\d{1,2}[.)]|[a-z][.)])\s+(.+)$/i;
@@ -20,11 +30,11 @@ const URL_LINE = /(https?:\/\/\S+|maps\.app\.goo\.gl\/\S+|goo\.gl\/maps\/\S+|goo
 const KEY_VALUE = /^([^:]{1,40}):\s*(.*)$/;
 
 /** Splits text into classified lines. Classification is structural only; no meaning is assigned here. */
-export function classifyLines(text: string): SourceLine[] {
+export function classifyLines(text: string, mode?: string): SourceLine[] {
   return text.split('\n').map((raw, index) => {
     const trimmed = raw.trim();
     if (!trimmed) return { index, raw, text: '', kind: 'blank' as const };
-    const heading = headingFor(trimmed);
+    const heading = headingFor(trimmed, mode);
     if (heading) return { index, raw, text: trimmed, kind: 'heading' as const, heading };
     const bullet = BULLET.exec(raw);
     if (bullet) return { index, raw, text: trimmed, kind: 'bullet' as const, bullet: bullet[1].trim() };

@@ -7,7 +7,7 @@ import { ImportError, MAX_PDF_BYTES, SOURCE_TEXT_REMOVED_CODE, SOURCE_TEXT_REMOV
 import { parseDocument } from './parse/extract.js';
 import type { ImportService } from './service.js';
 
-const MODES = new Set<ItineraryMode>(['half_day', 'full_day', 'multi_day', 'destination_guide']);
+const MODES = new Set<ItineraryMode>(['half_day', 'full_day', 'multi_day', 'destination_guide', 'activity']);
 const excerptOf = (text: string) => [...text].slice(0, 400).join('');
 
 interface SourceRow { id: string; workspace_id: string; kind: string; sha256: string; byte_size: number; page_count: number; char_count: number; language_json: string; created_at: string }

@@ -216,6 +216,29 @@ async function main() {
     assert.equal(await itineraryCount(), start + 2, 'PDF import created one more draft');
     report.pdfPath = true;
 
+    // 3b. Activity by text (SI1): code reads the facts, sessions, highlights and steps; the editor shows them.
+    await openFlow();
+    await chooseMode('activity');
+    assert.equal(await page.evaluate(() => (document.querySelector('[data-method="paste"]') as HTMLButtonElement | null)?.disabled), false, 'text import is available for an activity');
+    await chooseMethod('paste');
+    await typeText(await readFile(path.join(FIXTURES, 'id-activity-rafting.txt'), 'utf8'));
+    await clickButton('Baca teks');
+    await page.waitForFunction(() => [...document.querySelectorAll('button')].some(item => item.textContent?.trim() === 'Lihat hasil baca'), { timeout: 20000 });
+    await clickButton('Lihat hasil baca');
+    await clickButton('Proses');
+    await waitStatus('Draf baru dari import tersimpan');
+    await page.waitForFunction(() => document.querySelector('h2.text-xl')?.textContent === 'Rafting Sungai Ayung', { timeout: 20000 });
+    const activityFields = await page.evaluate(() => ({
+      duration: (document.querySelector('[data-field-path="activity.durationMinutes"]') as HTMLInputElement | null)?.value,
+      category: (document.querySelector('[data-field-path="activity.category"]') as HTMLSelectElement | null)?.value,
+      sessions: [...document.querySelectorAll<HTMLInputElement>('[data-field-path="activity.sessionTimes[]"]')].map((item) => item.value),
+      highlights: [...document.querySelectorAll<HTMLInputElement>('[data-field-path="activity.highlights[]"]')].map((item) => item.value),
+      dayFields: document.querySelectorAll('[data-field-path="days[].title"]').length
+    }));
+    assert.deepEqual(activityFields, { duration: '180', category: 'water', sessions: ['08:00', '13:00'], highlights: ['Jeram grade II-III', 'Pemandangan tebing hijau', 'Makan siang buffet termasuk'], dayFields: 0 });
+    assert.equal(await itineraryCount(), start + 3, 'activity import created one more draft');
+    report.activityImport = true;
+
     // 4. Manual path: Mulai isi opens the editor (step 3) with one new draft.
     await openFlow();
     await chooseMode('destination_guide');
@@ -223,7 +246,7 @@ async function main() {
     await clickButton('Mulai isi');
     await waitStatus('Draft baru tersimpan');
     await page.waitForFunction(() => document.body.textContent?.includes('Editor itinerary'), { timeout: 20000 });
-    assert.equal(await itineraryCount(), start + 3, 'manual path created one more draft');
+    assert.equal(await itineraryCount(), start + 4, 'manual path created one more draft');
     report.manualPath = true;
 
     // The last type and method are remembered and shown again.

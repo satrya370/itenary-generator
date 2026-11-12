@@ -18,6 +18,11 @@
     "hotel": ["Hotel", "Penginapan", "Akomodasi", "Accommodation"],
     "places": ["Tempat", "Destinasi", "Places", "Spots"]
   },
+  "activityHeadings": {
+    "note": "Only read in the activity mode (SI1). These win over the shared headings, so \"Highlights\" is a list here and a summary elsewhere.",
+    "highlights": ["Highlights", "Sorotan", "Keunggulan", "Daya tarik", "Hal menarik"],
+    "steps": ["Jalannya kegiatan", "Alur kegiatan", "Alur", "Agenda", "Program", "How it works", "Steps"]
+  },
   "keyValue": {
     "destination": ["Destinasi", "Tujuan", "Destination"],
     "country": ["Negara", "Country"],
@@ -26,7 +31,17 @@
     "guide": ["Guide", "Pemandu"],
     "phone": ["No HP", "No. HP", "Nomor HP", "Telp", "Telepon", "WA", "Phone", "Contact"],
     "meetingPlace": ["Titik kumpul", "Meeting point"],
-    "meetingTime": ["Jam kumpul", "Meeting time"]
+    "meetingTime": ["Jam kumpul", "Meeting time"],
+    "category": ["Kategori", "Jenis kegiatan", "Category", "Activity type"],
+    "sessions": ["Jam sesi", "Sesi", "Jam mulai sesi", "Session times", "Sessions", "Start times"],
+    "difficulty": ["Tingkat kesulitan", "Tingkat", "Difficulty", "Level"],
+    "age": ["Usia", "Umur", "Age"],
+    "ageMin": ["Usia minimal", "Umur minimal", "Minimum age", "Min age"],
+    "ageMax": ["Usia maksimal", "Umur maksimal", "Maximum age", "Max age"],
+    "weightMax": ["Berat maksimal", "Berat badan maksimal", "Maximum weight", "Max weight"],
+    "guideLanguages": ["Bahasa pemandu", "Guide languages", "Guide language"],
+    "operator": ["Operator", "Operator mitra", "Mitra", "Partner operator"],
+    "bestTime": ["Waktu terbaik", "Best time", "Best time to go"]
   },
   "dayMarkers": {
     "patterns": ["^(?:hari|day)\\s*(?:ke-?\\s*)?(\\d{1,2})\\b", "^(?:h|d)(\\d{1,2})\\b"],

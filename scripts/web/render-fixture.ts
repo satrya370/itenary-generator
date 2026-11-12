@@ -17,7 +17,7 @@ const rendererAsset: RenderAsset = { dataUri: png, mimeType: 'image/png' };
 const credit = { photographer: 'Synthetic test asset', url: null, source: 'Generated landscape fixture' };
 const failures: string[] = [];
 const summaryRows: Array<Record<string, unknown>> = [];
-const MODE_FILE: Record<ItineraryMode, string> = { half_day: 'half_day', full_day: 'full_day', multi_day: 'multi_day', destination_guide: 'destination_guide' };
+const MODE_FILE: Record<ItineraryMode, string> = { half_day: 'half_day', full_day: 'full_day', multi_day: 'multi_day', destination_guide: 'destination_guide', activity: 'activity' };
 
 interface FixtureRow {
   id: string; mode: ItineraryMode; content: WebItineraryContent; logo: boolean; screenshotMode: boolean;

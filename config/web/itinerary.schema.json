@@ -24,11 +24,12 @@
     "closingNote",
     "disclaimer",
     "notSuitableFor",
-    "notAllowed"
+    "notAllowed",
+    "activity"
   ],
   "properties": {
     "schemaVersion": {
-      "const": "web-2.1.0"
+      "const": "web-2.2.0"
     },
     "trip": {
       "$ref": "#/$defs/trip"
@@ -144,6 +145,16 @@
         "null"
       ],
       "maxLength": 2000
+    },
+    "activity": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/activityMode"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "$defs": {
@@ -168,7 +179,8 @@
             "half_day",
             "full_day",
             "multi_day",
-            "destination_guide"
+            "destination_guide",
+            "activity"
           ]
         },
         "title": {
@@ -684,6 +696,157 @@
         },
         "value": {
           "type": "string",
+          "maxLength": 240
+        }
+      }
+    },
+    "activityMode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "category",
+        "durationMinutes",
+        "sessionTimes",
+        "difficulty",
+        "highlights",
+        "steps",
+        "ageMin",
+        "ageMax",
+        "weightMaxKg",
+        "guideLanguages",
+        "operator",
+        "bestTime"
+      ],
+      "properties": {
+        "category": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "adventure",
+            "water",
+            "culture",
+            "wellness",
+            "nature",
+            "family",
+            null
+          ]
+        },
+        "durationMinutes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 15,
+          "maximum": 720
+        },
+        "sessionTimes": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "string",
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+          }
+        },
+        "difficulty": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "easy",
+            "moderate",
+            "challenging",
+            null
+          ]
+        },
+        "highlights": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "type": "string",
+            "maxLength": 160
+          }
+        },
+        "steps": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "title",
+              "minutes",
+              "note"
+            ],
+            "properties": {
+              "title": {
+                "type": "string",
+                "maxLength": 120
+              },
+              "minutes": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 720
+              },
+              "note": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 500
+              }
+            }
+          }
+        },
+        "ageMin": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 99
+        },
+        "ageMax": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 99
+        },
+        "weightMaxKg": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 20,
+          "maximum": 250
+        },
+        "guideLanguages": {
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "type": "string",
+            "maxLength": 40
+          }
+        },
+        "operator": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 160
+        },
+        "bestTime": {
+          "type": [
+            "string",
+            "null"
+          ],
           "maxLength": 240
         }
       }

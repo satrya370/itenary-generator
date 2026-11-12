@@ -1,3 +1,4 @@
+import { blankActivityMode, hasActivityContent } from '../contracts/activity.js';
 import type { Activity, Day, Hotel, ItineraryMode, Photo, Place, WebItineraryContent } from '../contracts/types.js';
 
 const newId = () => globalThis.crypto.randomUUID();
@@ -154,6 +155,14 @@ export function changeMode(content: WebItineraryContent, mode: ItineraryMode): W
   const current = content.trip.mode;
   if (current === mode) return next;
   next.trip.mode = mode;
+  next.activity = mode === 'activity' ? (content.activity ?? blankActivityMode()) : null;
+  if (mode === 'activity') {
+    next.days = [];
+    next.places = [];
+    next.trip.startTime = null;
+    next.trip.endTime = null;
+    return next;
+  }
 
   if (mode === 'destination_guide') {
     next.days = [];
@@ -195,6 +204,19 @@ export function hasModeLoss(content: WebItineraryContent, mode: ItineraryMode): 
   const current = content.trip.mode;
   if (current === mode) return [];
   const losses: string[] = [];
+
+  if (mode === 'activity') {
+    const days = content.days.filter(hasContent).length;
+    if (days) losses.push(`${days} hari beserta aktivitasnya`);
+    const places = content.places.filter(hasContent).length;
+    if (places) losses.push(`${places} tempat`);
+    if (content.trip.startTime || content.trip.endTime) losses.push('jam mulai/selesai');
+    return losses;
+  }
+  if (current === 'activity') {
+    if (hasActivityContent(content.activity)) losses.push('detail aktivitas');
+    return losses;
+  }
 
   if (current === 'destination_guide') {
     const places = content.places.filter(hasContent).length;

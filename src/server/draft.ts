@@ -1,3 +1,4 @@
+import { blankActivityMode } from '../contracts/activity.js';
 import { randomUUID } from 'node:crypto';
 import type { Activity, Day, ItineraryMode, WebItineraryContent } from '../contracts/types.js';
 
@@ -15,7 +16,8 @@ export function blankDay(mode: ItineraryMode, dayNumber: number): Day {
 export function createBlankDraft(mode: ItineraryMode, profile: { defaultCountry?: string; defaultLanguage?: string | null } = {}): WebItineraryContent {
   const days = mode === 'half_day' || mode === 'full_day' ? [blankDay(mode, 1)] : mode === 'multi_day' ? [blankDay(mode, 1), blankDay(mode, 2)] : [];
   return {
-    schemaVersion: 'web-2.1.0',
+    schemaVersion: 'web-2.2.0',
+    activity: mode === 'activity' ? blankActivityMode() : null,
     trip: { mode, title: '', destination: '', country: profile.defaultCountry ?? '', region: null, language: profile.defaultLanguage ?? null, colorTheme: 'mixed', startDate: null, startTime: null, endTime: null },
     guide: { name: null, phone: null },
     meeting: { place: null, mapsUrl: null, time: null, note: null },

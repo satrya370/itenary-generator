@@ -36,7 +36,8 @@ function dayV2(mode: ItineraryMode, n: number): Day {
 export function createContentV2(mode: ItineraryMode = 'full_day', locale = 'en'): WebItineraryContent {
   const scheduled = mode !== 'destination_guide';
   return {
-    schemaVersion: 'web-2.1.0',
+    schemaVersion: 'web-2.2.0',
+    activity: null,
     trip: {
       mode, title: 'Ubud in a day', destination: 'Ubud', country: 'Indonesia', region: 'Bali', language: locale, colorTheme: 'cultural',
       startDate: scheduled ? '2026-12-01' : null, startTime: mode === 'half_day' || mode === 'full_day' ? '08:00' : null,

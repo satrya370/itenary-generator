@@ -11,7 +11,7 @@ import { fitToLimits, missingAfterImport, mergeContent, newDraftBase } from './m
 
 type Store = ReturnType<typeof openStore>;
 export interface ServiceResult { status: number; body: Record<string, unknown> }
-const MODES = new Set<ItineraryMode>(['half_day', 'full_day', 'multi_day', 'destination_guide']);
+const MODES = new Set<ItineraryMode>(['half_day', 'full_day', 'multi_day', 'destination_guide', 'activity']);
 const LOCALES = new Set(['id', 'en', 'fr', 'ja', 'zh-Hans', 'la']);
 const UUID4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DROP_MESSAGES: Record<Dropped['code'], string> = {
@@ -196,7 +196,7 @@ export class ImportService {
   }
 }
 
-const SKIPPED_LABELS: Record<string, string> = { summary: 'Ringkasan', closingNote: 'Catatan penutup', policies: 'Kebijakan', places: 'Tempat', 'places[].name': 'Nama tempat', 'places[].area': 'Area tempat', 'places[].description': 'Deskripsi tempat', activityDetails: 'Detail aktivitas' };
+const SKIPPED_LABELS: Record<string, string> = { summary: 'Ringkasan', closingNote: 'Catatan penutup', policies: 'Kebijakan', places: 'Tempat', highlights: 'Highlight', steps: 'Langkah kegiatan', 'places[].name': 'Nama tempat', 'places[].area': 'Area tempat', 'places[].description': 'Deskripsi tempat', activityDetails: 'Detail aktivitas' };
 const ACTIVITY_FIELDS: Record<string, string> = { place: 'tempat', description: 'deskripsi', tip: 'tips' };
 function skippedLabel(path: string): string {
   if (SKIPPED_LABELS[path]) return SKIPPED_LABELS[path];

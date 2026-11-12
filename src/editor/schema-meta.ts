@@ -1,3 +1,4 @@
+import { isScheduledMode } from '../contracts/validator.js';
 import registry from '../../config/web/field-registry.json' with { type: 'json' };
 import schema from '../../config/web/itinerary.schema.json' with { type: 'json' };
 import { fieldLabels, pathLabels } from './labels.js';
@@ -20,7 +21,7 @@ export function appliesTo(field: (typeof registry.fields)[number], mode: Itinera
   const modes = field.modes;
   if (typeof modes === 'string') {
     if (modes === 'all') return true;
-    if (modes === 'scheduled') return mode !== 'destination_guide';
+    if (modes === 'scheduled') return isScheduledMode(mode);
     return false;
   }
   return (modes as string[]).includes(mode);

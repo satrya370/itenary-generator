@@ -35,7 +35,7 @@ test('field registry covers every schema leaf exactly once', () => {
 
 test('registry mode applicability matches the guide-centric design', () => {
   const modesOf = (fieldPath: string) => getFieldRegistry().find((field) => field.path === fieldPath)!.modes;
-  assert.equal(modesOf('trip.startDate'), 'scheduled');
+  assert.deepEqual(modesOf('trip.startDate'), ['half_day', 'full_day', 'multi_day', 'activity']);
   assert.deepEqual(modesOf('trip.startTime'), ['half_day', 'full_day']);
   assert.deepEqual(modesOf('days[].meals.lunch'), ['full_day', 'multi_day']);
   assert.deepEqual(modesOf('days[].hotel.name'), ['multi_day']);
@@ -92,7 +92,7 @@ test('all four trip modes satisfy the versioned structural and publish contracts
 test('blank drafts per mode are valid drafts with mode-correct shape and fail publish with concrete errors', () => {
   for (const mode of MODES) {
     const blank = createBlankDraft(mode, {});
-    assert.equal(blank.schemaVersion, 'web-2.1.0');
+    assert.equal(blank.schemaVersion, 'web-2.2.0');
     assert.equal(validateDraft(blank).ok, true, mode);
     assert.equal(validateForPublish(blank).ok, false, mode);
     assert.ok(codes(validateForPublish(blank).errors).includes('PUBLISH_FIELD_REQUIRED'), mode);
@@ -384,7 +384,7 @@ test('every v1 fixture mode upgrades to a valid v2 draft, preserving stable IDs 
     assert.deepEqual(v1, before, `${mode} input must not be mutated`);
     const checked = validateDraft(upgraded.value);
     assert.equal(checked.ok, true, `${mode}: ${JSON.stringify(checked.errors)}`);
-    assert.equal(upgraded.value.schemaVersion, 'web-2.1.0');
+    assert.equal(upgraded.value.schemaVersion, 'web-2.2.0');
     assert.equal(upgraded.value.trip.mode, mode);
     assert.equal(upgraded.value.trip.title, 'Ubud in a day');
     assert.equal(upgraded.value.trip.colorTheme, 'cultural');
@@ -637,7 +637,7 @@ test('upgrade never throws, even on garbage input', () => {
   for (const input of [null, undefined, 'text', 7, [], {}, { brochure: 'x', schedule: 'y', spots: 3 }]) {
     let result: any;
     assert.doesNotThrow(() => { result = upgradeV1ToV2(input); }, JSON.stringify(input));
-    assert.equal(result.value.schemaVersion, 'web-2.1.0');
+    assert.equal(result.value.schemaVersion, 'web-2.2.0');
     assert.ok(Array.isArray(result.warnings));
   }
 });
@@ -711,7 +711,7 @@ test('v1 healthSafety moves into localTips and the v2.1 lists start empty', () =
   source.practical.healthSafety = ['Carry water', 'Carry water', 'Sun protection'];
   source.practical.localTips = [{ topic: 'Tip', note: 'Pay in cash' }];
   const result = upgradeV1ToV2(source);
-  assert.equal(result.value.schemaVersion, 'web-2.1.0');
+  assert.equal(result.value.schemaVersion, 'web-2.2.0');
   assert.deepEqual(result.value.notSuitableFor, []);
   assert.deepEqual(result.value.notAllowed, []);
   assert.deepEqual(result.value.localTips, ['Tip: Pay in cash', 'Carry water', 'Sun protection']);

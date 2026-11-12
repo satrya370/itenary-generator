@@ -4,7 +4,7 @@
  * Canonical guide-centric itinerary content (web-2.1.0). Publish-only requirements and mode applicability are defined by the field registry and validators.
  */
 export interface StandaloneItineraryContent {
-  schemaVersion: "web-2.1.0";
+  schemaVersion: "web-2.2.0";
   trip: Trip;
   guide: Guide;
   meeting: Meeting;
@@ -47,9 +47,10 @@ export interface StandaloneItineraryContent {
   policies: string | null;
   closingNote: string | null;
   disclaimer: string | null;
+  activity: ActivityMode | null;
 }
 export interface Trip {
-  mode: "half_day" | "full_day" | "multi_day" | "destination_guide";
+  mode: "half_day" | "full_day" | "multi_day" | "destination_guide" | "activity";
   title: string;
   destination: string;
   country: string;
@@ -138,4 +139,34 @@ export interface Place {
 export interface EmergencyContact {
   label: string;
   value: string;
+}
+export interface ActivityMode {
+  category: "adventure" | "water" | "culture" | "wellness" | "nature" | "family" | null;
+  durationMinutes: number | null;
+  /**
+   * @maxItems 8
+   */
+  sessionTimes: string[];
+  difficulty: "easy" | "moderate" | "challenging" | null;
+  /**
+   * @maxItems 5
+   */
+  highlights: string[];
+  /**
+   * @maxItems 12
+   */
+  steps: {
+    title: string;
+    minutes: number | null;
+    note: string | null;
+  }[];
+  ageMin: number | null;
+  ageMax: number | null;
+  weightMaxKg: number | null;
+  /**
+   * @maxItems 6
+   */
+  guideLanguages: string[];
+  operator: string | null;
+  bestTime: string | null;
 }

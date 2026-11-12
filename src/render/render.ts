@@ -179,6 +179,34 @@ function creditMarkup(credits: Array<{ photographer: string; url: string | null;
   }).join(' &nbsp;·&nbsp; ')}</div>`;
 }
 
+/** Category and difficulty words for the activity block (web-2.2.0). Unknown locales fall back to English. */
+const ACTIVITY_WORDS: Record<string, { category: Record<string, string>; difficulty: Record<string, string> }> = {
+  en: { category: { adventure: 'Adventure', water: 'Water', culture: 'Culture', wellness: 'Wellness', nature: 'Nature', family: 'Family' }, difficulty: { easy: 'Easy', moderate: 'Moderate', challenging: 'Challenging' } },
+  id: { category: { adventure: 'Petualangan', water: 'Air', culture: 'Budaya', wellness: 'Wellness', nature: 'Alam', family: 'Keluarga' }, difficulty: { easy: 'Mudah', moderate: 'Sedang', challenging: 'Menantang' } }
+};
+function activityWord(table: 'category' | 'difficulty', key: string, locale: string): string {
+  const words = ACTIVITY_WORDS[locale.split('-')[0]] ?? ACTIVITY_WORDS.en;
+  return words[table][key] ?? key;
+}
+
+/** The activity mode body: facts, highlights and the steps of the activity. No day schedule. */
+function renderActivityBlock(content: ItineraryV2, catalog: { labels: Record<string, string> }, locale: string): string {
+  const activity = content.activity;
+  if (!activity) return '';
+  const facts: Array<[string, string]> = [];
+  if (activity.category) facts.push([label(catalog, 'activityCategory'), activityWord('category', activity.category, locale)]);
+  if (activity.durationMinutes !== null) facts.push([label(catalog, 'activityDuration'), formatDuration(activity.durationMinutes, locale)]);
+  if (activity.sessionTimes.length) facts.push([label(catalog, 'activitySessionsLabel'), activity.sessionTimes.join(' · ')]);
+  if (activity.difficulty) facts.push([label(catalog, 'activityLevelLabel'), activityWord('difficulty', activity.difficulty, locale)]);
+  if (activity.ageMin !== null || activity.ageMax !== null) facts.push([label(catalog, 'activityAgeLabel'), `${activity.ageMin ?? ''}–${activity.ageMax ?? ''}`]);
+  if (activity.weightMaxKg !== null) facts.push([label(catalog, 'activityWeightLabel'), `${activity.weightMaxKg} kg`]);
+  if (activity.guideLanguages.length) facts.push([label(catalog, 'activityGuidesLabel'), activity.guideLanguages.join(', ')]);
+  const factsHtml = facts.length ? `<dl class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">${facts.map(([name, value]) => `<div><dt class="text-xs font-bold uppercase tracking-wide text-slate-500">${esc(name)}</dt><dd class="m-0">${esc(value)}</dd></div>`).join('')}</dl>` : '';
+  const highlights = activity.highlights.length ? `<ul class="mt-4 list-disc space-y-1 pl-5">${activity.highlights.map((item) => `<li>${esc(item)}</li>`).join('')}</ul>` : '';
+  const steps = activity.steps.length ? `<h3 class="mt-6 font-semibold">${esc(label(catalog, 'activitySteps'))}</h3><ol class="mt-3 space-y-3">${activity.steps.map((step, index) => `<li><b>${index + 1}. ${esc(step.title)}</b>${step.minutes !== null ? ` · ${esc(formatDuration(step.minutes, locale))}` : ''}${step.note ? `<p class="m-0 text-slate-700">${esc(step.note)}</p>` : ''}</li>`).join('')}</ol>` : '';
+  return `<section class="section" id="activity" data-section="activity" data-mode="activity"><h2 class="section-title">${esc(label(catalog, 'modeActivity'))}</h2>${factsHtml}${highlights}${steps}</section>`;
+}
+
 function renderActivity(activity: Activity, catalog: { labels: Record<string, string> }, locale: string): string {
   return `<article class="timeline-row break-inside-avoid pb-5" data-activity-id="${esc(activity.id)}"><div class="pt-1 text-right text-xs font-bold text-[var(--brand-primary)]">${esc(activity.time || '')}</div><div class="timeline-marker">${icon(activity.kind, activityTypeLabel(activity.kind, catalog))}</div><div class="min-w-0 border-b border-slate-200 pb-4"><div class="flex flex-wrap items-baseline gap-2"><h4 class="m-0 text-lg font-bold tracking-tight">${esc(activity.title)}</h4><span class="text-xs text-slate-500">${esc(activityTypeLabel(activity.kind, catalog))}</span>${activity.durationMinutes ? `<span class="text-xs text-slate-500">${esc(formatDuration(activity.durationMinutes, locale))}</span>` : ''}</div><p class="mt-2 text-sm leading-relaxed text-slate-700">${esc(activity.description)}</p>${activity.place ? `<p class="mt-2 text-xs font-medium text-slate-500">${esc(activity.place)}</p>` : ''}${activity.tip ? `<div class="local-tip mt-3 rounded-r-lg px-3 py-2 text-sm"><b>${esc(label(catalog, 'localTip'))}</b> · ${esc(activity.tip)}</div>` : ''}</div></article>`;
 }
@@ -228,7 +256,9 @@ export function renderItineraryHtml(content: ItineraryV2, options: RenderOptions
   // Schedule or guide
   let schedule = '';
   let guide = '';
-  if (content.trip.mode !== 'destination_guide') {
+  if (content.trip.mode === 'activity') {
+    schedule = renderActivityBlock(content, catalog, locale);
+  } else if (content.trip.mode !== 'destination_guide') {
     schedule = renderSchedule(content.days, content.trip.mode, content.trip.startDate, options, catalog, errors, warnings, usedCredits, locale);
   } else {
     guide = renderGuide(content.places, options, catalog, errors, warnings, usedCredits);

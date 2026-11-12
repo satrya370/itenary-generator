@@ -69,6 +69,7 @@ async function main(source: PlacesSource) {
     assert.ok(found, `button not found: ${text}`);
   }
   async function openStep(titleStart: string) {
+    titleStart = ({ Jadwal: 'Susun perjalanan', Waktu: 'Info perjalanan' } as Record<string, string>)[titleStart] ?? titleStart;
     const found = await page.evaluate((expected) => {
       const button = [...document.querySelectorAll('button')].find(item => item.textContent?.replace(/^\d+\.\s*/, '').trim().startsWith(expected));
       if (!button) return false;

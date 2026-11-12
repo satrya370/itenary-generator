@@ -115,9 +115,10 @@ async function main() {
     assert.deepEqual(savedRecord.draftContent, expectedAfterDescriptionSave, 'manual Save changes only the requested description field');
     progress.aiApplyAndSave = true;
     assert.equal(savedRecord.writingContext.brief, 'Une promenade tranquille dans les jardins de Kyoto avec un guide local qui explique les traditions.');
-    await clickButton(page, 'Preview'); await page.waitForFunction(() => document.body.innerText.includes('Preview draft tersimpan'));
+    await clickButton(page, 'Preview'); await page.waitForFunction(() => document.body.innerText.includes('Draft tersimpan · revisi'));
     assert.ok((await page.$eval('[aria-label="Publish diagnostics"]', element => element.textContent || '')).includes('Tidak ada error publish'));
     await page.screenshot({ path: path.join(outputDir, 'cp027-integrated-editor-preview.png'), fullPage: true });
+    await clickButton(page, 'Kembali mengedit');
     await clickButton(page, 'Publish itinerary'); await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Itinerary berhasil dipublish'));
     const publication = await page.evaluate(async id => await (await fetch(`/api/v1/itineraries/${id}/publication`)).json(), recordId);
     assert.equal(publication.active, true);
@@ -207,7 +208,11 @@ async function main() {
     assert.equal((await page.evaluate(async id => await (await fetch(`/api/v1/itineraries/${id}/publication`)).json(), recordId)).shareUrl, shareUrl);
     progress.restartPersistence = true;
     stage = 'edit-after-publish';
-    await page.evaluate(() => [...document.querySelectorAll('button')].find(button => button.textContent?.includes('Ketentuan & penutup'))?.click());
+    await page.evaluate(() => {
+      (([...document.querySelectorAll('[aria-label="Langkah"] button')].find(button => button.textContent?.includes('Detail & tampilan'))) as HTMLButtonElement | undefined)?.click();
+    });
+    await page.waitForSelector('[data-step="details"]:not([hidden])');
+    await page.evaluate(() => { for (const item of document.querySelectorAll<HTMLDetailsElement>('[data-step="details"] details')) item.open = true; });
     await page.locator('[data-field-path="closingNote"]').fill('A revised local closing note after the original publication.');
     stage = 'save-republished-draft';
     await clickButton(page, 'Simpan draft'); await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Tersimpan · revisi'));
@@ -217,7 +222,8 @@ async function main() {
     await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent?.trim() === 'Preview' && !(button as HTMLButtonElement).disabled));
     await clickButton(page, 'Preview');
     await page.waitForFunction(() => { const status = document.querySelector('[role="status"]')?.textContent || ''; return status.includes('Membuat preview') || status.startsWith('Preview siap') || status.startsWith('Preview belum tersedia:'); });
-    await page.waitForFunction(() => document.body.innerText.includes('Preview draft tersimpan'));
+    await page.waitForFunction(() => document.body.innerText.includes('Draft tersimpan · revisi'));
+    await clickButton(page, 'Kembali mengedit');
     stage = 'publish-edited-version';
     await clickButton(page, 'Publish ulang'); await page.waitForFunction(() => { const status = document.querySelector('[role="status"]')?.textContent || ''; return status.includes('Itinerary berhasil dipublish') || status.includes('Versi published sudah tersedia.'); });
     stage = 'assert-republished-version';

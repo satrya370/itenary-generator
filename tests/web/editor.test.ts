@@ -15,6 +15,7 @@ import { appliesTo, fieldMeta } from '../../src/editor/schema-meta.js';
 import { createContentV2 } from './fixtures-v2.js';
 
 const MODES: ItineraryMode[] = ['half_day', 'full_day', 'multi_day', 'destination_guide'];
+const ALL_MODES: ItineraryMode[] = [...MODES, 'activity'];
 const noop = () => {};
 const isRendered = (field: (typeof registry.fields)[number]) => field.control !== 'hidden' && field.control !== 'derived';
 
@@ -66,7 +67,7 @@ for (const mode of MODES) {
 
 test('2. fieldMeta resolves every registry path, labels are Indonesian, limits come from the schema', () => {
   for (const field of registry.fields) {
-    const mode = MODES.find((m) => appliesTo(field, m));
+    const mode = ALL_MODES.find((m) => appliesTo(field, m));
     assert.ok(mode, field.path);
     const meta = fieldMeta(field.path, mode);
     assert.equal(meta.path, field.path);

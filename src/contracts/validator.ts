@@ -16,7 +16,11 @@ const validateSchema = ajv.compile(schema);
 type Rec = Record<string, any>;
 type RegistryField = (typeof registry.fields)[number];
 
-export const SPAN_CAP_MINUTES: Record<Mode, number | null> = { half_day: 360, full_day: 720, multi_day: 960, destination_guide: null };
+export const SPAN_CAP_MINUTES: Record<Mode, number | null> = { half_day: 360, full_day: 720, multi_day: 960, destination_guide: null, activity: null };
+
+/** Modes that have a day-by-day schedule. Explicit list: a new mode must not inherit schedule rules by accident (web-2.2.0). */
+export const SCHEDULED_MODES: readonly Mode[] = ['half_day', 'full_day', 'multi_day'];
+export function isScheduledMode(mode: Mode): boolean { return SCHEDULED_MODES.includes(mode); }
 
 function clone<T>(value: T): T {
   return structuredClone(value);
@@ -53,7 +57,7 @@ function minutes(time: string): number {
 
 function modeApplies(field: RegistryField, mode: Mode): boolean {
   if (field.modes === 'all') return true;
-  if (field.modes === 'scheduled') return mode !== 'destination_guide';
+  if (field.modes === 'scheduled') return isScheduledMode(mode);
   return Array.isArray(field.modes) && (field.modes as string[]).includes(mode);
 }
 
@@ -89,6 +93,9 @@ export function normalizeCanonicalContent(input: unknown): ContractResult<unknow
   }
 
   const document = value as Rec;
+  // web-2.1.0 documents (drafts and published snapshots) read as web-2.2.0: the only addition is the empty activity block.
+  if (document.schemaVersion === 'web-2.1.0') document.schemaVersion = 'web-2.2.0';
+  if (document.schemaVersion === 'web-2.2.0' && document.activity === undefined) document.activity = null;
   const trip = isRecord(document.trip) ? document.trip : null;
   if (trip && trip.language !== null && trip.language !== undefined) {
     if (isLocaleTag(trip.language)) {
@@ -152,12 +159,15 @@ function applicabilityErrors(content: Rec): ContractDiagnostic[] {
   const mode = content.trip.mode as Mode;
   const notApplicable = (path: string) => errors.push({ code: 'FIELD_NOT_APPLICABLE', path, message: `${path} does not apply to ${mode} itineraries and must stay empty.` });
 
-  if (mode === 'destination_guide' && content.days.length) notApplicable('days');
+  if (!isScheduledMode(mode) && content.days.length) notApplicable('days');
   if (mode !== 'destination_guide' && content.places.length) notApplicable('places');
+  if (mode !== 'activity' && content.activity) notApplicable('activity');
+  if (mode === 'activity' && (content.trip.startTime || content.trip.endTime)) notApplicable('trip.startTime');
+  if (mode === 'activity' && !content.activity) errors.push({ code: 'ACTIVITY_DETAILS_REQUIRED', path: 'activity', message: 'An activity itinerary needs its activity details.' });
 
   for (const field of registry.fields) {
     if (modeApplies(field, mode)) continue;
-    if (field.path.startsWith('days[]') && mode === 'destination_guide') continue;
+    if (field.path.startsWith('days[]') && !isScheduledMode(mode)) continue;
     if (field.path.startsWith('places[]') && mode !== 'destination_guide') continue;
     for (const located of collectValues(content, field.path)) {
       if (isFilled(located.value)) notApplicable(located.path);
@@ -187,6 +197,10 @@ export function validateDraft(input: unknown): ContractResult<WebItineraryConten
 function requiredFieldErrors(content: Rec): ContractDiagnostic[] {
   const errors: ContractDiagnostic[] = [];
   const mode = content.trip.mode as Mode;
+  if (mode === 'activity' && content.activity) {
+    if (content.activity.category === null) errors.push({ code: 'PUBLISH_FIELD_REQUIRED', path: 'activity.category', message: 'The activity category is required before publishing.' });
+    if (content.activity.durationMinutes === null) errors.push({ code: 'PUBLISH_FIELD_REQUIRED', path: 'activity.durationMinutes', message: 'The activity duration is required before publishing.' });
+  }
   for (const field of registry.fields) {
     if (!field.requiredOnPublish || !modeApplies(field, mode)) continue;
     const requiredModes = (field as { requiredModes?: string[] }).requiredModes;
@@ -228,6 +242,9 @@ function structureDiagnostics(content: Rec): { errors: ContractDiagnostic[]; war
   }
   if (mode === 'multi_day' && (days.length < 2 || days.length > 14)) {
     errors.push({ code: 'MULTI_DAY_COUNT_INVALID', path: 'days', message: 'A multi-day itinerary needs between 2 and 14 days.' });
+  }
+  if (mode === 'activity' && days.length) {
+    errors.push({ code: 'FIELD_NOT_APPLICABLE', path: 'days', message: 'An activity itinerary has no day schedule.' });
   }
   if (mode === 'destination_guide' && places.length === 0) {
     errors.push({ code: 'PLACES_REQUIRED', path: 'places', message: 'A destination guide needs at least one place.' });

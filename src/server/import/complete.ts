@@ -4,7 +4,7 @@ import type { ItineraryMode } from '../../contracts/types.js';
 import type { ImportExtractor, ProviderUsage } from '../ai/provider.js';
 import { ProviderFailure } from '../ai/provider.js';
 import { fold } from './parse/text.js';
-import type { ParseResult } from './parse/extract.js';
+import { MAX_HIGHLIGHTS, MAX_STEPS, type ParseResult } from './parse/extract.js';
 
 /** AI completion (CP031): only what the parser left, quote-checked on the server before it can reach a draft. */
 
@@ -14,6 +14,8 @@ export interface CompletionActivity { title: string; place?: TextValue | null; d
 export interface Completion {
   summary?: TextValue | null; closingNote?: TextValue | null; policies?: TextValue | null;
   places?: CompletionPlace[]; activityDetails?: CompletionActivity[];
+  /** Activity mode only (web-2.2.0). Whole-sentence quotes; ignored when the code already read the list. */
+  highlights?: TextValue[]; steps?: Array<{ title: TextValue }>;
 }
 export interface Dropped { path: string; code: 'IMPORT_QUOTE_NOT_FOUND' | 'IMPORT_NOT_APPLICABLE' | 'IMPORT_ACTIVITY_NOT_FOUND' | 'IMPORT_ACTIVITY_AMBIGUOUS' | 'IMPORT_ALREADY_FILLED'; }
 
@@ -34,7 +36,7 @@ export function quoteHolds(item: TextValue, foldedSource: string, kind: 'part' |
   return kind === 'whole' ? trimEnd(value) === trimEnd(quote) : quote.includes(value);
 }
 
-export function isDayMode(mode: ItineraryMode): boolean { return mode !== 'destination_guide'; }
+export function isDayMode(mode: ItineraryMode): boolean { return mode === 'half_day' || mode === 'full_day' || mode === 'multi_day'; }
 
 /** Splits the parser's unconsumed lines into the text the model may quote from.
  * `sent` carries the engine's section hint for the model; `plain` is the document text only and is what the quote guard checks,
@@ -56,7 +58,7 @@ export function segmentsOf(parse: ParseResult): { sent: string[]; plain: string[
 export function filterCompletion(completion: Completion, segmentsText: string, parse: ParseResult, mode: ItineraryMode): { accepted: Completion; dropped: Dropped[] } {
   const source = fold(segmentsText);
   const dropped: Dropped[] = [];
-  const accepted: Completion = { places: [], activityDetails: [] };
+  const accepted: Completion = { places: [], activityDetails: [], highlights: [], steps: [] };
   const textPath = (name: 'summary' | 'closingNote' | 'policies', item: TextValue | null | undefined) => {
     if (!item) return;
     if (!quoteHolds(item, source, 'whole')) { dropped.push({ path: name, code: 'IMPORT_QUOTE_NOT_FOUND' }); return; }
@@ -74,6 +76,32 @@ export function filterCompletion(completion: Completion, segmentsText: string, p
     if (place.area && !area) dropped.push({ path: 'places[].area', code: 'IMPORT_QUOTE_NOT_FOUND' });
     if (place.description && !description) dropped.push({ path: 'places[].description', code: 'IMPORT_QUOTE_NOT_FOUND' });
     accepted.places!.push({ name: place.name, area, description });
+  }
+
+  if (completion.highlights?.length || completion.steps?.length) {
+    if (mode !== 'activity') dropped.push({ path: completion.highlights?.length ? 'highlights' : 'steps', code: 'IMPORT_NOT_APPLICABLE' });
+    else {
+      const taken = new Set<string>();
+      const wholeLines = (items: TextValue[], limit: number, path: string) => {
+        const out: TextValue[] = [];
+        for (const item of items) {
+          if (!quoteHolds(item, source, 'whole')) { dropped.push({ path, code: 'IMPORT_QUOTE_NOT_FOUND' }); continue; }
+          const key = fold(item.value);
+          if (taken.has(key)) continue;
+          taken.add(key);
+          if (out.length < limit) out.push(item);
+        }
+        return out;
+      };
+      if (completion.highlights?.length) {
+        if (parse.fields.activity.highlights.length) dropped.push({ path: 'highlights', code: 'IMPORT_ALREADY_FILLED' });
+        else accepted.highlights = wholeLines(completion.highlights, MAX_HIGHLIGHTS, 'highlights');
+      }
+      if (completion.steps?.length) {
+        if (parse.fields.activity.steps.length) dropped.push({ path: 'steps', code: 'IMPORT_ALREADY_FILLED' });
+        else accepted.steps = wholeLines(completion.steps.map((step) => step.title), MAX_STEPS, 'steps').map((title) => ({ title }));
+      }
+    }
   }
 
   const activities = parse.fields.days.flatMap((day) => day.activities);

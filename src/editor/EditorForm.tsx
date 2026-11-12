@@ -10,6 +10,7 @@ import { Summary } from './sections/Summary.js';
 import { DaySchedule } from './sections/DaySchedule.js';
 import { MultiDay } from './sections/MultiDay.js';
 import { Places } from './sections/Places.js';
+import { ActivityDetails } from './sections/ActivityDetails.js';
 import { Practical } from './sections/Practical.js';
 import { Closing } from './sections/Closing.js';
 import { AiAssist } from './sections/AiAssist.js';
@@ -60,6 +61,7 @@ export function EditorForm(props: EditorProps & { activeStep?: StepId }) {
         {(mode === 'half_day' || mode === 'full_day') && <DaySchedule {...props} />}
         {mode === 'multi_day' && <MultiDay {...props} />}
         {mode === 'destination_guide' && <Places {...props} />}
+        {mode === 'activity' && <ActivityDetails {...props} />}
       </div>
       <div data-step="details" hidden={show('details')} className="space-y-7">
         <TripGuide {...props} /><Cover {...props} /><Practical {...props} />

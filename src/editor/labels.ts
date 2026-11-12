@@ -1,4 +1,18 @@
 export const fieldLabels: Record<string, string> = {
+  activityCategory: "Jenis kegiatan",
+  activityDuration: "Durasi (menit)",
+  activitySession: "Jam mulai sesi",
+  activityDifficulty: "Tingkat kesulitan",
+  activityHighlight: "Highlight",
+  activityStepTitle: "Langkah",
+  activityStepMinutes: "Menit untuk langkah",
+  activityStepNote: "Catatan langkah",
+  activityAgeMin: "Usia minimal",
+  activityAgeMax: "Usia maksimal",
+  activityWeight: "Berat maksimal (kg)",
+  activityGuideLanguage: "Bahasa pemandu",
+  activityOperator: "Operator mitra",
+  activityBestTime: "Waktu terbaik",
   tripTitle: 'Judul perjalanan',
   destination: 'Destinasi (kota/area)',
   country: 'Negara',
@@ -106,6 +120,12 @@ export const modeCopy: Record<string, { title: string; description: string; exam
     description: '2–14 hari; tiap hari punya jadwal, hotel, makan dan perpindahan.',
     example: 'Bali 5 hari 4 malam',
     badge: 'bg-indigo-100 text-indigo-900'
+  },
+  activity: {
+    title: 'Aktivitas',
+    description: 'Satu kegiatan beberapa jam, tanpa jadwal per hari: rafting, ATV, snorkeling, kelas memasak.',
+    example: 'Rafting Sungai Ayung',
+    badge: 'bg-emerald-100 text-emerald-900'
   },
   destination_guide: {
     title: 'Panduan destinasi',

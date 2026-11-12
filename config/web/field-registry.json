@@ -1,22 +1,32 @@
 {
-  "registryVersion": "web-2.1.0",
+  "registryVersion": "web-2.2.0",
   "schema": "./itinerary.schema.json",
   "constraintsSource": "itinerary.schema.json",
   "displayLabelKeys": [
-    "dayRange",
     "activities",
-    "activityTypeActivity",
+    "activityAgeLabel",
+    "activityFacts",
+    "activityGuidesLabel",
+    "activityLevelLabel",
+    "activitySessionsLabel",
+    "activitySteps",
     "activityTypeAccommodation",
+    "activityTypeActivity",
     "activityTypeFood",
     "activityTypeFree",
     "activityTypeRest",
     "activityTypeSightseeing",
     "activityTypeTransport",
+    "activityWeightLabel",
     "closingHeading",
     "dayLabel",
+    "dayRange",
     "exploreDestinations",
     "highlights",
+    "hotel",
     "itinerary",
+    "meals",
+    "modeActivity",
     "modeDestinationGuide",
     "modeFullDay",
     "modeHalfDay",
@@ -31,10 +41,8 @@
     "scopeFullDay",
     "scopeHalfDay",
     "scopeMultiDay",
-    "tripOverview",
     "travelNotes",
-    "hotel",
-    "meals"
+    "tripOverview"
   ],
   "legacyLabelKeys": [
     "agencyContact",
@@ -410,7 +418,12 @@
       "labelKey": "mapsLink",
       "control": "url",
       "source": "manual",
-      "modes": "scheduled",
+      "modes": [
+        "half_day",
+        "full_day",
+        "multi_day",
+        "activity"
+      ],
       "requiredOnPublish": false,
       "renderTarget": "info.meeting"
     },
@@ -419,7 +432,12 @@
       "labelKey": "meetingNote",
       "control": "textarea",
       "source": "manual",
-      "modes": "scheduled",
+      "modes": [
+        "half_day",
+        "full_day",
+        "multi_day",
+        "activity"
+      ],
       "requiredOnPublish": false,
       "renderTarget": "info.meeting"
     },
@@ -428,7 +446,12 @@
       "labelKey": "meetingPoint",
       "control": "text",
       "source": "manual",
-      "modes": "scheduled",
+      "modes": [
+        "half_day",
+        "full_day",
+        "multi_day",
+        "activity"
+      ],
       "requiredOnPublish": false,
       "renderTarget": "info.meeting"
     },
@@ -437,7 +460,12 @@
       "labelKey": "meetingTime",
       "control": "time",
       "source": "manual",
-      "modes": "scheduled",
+      "modes": [
+        "half_day",
+        "full_day",
+        "multi_day",
+        "activity"
+      ],
       "requiredOnPublish": false,
       "renderTarget": "info.meeting"
     },
@@ -473,7 +501,12 @@
       "labelKey": "pickupArea",
       "control": "text",
       "source": "manual",
-      "modes": "scheduled",
+      "modes": [
+        "half_day",
+        "full_day",
+        "multi_day",
+        "activity"
+      ],
       "requiredOnPublish": false,
       "renderTarget": "info.pickup"
     },
@@ -482,7 +515,12 @@
       "labelKey": "dropoffNote",
       "control": "textarea",
       "source": "manual",
-      "modes": "scheduled",
+      "modes": [
+        "half_day",
+        "full_day",
+        "multi_day",
+        "activity"
+      ],
       "requiredOnPublish": false,
       "renderTarget": "info.pickup"
     },
@@ -491,7 +529,12 @@
       "labelKey": "pickup",
       "control": "toggle",
       "source": "manual",
-      "modes": "scheduled",
+      "modes": [
+        "half_day",
+        "full_day",
+        "multi_day",
+        "activity"
+      ],
       "requiredOnPublish": false,
       "renderTarget": "info.pickup"
     },
@@ -500,7 +543,12 @@
       "labelKey": "pickupTime",
       "control": "time",
       "source": "manual",
-      "modes": "scheduled",
+      "modes": [
+        "half_day",
+        "full_day",
+        "multi_day",
+        "activity"
+      ],
       "requiredOnPublish": false,
       "renderTarget": "info.pickup"
     },
@@ -757,7 +805,12 @@
       "labelKey": "startDate",
       "control": "date",
       "source": "manual",
-      "modes": "scheduled",
+      "modes": [
+        "half_day",
+        "full_day",
+        "multi_day",
+        "activity"
+      ],
       "requiredOnPublish": false,
       "renderTarget": "info.dates"
     },
@@ -790,6 +843,160 @@
       "modes": "all",
       "requiredOnPublish": false,
       "renderTarget": "practical.whatToBring"
+    },
+    {
+      "path": "activity.category",
+      "labelKey": "activityCategory",
+      "control": "select",
+      "source": "manual",
+      "modes": [
+        "activity"
+      ],
+      "requiredOnPublish": true,
+      "renderTarget": "activity.category"
+    },
+    {
+      "path": "activity.durationMinutes",
+      "labelKey": "activityDuration",
+      "control": "number",
+      "source": "manual",
+      "modes": [
+        "activity"
+      ],
+      "requiredOnPublish": true,
+      "renderTarget": "activity.duration"
+    },
+    {
+      "path": "activity.sessionTimes[]",
+      "labelKey": "activitySession",
+      "control": "time",
+      "source": "manual",
+      "modes": [
+        "activity"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "activity.sessions"
+    },
+    {
+      "path": "activity.difficulty",
+      "labelKey": "activityDifficulty",
+      "control": "select",
+      "source": "manual",
+      "modes": [
+        "activity"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "activity.difficulty"
+    },
+    {
+      "path": "activity.highlights[]",
+      "labelKey": "activityHighlight",
+      "control": "text",
+      "source": "manual",
+      "modes": [
+        "activity"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "activity.highlights"
+    },
+    {
+      "path": "activity.steps[].title",
+      "labelKey": "activityStepTitle",
+      "control": "text",
+      "source": "manual",
+      "modes": [
+        "activity"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "activity.steps"
+    },
+    {
+      "path": "activity.steps[].minutes",
+      "labelKey": "activityStepMinutes",
+      "control": "number",
+      "source": "manual",
+      "modes": [
+        "activity"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "activity.steps"
+    },
+    {
+      "path": "activity.steps[].note",
+      "labelKey": "activityStepNote",
+      "control": "textarea",
+      "source": "manual",
+      "modes": [
+        "activity"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "activity.steps"
+    },
+    {
+      "path": "activity.ageMin",
+      "labelKey": "activityAgeMin",
+      "control": "number",
+      "source": "manual",
+      "modes": [
+        "activity"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "activity.age"
+    },
+    {
+      "path": "activity.ageMax",
+      "labelKey": "activityAgeMax",
+      "control": "number",
+      "source": "manual",
+      "modes": [
+        "activity"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "activity.age"
+    },
+    {
+      "path": "activity.weightMaxKg",
+      "labelKey": "activityWeight",
+      "control": "number",
+      "source": "manual",
+      "modes": [
+        "activity"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "activity.weight"
+    },
+    {
+      "path": "activity.guideLanguages[]",
+      "labelKey": "activityGuideLanguage",
+      "control": "text",
+      "source": "manual",
+      "modes": [
+        "activity"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "activity.guideLanguages"
+    },
+    {
+      "path": "activity.operator",
+      "labelKey": "activityOperator",
+      "control": "text",
+      "source": "manual",
+      "modes": [
+        "activity"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "activity.operator"
+    },
+    {
+      "path": "activity.bestTime",
+      "labelKey": "activityBestTime",
+      "control": "text",
+      "source": "manual",
+      "modes": [
+        "activity"
+      ],
+      "requiredOnPublish": false,
+      "renderTarget": "activity.bestTime"
     }
   ]
 }

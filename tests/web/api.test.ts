@@ -21,8 +21,8 @@ test('blank draft/profile persist across server restart and CAS preserves one wi
   const created = await f.app.inject({ method: 'POST', url: '/api/v1/itineraries', headers, payload: { mode: 'full_day' } });
   assert.equal(created.statusCode, 201);
   const record = created.json();
-  assert.equal(record.draftContent.schemaVersion, 'web-2.1.0');
-  assert.equal(record.schemaVersion, 'web-2.1.0');
+  assert.equal(record.draftContent.schemaVersion, 'web-2.2.0');
+  assert.equal(record.schemaVersion, 'web-2.2.0');
   const patchedContent = structuredClone(record.draftContent);
   patchedContent.trip.title = 'Kyoto walk';
   const payload = { expectedRevision: 1, draftContent: patchedContent, languageContext: record.languageContext, writingContext: record.writingContext };
@@ -267,12 +267,12 @@ test('create and update store the canonical schema version, and photo references
   const f = await fixture(t);
   const created = (await f.app.inject({ method: 'POST', url: '/api/v1/itineraries', headers, payload: { mode: 'destination_guide' } })).json();
   const db = (f.app as any).store.db;
-  assert.equal(db.prepare('SELECT schema_version FROM itineraries WHERE id=?').get(created.id).schema_version, 'web-2.1.0');
+  assert.equal(db.prepare('SELECT schema_version FROM itineraries WHERE id=?').get(created.id).schema_version, 'web-2.2.0');
   db.prepare("UPDATE itineraries SET schema_version='web-1.0.0' WHERE id=?").run(created.id);
   const response = await f.app.inject({ method: 'PATCH', url: `/api/v1/itineraries/${created.id}`, headers, payload: { expectedRevision: 1, draftContent: created.draftContent, languageContext: created.languageContext, writingContext: created.writingContext } });
   assert.equal(response.statusCode, 200, response.body);
-  assert.equal(response.json().schemaVersion, 'web-2.1.0');
-  assert.equal(db.prepare('SELECT schema_version FROM itineraries WHERE id=?').get(created.id).schema_version, 'web-2.1.0');
+  assert.equal(response.json().schemaVersion, 'web-2.2.0');
+  assert.equal(db.prepare('SELECT schema_version FROM itineraries WHERE id=?').get(created.id).schema_version, 'web-2.2.0');
   const withForeignPhoto = structuredClone(created.draftContent);
   withForeignPhoto.places = [{ id: randomUUID(), group: null, name: 'Garden', area: 'East', description: '', tips: [], gettingThere: null, suggestedDuration: null, bestTime: null, nearby: null, photo: { assetId: 'missing-asset', credit: null } }];
   const rejected = await f.app.inject({ method: 'PATCH', url: `/api/v1/itineraries/${created.id}`, headers, payload: { expectedRevision: 2, draftContent: withForeignPhoto, languageContext: created.languageContext, writingContext: created.writingContext } });

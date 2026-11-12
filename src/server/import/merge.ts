@@ -1,3 +1,4 @@
+import { blankActivityMode } from '../../contracts/activity.js';
 import { randomUUID } from 'node:crypto';
 import practical from '../../../config/web/practical-options.json' with { type: 'json' };
 import type { Activity, Day, ItineraryMode, WebItineraryContent } from '../../contracts/types.js';
@@ -79,6 +80,26 @@ export function mergeContent(saved: WebItineraryContent, input: MergeInput): Mer
     });
   }
 
+  if (mode === 'activity') {
+    const parsed = parse.fields.activity;
+    const next = { ...(content.activity ?? blankActivityMode()) };
+    if (parsed.category) set('activity.category', () => { next.category = parsed.category!; });
+    if (parsed.durationMinutes !== undefined) set('activity.durationMinutes', () => { next.durationMinutes = parsed.durationMinutes!; });
+    if (parsed.sessionTimes.length) set('activity.sessionTimes[]', () => { next.sessionTimes = parsed.sessionTimes; });
+    if (parsed.difficulty) set('activity.difficulty', () => { next.difficulty = parsed.difficulty!; });
+    if (parsed.ageMin !== undefined) set('activity.ageMin', () => { next.ageMin = parsed.ageMin!; });
+    if (parsed.ageMax !== undefined) set('activity.ageMax', () => { next.ageMax = parsed.ageMax!; });
+    if (parsed.weightMaxKg !== undefined) set('activity.weightMaxKg', () => { next.weightMaxKg = parsed.weightMaxKg!; });
+    if (parsed.guideLanguages.length) set('activity.guideLanguages[]', () => { next.guideLanguages = parsed.guideLanguages; });
+    if (parsed.operator) set('activity.operator', () => { next.operator = parsed.operator!; });
+    if (parsed.bestTime) set('activity.bestTime', () => { next.bestTime = parsed.bestTime!; });
+    const highlights = parsed.highlights.length ? parsed.highlights : (completion.highlights ?? []).map((item) => item.value);
+    if (highlights.length) set('activity.highlights[]', () => { next.highlights = highlights; });
+    const steps = parsed.steps.length ? parsed.steps : (completion.steps ?? []).map((step) => ({ title: step.title.value, minutes: null }));
+    if (steps.length) set('activity.steps[].title', () => { next.steps = steps.map((step) => ({ title: step.title, minutes: step.minutes, note: null })); });
+    content.activity = next;
+  }
+
   if (completion.summary) set('summary', () => { content.summary = completion.summary!.value; });
   if (completion.closingNote) set('closingNote', () => { content.closingNote = completion.closingNote!.value; });
   if (completion.policies) set('policies', () => { content.policies = completion.policies!.value; });
@@ -103,7 +124,7 @@ export function missingAfterImport(content: WebItineraryContent): string[] {
 }
 
 export function newDraftBase(mode: ItineraryMode, profile: { defaultCountry?: string; defaultLanguage?: string | null }): WebItineraryContent {
-  return { schemaVersion: 'web-2.1.0', trip: { mode, title: '', destination: '', country: profile.defaultCountry ?? '', region: null, language: profile.defaultLanguage ?? null, colorTheme: 'mixed', startDate: null, startTime: null, endTime: null }, guide: { name: null, phone: null }, meeting: { place: null, mapsUrl: null, time: null, note: null }, pickup: { offered: false, area: null, time: null, dropoffNote: null }, cover: null, summary: '', days: mode === 'multi_day' ? [blankDay(mode, 1), blankDay(mode, 2)] : mode === 'destination_guide' ? [] : [blankDay(mode, 1)], places: [], included: [], notIncluded: [], notSuitableFor: [], notAllowed: [], whatToBring: [], localTips: [], emergencyContacts: [], policies: null, closingNote: null, disclaimer: null };
+  return { schemaVersion: 'web-2.2.0', activity: mode === 'activity' ? blankActivityMode() : null, trip: { mode, title: '', destination: '', country: profile.defaultCountry ?? '', region: null, language: profile.defaultLanguage ?? null, colorTheme: 'mixed', startDate: null, startTime: null, endTime: null }, guide: { name: null, phone: null }, meeting: { place: null, mapsUrl: null, time: null, note: null }, pickup: { offered: false, area: null, time: null, dropoffNote: null }, cover: null, summary: '', days: mode === 'multi_day' ? [blankDay(mode, 1), blankDay(mode, 2)] : mode === 'destination_guide' || mode === 'activity' ? [] : [blankDay(mode, 1)], places: [], included: [], notIncluded: [], notSuitableFor: [], notAllowed: [], whatToBring: [], localTips: [], emergencyContacts: [], policies: null, closingNote: null, disclaimer: null };
 }
 
 /** A document can hold a line longer than a field allows. Nothing is rejected: text is cut at a word boundary, the cut part of an
@@ -131,6 +152,22 @@ export function fitToLimits(content: WebItineraryContent): string[] {
   };
 
   const { trip, guide, meeting } = content;
+  const activity = content.activity;
+  if (activity) {
+    fitString('Operator', activity.operator, 160, (v) => { activity.operator = v; });
+    fitString('Waktu terbaik', activity.bestTime, 240, (v) => { activity.bestTime = v; });
+    fitList('Highlight', activity.highlights, 160, 5);
+    fitList('Bahasa pemandu', activity.guideLanguages, 40, 6);
+    for (const step of activity.steps) {
+      step.title = clip(step.title, 120).kept;
+      if (step.note) step.note = clip(step.note, 500).kept;
+    }
+    if (activity.steps.length > 12) { notes.push(`Jalannya kegiatan: hanya 12 langkah pertama dipakai; ${activity.steps.length - 12} langkah lain tidak dimasukkan.`); activity.steps.length = 12; }
+    if (activity.ageMin !== null && activity.ageMax !== null && activity.ageMin > activity.ageMax) {
+      notes.push('Usia minimal lebih besar dari usia maksimal; usia maksimal dikosongkan, periksa dokumennya.');
+      activity.ageMax = null;
+    }
+  }
   fitString('Judul', trip.title, 200, (v) => { trip.title = v; });
   fitString('Destinasi', trip.destination, 200, (v) => { trip.destination = v; });
   fitString('Negara', trip.country, 120, (v) => { trip.country = v; });

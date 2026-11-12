@@ -42,3 +42,14 @@ The model receives only the unread lines of the document, as data, and returns J
 ## Live check (opt-in)
 
 `IMPORT_LIVE=1 npm run verify:web-import-live` runs six fixed imports against the configured OpenRouter key and prints tokens and cost per import. It is not part of the gate.
+
+## Activity mode (SI1)
+
+`mode: "activity"` is accepted by `POST .../parse` and `.../apply` (new and overwrite).
+
+- **Read by code** (key lines `Label: value`): `Kategori` (exactly one of the six categories), `Durasi` (15 minutes to 12 hours), `Jam sesi` (clock times), `Tingkat kesulitan` (mudah, sedang, menantang), `Usia` / `Usia minimal` / `Usia maksimal`, `Berat maksimal` (20-250 kg), `Bahasa pemandu`, `Operator mitra`, `Waktu terbaik`, and the shared `Titik kumpul`, `Jam kumpul`, `Guide`.
+- **Lists by heading:** `Highlights` (up to 5 bullets) and `Jalannya kegiatan` (up to 12 bullets, "(15 menit)" at the end becomes the minutes). These two headings are read only in activity mode; elsewhere `Highlights` stays a summary heading.
+- **Never guessed:** a value that is not one of the allowed words or is out of range stays empty and the report gets a `Baris N:` note. "Rafting" is not a category.
+- **Model step:** `summary`, `closingNote`, `policies` as before, plus `highlights` and `steps` (whole-line quotes, titles only, no minutes). A list the code already read is never replaced.
+- **Limits:** over-long values are cut and reported; an age minimum above the maximum drops the maximum with a note. Nothing fails the import.
+- An activity draft has no days. Both the days and places of the merged draft stay empty.
