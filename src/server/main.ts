@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
-import { createApp } from './app.js';
 
 if (existsSync('.env.web')) process.loadEnvFile('.env.web');
+const { createApp } = await import('./app.js');
 
 const host = process.env.HOST || '127.0.0.1';
 if (host !== '127.0.0.1' && host !== '::1') throw new Error('The standalone editor server may bind only to loopback.');

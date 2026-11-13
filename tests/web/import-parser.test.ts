@@ -227,3 +227,52 @@ test('the activity labels do nothing in the other modes: the line stays for the 
   assert.equal(r.fields.activity.category, undefined);
   assert.deepEqual(r.unconsumed.map((line) => line.text), ['Operator: Ayung Adventure', 'Kategori: Air', 'Durasi: 3 jam']);
 });
+
+test('normalizes direct parser input and never assigns skipped or repeated day markers to the previous day', () => {
+  const text = 'Tur\r\nHari 1: Ubud\r\n09:00 Museum\r\nHari 3: Pantai\r\n10:00 Pantai\r\nHari 3: Duplikat\r\n11:00 Aktivitas ambigu';
+  const result = parseDocument(text, 'multi_day');
+  assert.deepEqual(result.fields.days.map((day) => [day.dayNumber, day.title, day.activities.map((activity) => activity.title)]), [[1, 'Ubud', ['Museum']], [3, 'Pantai', ['Pantai']]]);
+  assert.ok(result.notes.some((note) => note.includes('melompat')));
+  assert.ok(result.notes.some((note) => note.includes('berulang')));
+  assert.ok(result.unconsumed.some((line) => line.text.includes('11:00 Aktivitas ambigu')));
+  assert.equal(result.totalLines, result.consumedLines + result.unconsumed.length);
+});
+
+test('reads AM/PM ranges and compound durations without offset corruption', () => {
+  assert.deepEqual(readTimeLine('01:00 PM - 03:00 PM Museum'), { time: '13:00', durationMinutes: 120, rest: 'Museum', ambiguous: false });
+  assert.deepEqual(readTimeLine('08:00   WIB Museum'), { time: '08:00', durationMinutes: null, rest: 'Museum', ambiguous: false });
+  assert.deepEqual(readTimeLine('09:00 Tur (1 jam 30 menit)'), { time: '09:00', durationMinutes: 90, rest: 'Tur', ambiguous: false });
+  assert.equal(durationIn('1h 30m')?.minutes, 90);
+  assert.equal(readTimeLine('23:00-01:00 Transfer malam')?.durationMinutes, null);
+});
+
+test('supports ISO dates and leaves ambiguous or invalid dates unresolved with a note', () => {
+  assert.deepEqual(dateFromText('2026-12-20'), { date: '2026-12-20', note: null });
+  assert.deepEqual(dateFromText('2024-02-29'), { date: '2024-02-29', note: null });
+  assert.equal(dateFromText('2026-02-29').date, null);
+  assert.ok(dateFromText('2026-02-29').note);
+  assert.equal(dateFromText('03/04/2026').date, null);
+  assert.ok(dateFromText('03/04/2026').note?.includes('ambigu'));
+});
+
+test('keeps inline and unbulleted practical lists, and extracts meeting place beside its map URL', () => {
+  const result = parseDocument([
+    'Tur Bandung', 'Termasuk: Transportasi, air mineral', 'Tidak termasuk', 'Tiket masuk', 'Tip guide',
+    'Titik kumpul: Hotel Melati https://maps.app.goo.gl/abc', 'Hari 1', '09:00 Museum'
+  ].join('\n'), 'full_day');
+  assert.deepEqual(result.fields.lists.included, ['Transportasi, air mineral']);
+  assert.deepEqual(result.fields.lists.notIncluded, ['Tiket masuk', 'Tip guide']);
+  assert.equal(result.fields.meeting.place, 'Hotel Melati');
+  assert.equal(result.fields.meeting.mapsUrl, 'https://maps.app.goo.gl/abc');
+});
+
+test('conflicting scalar values are left empty instead of last-write-wins', () => {
+  const result = parseDocument('Tur\nDestinasi: Bali\nDestinasi: Lombok\nNegara: Indonesia\nNegara: Indonesia', 'full_day');
+  assert.equal(result.fields.trip.destination, undefined);
+  assert.equal(result.fields.trip.country, 'Indonesia');
+  assert.ok(result.notes.some((note) => note.includes('Destinasi memiliki nilai berbeda')));
+  assert.deepEqual(result.conflicts[0], {
+    path: 'destination', values: ['Bali', 'Lombok'], line: 3,
+    message: 'Baris 3: Destinasi memiliki nilai berbeda lebih dari satu kali; pilih nilai yang benar secara manual.'
+  });
+});

@@ -51,6 +51,10 @@
 
 ## 2. Status overview
 
+**Revisi hardening import 2026-11-13:** structured clarification memilih PDF berteks (tanpa OCR) dan review eksplisit untuk ambiguitas/konflik. Shared plan: `plans/cp030-cp032_revision-plan_text-and-pdf-parser-hardening.md`. CP030 bounded revision plus layout-aware source coverage revision are recorded in `plans/cp030_revision-plan_text-and-pdf-parser.md`, `plans/cp030_revision-plan_layout-aware-pdf-and-source-coverage.md`, and `logs/cp030_completion-log_text-and-pdf-parser.md`. CP030 revisions verified; owner-authorized dependency-gate exception remains recorded. CP031 may proceed as a separate revision; CP032 and all other statuses remain unchanged.
+
+**CP031 revisions 2026-11-13:** separate OpenRouter models/five live tests and backend evidence/safe-merge hardening are recorded in `plans/cp031_revision-plan_split-import-model.md`, `plans/cp031_revision-plan-evidence-guards-and-safe-merge.md`, and `logs/cp031_completion-log_split-import-model.md`. The hardening revision used deterministic tests only; no paid/live calls or migration. CP032 and all other statuses remain unchanged.
+
 | CP | Object | Depends on | Status |
 |---|---|---|---|
 | CP018 | standalone-api-and-runtime-contract | — | completed |
@@ -68,8 +72,8 @@
 | CP034 | agency-setup-profile-defaults-and-photo-upload | CP033 | in_progress (gate run 2026-11-10: pass; awaiting review) |
 | CP035 | ota-practical-fields-wizard-and-validation | CP034 | in_progress (S1-S4 gate run 2026-11-11: pass; deviations listed in stage log; awaiting review) |
 | CP036 | google-places-autocomplete | CP035 | in_progress (gate + review fixes done 2026-11-11; default provider now Photon/OSM, no card; Google optional; awaiting owner acceptance) |
-| CP030 | import-intake-and-parser | CP033–CP036 diterima | completed (working 4e08bac, review + revisi 55f5160; diterima owner 2026-11-11) |
-| CP031 | import-ai-merge-and-write | CP030 | completed (working 5ece6e0, review + revisi 6e2704f; diterima owner 2026-11-11) |
+| CP030 | import-intake-and-parser | CP033–CP036 diterima | completed (review corrections: normalized spans + conservative ambiguous-column exclusion; see `logs/cp030_completion-log_text-and-pdf-parser.md`; dependency exception unchanged) |
+| CP031 | import-ai-merge-and-write | CP030 | completed (five review findings corrected across CP030/CP031; entity-context/qualifier/overflow gates recorded in `logs/cp031_completion-log_split-import-model.md`; dependency exception and other statuses unchanged) |
 | CP032 | import-ui-and-e2e | CP031 | in_progress (working selesai, E2E import hijau, live check 6 impor ~US$0.0007, gate hijau 2026-11-11; menunggu review) |
 | CP037 | create-flow-three-steps | CP032 | completed (revisi audit 2026-11-12, gate hijau; diterima owner 2026-11-12) |
 | SI1 | activity-mode-web-2.2.0 | CP037 | in_progress (plan `plans/si_plan_site-integration-private-and-driver-urls.md` §4) |

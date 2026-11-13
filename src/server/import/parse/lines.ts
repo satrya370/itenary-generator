@@ -4,7 +4,7 @@ import { dict, fold } from './text.js';
 export type HeadingTarget = keyof typeof dict.headings | 'highlights' | 'steps';
 export type LineKind = 'blank' | 'heading' | 'bullet' | 'key-value' | 'url' | 'text';
 
-export interface SourceLine { index: number; raw: string; text: string; kind: LineKind; heading?: HeadingTarget; label?: string; value?: string; bullet?: string }
+export interface SourceLine { index: number; raw: string; text: string; kind: LineKind; heading?: HeadingTarget; label?: string; value?: string; bullet?: string; inlineValue?: string }
 
 const headingIndex = new Map<string, HeadingTarget>();
 for (const [target, names] of Object.entries(dict.headings) as Array<[HeadingTarget, string[]]>) {
@@ -36,6 +36,9 @@ export function classifyLines(text: string, mode?: string): SourceLine[] {
     if (!trimmed) return { index, raw, text: '', kind: 'blank' as const };
     const heading = headingFor(trimmed, mode);
     if (heading) return { index, raw, text: trimmed, kind: 'heading' as const, heading };
+    const inlineHeading = /^([^:]{1,60}):\s*(.+)$/.exec(trimmed);
+    const inlineTarget = inlineHeading ? headingFor(inlineHeading[1], mode) : undefined;
+    if (inlineTarget && inlineHeading && ['included', 'notIncluded', 'whatToBring', 'notSuitableFor', 'notAllowed', 'localTips'].includes(inlineTarget)) return { index, raw, text: trimmed, kind: 'heading' as const, heading: inlineTarget, inlineValue: inlineHeading[2].trim() };
     const bullet = BULLET.exec(raw);
     if (bullet) return { index, raw, text: trimmed, kind: 'bullet' as const, bullet: bullet[1].trim() };
     const kv = KEY_VALUE.exec(trimmed);

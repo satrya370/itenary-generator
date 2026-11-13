@@ -10,7 +10,10 @@ export async function sweepImportSources(store: ReturnType<typeof openStore>, da
   const rows = store.db.prepare('SELECT id FROM import_sources WHERE workspace_id=? AND created_at<?').all(store.workspaceId, cutoff) as Array<{ id: string }>;
   for (const row of rows) {
     if (!/^[A-Za-z0-9-]+$/.test(row.id)) continue;
-    await rm(path.join(dataDir, 'imports', `${row.id}.txt`), { force: true });
+    await Promise.all([
+      rm(path.join(dataDir, 'imports', `${row.id}.txt`), { force: true }),
+      rm(path.join(dataDir, 'imports', `${row.id}.layout.json`), { force: true })
+    ]);
   }
   return rows.length;
 }

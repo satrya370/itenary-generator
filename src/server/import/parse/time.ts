@@ -1,5 +1,3 @@
-import { fold } from './text.js';
-
 export interface TimeReading {
   /** "HH:MM" when the text states the time unambiguously; null otherwise. */
   time: string | null;
@@ -25,13 +23,22 @@ export function toTime24(hour: number, minute: number, period: 'am' | 'pm' | 'da
 
 /** "1,5 jam" -> 90, "90 menit" -> 90, "2 hours" -> 120, "45 min" -> 45. Null when absent or outside 1-1440. */
 export function durationIn(text: string): { minutes: number; span: string } | null {
-  const match = /\(?\s*(\d+(?:[.,]\d+)?)\s*(jam|hours?|hrs?|h|menit|minutes?|mins?|min)\b\s*\)?/i.exec(text);
-  if (!match) return null;
-  const value = Number(match[1].replace(',', '.'));
-  const unit = match[2].toLowerCase();
-  const minutes = unit.startsWith('j') || unit.startsWith('h') ? Math.round(value * 60) : Math.round(value);
-  if (!Number.isFinite(minutes) || minutes < 1 || minutes > 1440) return null;
-  return { minutes, span: match[0] };
+  const pattern = /(\d+(?:[.,]\d+)?)\s*(jam|hours?|hrs?|h|menit|minutes?|mins?|min|m)\b/gi;
+  let match: RegExpExecArray | null;
+  let minutes = 0;
+  let end = 0;
+  let count = 0;
+  while ((match = pattern.exec(text)) !== null) {
+    if (count > 0 && text.slice(end, match.index).trim() !== '') break;
+    const value = Number(match[1].replace(',', '.'));
+    const unit = match[2].toLowerCase();
+    minutes += Math.round(unit.startsWith('j') || unit.startsWith('h') ? value * 60 : value);
+    end = pattern.lastIndex;
+    count += 1;
+  }
+  if (!count || minutes < 1 || minutes > 1440) return null;
+  const start = text.slice(0, end).search(/\d/);
+  return { minutes, span: text.slice(start, end) };
 }
 
 /**
@@ -40,18 +47,17 @@ export function durationIn(text: string): { minutes: number; span: string } | nu
  * An end time is only used to compute a duration when it is later than the start. Nothing is rounded or invented.
  */
 export function readTimeLine(input: string): TimeReading | null {
-  const line = input.trim();
-  const folded = fold(line);
+  const line = input.normalize('NFC').replace(/\s+/g, ' ').trim();
   // With minutes ("09:00") only am/pm/WIB can be a clock marker; "pagi/siang/sore/malam" would be an activity name.
   // Without minutes ("8 pagi") the day-part words are the clock marker.
-  const withMinutes = /^(?:(jam|pukul)\s*)?(\d{1,2})[:.](\d{2})\s*(wib|wita|wit|am|pm)?(?![\d])/.exec(folded);
-  const withoutMinutes = /^(?:(jam|pukul)\s*)?(\d{1,2})\s*(am|pm|pagi|siang|sore|malam|wib|wita|wit)?(?![\d:.])/.exec(folded);
+  const withMinutes = /^(?:(jam|pukul)\s*)?(\d{1,2})[:.](\d{2})\s*(wib|wita|wit|am|pm)?(?![\d])/i.exec(line);
+  const withoutMinutes = /^(?:(jam|pukul)\s*)?(\d{1,2})\s*(am|pm|pagi|siang|sore|malam|wib|wita|wit)?(?![\d:.])/i.exec(line);
   const start = withMinutes ?? withoutMinutes;
   if (!start) return null;
   const hasPrefix = Boolean(start[1]);
   const hour = Number(start[2]);
   const hasMinutes = withMinutes !== null;
-  const periodWord = (hasMinutes ? start[4] : start[3]) ?? undefined;
+  const periodWord = ((hasMinutes ? start[4] : start[3]) ?? '').toLowerCase();
   const period = periodWord && !['wib', 'wita', 'wit'].includes(periodWord) ? PERIOD_WORDS[periodWord] ?? null : null;
   if (!hasMinutes && !period) {
     // "jam 8" / "pukul 8" with no minutes and no period is ambiguous: keep the text, leave the time empty.
@@ -62,12 +68,16 @@ export function readTimeLine(input: string): TimeReading | null {
   const time = toTime24(hour, minute, period);
   if (!time) return { time: null, durationMinutes: null, rest: line, ambiguous: true };
 
-  const afterStart = folded.slice(start[0].length);
+  const afterStart = line.slice(start[0].length);
   let endMinutes: number | null = null;
   let consumed = start[0].length;
-  const range = /^\s*(?:-|–|—|s\/d|sampai)\s*(\d{1,2})[:.](\d{2})/.exec(afterStart);
+  const range = /^\s*(?:-|–|—|s\/d|sampai)\s*(\d{1,2})[:.](\d{2})\s*(am|pm)?/i.exec(afterStart);
   if (range) {
-    const endTime = toTime24(Number(range[1]), Number(range[2]), null);
+    const rangeHasPeriod = Boolean(range[3]);
+    const startPeriod = ((start[4] ?? start[3]) ?? '').toLowerCase();
+    const endPeriod = range[3]?.toLowerCase() ?? (rangeHasPeriod ? null : startPeriod);
+    const normalizedEndPeriod = ['wib', 'wita', 'wit'].includes(endPeriod.toLowerCase()) ? null : PERIOD_WORDS[endPeriod.toLowerCase()] ?? null;
+    const endTime = toTime24(Number(range[1]), Number(range[2]), normalizedEndPeriod);
     if (endTime) {
       const [sh, sm] = time.split(':').map(Number);
       const [eh, em] = endTime.split(':').map(Number);
@@ -80,6 +90,7 @@ export function readTimeLine(input: string): TimeReading | null {
   }
   const remaining = line.slice(consumed);
   const duration = durationIn(remaining);
-  const title = (duration ? remaining.replace(duration.span, ' ') : remaining).replace(/^[\s:\-–—]+|[\s:\-–—]+$/g, '').replace(/\s+/g, ' ').trim();
+  const durationIndex = duration ? remaining.indexOf(duration.span) : -1;
+  const title = (duration && durationIndex >= 0 ? `${remaining.slice(0, durationIndex)} ${remaining.slice(durationIndex + duration.span.length)}` : remaining).replace(/\(\s*\)|\[\s*\]/g, ' ').replace(/^[\s:\-–—]+|[\s:\-–—]+$/g, '').replace(/\s+/g, ' ').trim();
   return { time, durationMinutes: endMinutes ?? duration?.minutes ?? null, rest: title, ambiguous: false };
 }

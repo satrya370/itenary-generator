@@ -18,11 +18,13 @@ test('retention: old source text is removed, recent text and the source row stay
   insert.run('22222222-bbbb-4bbb-8bbb-222222222222', store.workspaceId, recent);
   await mkdir(path.join(dataDir, 'imports'), { recursive: true });
   await writeFile(path.join(dataDir, 'imports', '11111111-aaaa-4aaa-8aaa-111111111111.txt'), 'lama');
+  await writeFile(path.join(dataDir, 'imports', '11111111-aaaa-4aaa-8aaa-111111111111.layout.json'), '{"version":1,"pages":[],"blocks":[],"diagnostics":[]}');
   await writeFile(path.join(dataDir, 'imports', '22222222-bbbb-4bbb-8bbb-222222222222.txt'), 'baru');
 
   assert.equal(await sweepImportSources(store, dataDir, 0, now), 0, 'days 0 keeps everything');
   assert.equal(await sweepImportSources(store, dataDir, 30, now), 1);
   await assert.rejects(stat(path.join(dataDir, 'imports', '11111111-aaaa-4aaa-8aaa-111111111111.txt')));
+  await assert.rejects(stat(path.join(dataDir, 'imports', '11111111-aaaa-4aaa-8aaa-111111111111.layout.json')));
   assert.equal(await readFile(path.join(dataDir, 'imports', '22222222-bbbb-4bbb-8bbb-222222222222.txt'), 'utf8'), 'baru');
   const rows = store.db.prepare('SELECT COUNT(*) AS n FROM import_sources').get() as { n: number };
   assert.equal(rows.n, 2, 'source rows stay for the ledger');

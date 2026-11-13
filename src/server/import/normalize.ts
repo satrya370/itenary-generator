@@ -35,20 +35,33 @@ export function matchOption(item: string, options: string[]): string {
 export function dateFromText(text: string): { date: string | null; note: string | null } {
   const months: Record<string, number> = { januari: 1, jan: 1, january: 1, februari: 2, feb: 2, february: 2, maret: 3, mar: 3, march: 3, april: 4, apr: 4, mei: 5, may: 5, juni: 6, jun: 6, june: 6, juli: 7, jul: 7, july: 7, agustus: 8, agu: 8, aug: 8, august: 8, september: 9, sep: 9, sept: 9, oktober: 10, okt: 10, oct: 10, october: 10, november: 11, nov: 11, desember: 12, des: 12, dec: 12, december: 12 };
   const value = fold(text);
+  const isoDate = /\b(\d{4})-(\d{2})-(\d{2})\b/.exec(value);
+  if (isoDate) {
+    const date = iso(Number(isoDate[1]), Number(isoDate[2]), Number(isoDate[3]));
+    return { date, note: date ? null : 'Tanggal tidak valid; isi tanggal mulai secara manual.' };
+  }
   const named = /\b(\d{1,2})\s+([a-z]+)\.?\s+(\d{4})\b/.exec(value) ?? /\b([a-z]+)\.?\s+(\d{1,2}),?\s+(\d{4})\b/.exec(value);
   if (named) {
     const [dayText, monthText, yearText] = named[0].includes(named[2] ?? '') && /^[a-z]/.test(named[1]) ? [named[2], named[1], named[3]] : [named[1], named[2], named[3]];
     const month = months[monthText];
-    if (month) return { date: iso(Number(yearText), month, Number(dayText)), note: null };
+    if (month) {
+      const date = iso(Number(yearText), month, Number(dayText));
+      return { date, note: date ? null : 'Tanggal tidak valid; isi tanggal mulai secara manual.' };
+    }
   }
   const numeric = /\b(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})\b/.exec(value);
   if (numeric) {
     const a = Number(numeric[1]); const b = Number(numeric[2]); const year = Number(numeric[3]);
-    if (a > 12 && b <= 12) return { date: iso(year, b, a), note: null };
-    if (b > 12 && a <= 12) return { date: iso(year, a, b), note: null };
-    return { date: iso(year, b, a), note: a !== b ? 'Tanggal dibaca sebagai tanggal/bulan/tahun; periksa jika salah.' : null };
+    if (a > 12 && b <= 12) return dateResult(iso(year, b, a));
+    if (b > 12 && a <= 12) return dateResult(iso(year, a, b));
+    if (a === b) return dateResult(iso(year, a, b));
+    return { date: null, note: 'Format tanggal ambigu; tentukan urutan hari dan bulan secara manual.' };
   }
   return { date: null, note: /\b\d{1,2}\s+[a-z]+\b/.test(value) ? 'Tanggal tanpa tahun tidak diisi; isi tanggal mulai secara manual.' : null };
+}
+
+function dateResult(date: string | null): { date: string | null; note: string | null } {
+  return { date, note: date ? null : 'Tanggal tidak valid; isi tanggal mulai secara manual.' };
 }
 
 function iso(year: number, month: number, day: number): string | null {

@@ -13,9 +13,9 @@ import type { Completion } from './complete.js';
 
 export interface Guide { id: string; name: string; phone: string }
 export interface MergeInput {
-  mode: ItineraryMode; parse: ParseResult; completion: Completion; guides: Guide[]; locale: string | null;
+  mode: ItineraryMode; parse: ParseResult; completion: Completion; guides: Guide[]; locale: string | null; target?: 'new' | 'overwrite'; unsafeCollections?: Set<string>;
 }
-export interface MergeOutput { content: WebItineraryContent; filled: string[] }
+export interface MergeOutput { content: WebItineraryContent; filled: string[]; retainedCollections: string[]; retainedReasons: Array<{ path: string; reasonCode: string }> }
 
 const OPTION_LOCALES = new Set(['id', 'en']);
 function optionsFor(locale: string | null, list: ListSection | 'policies'): string[] {
@@ -31,8 +31,17 @@ function freshPlace(place: NonNullable<Completion['places']>[number]) {
 export function mergeContent(saved: WebItineraryContent, input: MergeInput): MergeOutput {
   const content = structuredClone(saved);
   const filled: string[] = [];
+  const retainedCollections: string[] = [];
+  const retainedReasons: MergeOutput['retainedReasons'] = [];
   const { parse, completion, mode } = input;
+  const activityTargets = new Map<string, Activity>();
   const set = (path: string, apply: () => void) => { apply(); filled.push(path); };
+  const retain = (path: string, overflow: boolean) => {
+    if (input.target !== 'overwrite' || (!overflow && !input.unsafeCollections?.has(path))) return false;
+    retainedCollections.push(path);
+    retainedReasons.push({ path, reasonCode: overflow ? 'IMPORT_COLLECTION_OVERFLOW' : 'IMPORT_COLLECTION_INCOMPLETE' });
+    return true;
+  };
 
   if (parse.fields.trip.title) set('trip.title', () => { content.trip.title = parse.fields.trip.title!; });
   if (parse.fields.trip.destination) set('trip.destination', () => { content.trip.destination = parse.fields.trip.destination!; });
@@ -56,16 +65,21 @@ export function mergeContent(saved: WebItineraryContent, input: MergeInput): Mer
 
   for (const list of ['included', 'notIncluded', 'whatToBring', 'notSuitableFor', 'notAllowed', 'localTips'] as const) {
     const items = parse.fields.lists[list];
-    if (items?.length) set(list, () => { content[list] = items.map((item) => matchOption(item, optionsFor(input.locale, list))); });
+    const overflow = !!items && (items.length > 50 || items.some((item) => item.length > (list === 'localTips' ? 1200 : 500)));
+    if (items?.length && !retain(list, overflow)) set(list, () => { content[list] = items.map((item) => matchOption(item, optionsFor(input.locale, list))); });
   }
 
-  if (parse.fields.emergencyContacts.length) set('emergencyContacts', () => { content.emergencyContacts = parse.fields.emergencyContacts.map((c) => ({ label: c.label, value: c.value })); });
+  if (parse.fields.emergencyContacts.length && !retain('emergencyContacts', parse.fields.emergencyContacts.length > 30 || parse.fields.emergencyContacts.some((item) => item.label.length > 120 || item.value.length > 240))) set('emergencyContacts', () => { content.emergencyContacts = parse.fields.emergencyContacts.map((c) => ({ label: c.label, value: c.value })); });
 
-  if (parse.fields.days.length) {
+  const dayOverflow = parse.fields.days.length > 14 || parse.fields.days.some((day) => (day.title?.length ?? 0) > 200 || day.activities.length > 30 || day.activities.some((activity) => activity.title.length > 200)) ||
+    (completion.activityDetails ?? []).some((detail) => (detail.place?.value.length ?? 0) > 200 || (detail.description?.value.length ?? 0) > 4000 || (detail.tip?.value.length ?? 0) > 4000);
+  if (parse.fields.days.length && !retain('days', dayOverflow)) {
     set('days', () => {
       content.days = parse.fields.days.map((day) => {
         const previous = saved.days.find((item) => item.dayNumber === day.dayNumber);
         const base: Day = blankDay(mode, day.dayNumber);
+        const activities = day.activities.map((activity): Activity => ({ id: randomUUID(), time: activity.time, durationMinutes: activity.durationMinutes, kind: activity.kind, title: activity.title, place: null, description: '', tip: null }));
+        day.activities.forEach((activity, index) => activityTargets.set(`activity-${day.dayNumber}-${activity.line + 1}`, activities[index]));
         return {
           ...base,
           id: randomUUID(),
@@ -74,7 +88,7 @@ export function mergeContent(saved: WebItineraryContent, input: MergeInput): Mer
           hotel: previous?.hotel ?? null,
           meals: previous?.meals ?? base.meals,
           transferNote: previous?.transferNote ?? null,
-          activities: day.activities.map((activity): Activity => ({ id: randomUUID(), time: activity.time, durationMinutes: activity.durationMinutes, kind: activity.kind, title: activity.title, place: null, description: '', tip: null }))
+          activities
         };
       });
     });
@@ -94,28 +108,25 @@ export function mergeContent(saved: WebItineraryContent, input: MergeInput): Mer
     if (parsed.operator) set('activity.operator', () => { next.operator = parsed.operator!; });
     if (parsed.bestTime) set('activity.bestTime', () => { next.bestTime = parsed.bestTime!; });
     const highlights = parsed.highlights.length ? parsed.highlights : (completion.highlights ?? []).map((item) => item.value);
-    if (highlights.length) set('activity.highlights[]', () => { next.highlights = highlights; });
+    if (highlights.length && !retain('activity.highlights', highlights.length > 5 || highlights.some((item) => item.length > 160))) set('activity.highlights[]', () => { next.highlights = highlights; });
     const steps = parsed.steps.length ? parsed.steps : (completion.steps ?? []).map((step) => ({ title: step.title.value, minutes: null }));
-    if (steps.length) set('activity.steps[].title', () => { next.steps = steps.map((step) => ({ title: step.title, minutes: step.minutes, note: null })); });
+    if (steps.length && !retain('activity.steps', steps.length > 12 || steps.some((step) => step.title.length > 120))) set('activity.steps[].title', () => { next.steps = steps.map((step) => ({ title: step.title, minutes: step.minutes, note: null })); });
     content.activity = next;
   }
 
   if (completion.summary) set('summary', () => { content.summary = completion.summary!.value; });
   if (completion.closingNote) set('closingNote', () => { content.closingNote = completion.closingNote!.value; });
   if (completion.policies) set('policies', () => { content.policies = completion.policies!.value; });
-  if (completion.places?.length) set('places', () => { content.places = completion.places!.map(freshPlace); });
+  if (completion.places?.length && !retain('places', completion.places.length > 60 || completion.places.some((place) => place.name.value.length > 200 || (place.area?.value.length ?? 0) > 160 || (place.description?.value.length ?? 0) > 6000))) set('places', () => { content.places = completion.places!.map(freshPlace); });
 
   for (const detail of completion.activityDetails ?? []) {
-    for (const day of content.days) {
-      for (const activity of day.activities) {
-        if (activity.title !== detail.title) continue;
-        if (detail.place && !activity.place) { activity.place = detail.place.value; filled.push('days[].activities[].place'); }
-        if (detail.description && !activity.description) { activity.description = detail.description.value; filled.push('days[].activities[].description'); }
-        if (detail.tip && !activity.tip) { activity.tip = detail.tip.value; filled.push('days[].activities[].tip'); }
-      }
-    }
+    const activity = activityTargets.get(detail.targetId);
+    if (!activity || activity.title !== detail.title) continue;
+    if (detail.place && !activity.place) { activity.place = detail.place.value; filled.push('days[].activities[].place'); }
+    if (detail.description && !activity.description) { activity.description = detail.description.value; filled.push('days[].activities[].description'); }
+    if (detail.tip && !activity.tip) { activity.tip = detail.tip.value; filled.push('days[].activities[].tip'); }
   }
-  return { content, filled };
+  return { content, filled, retainedCollections, retainedReasons };
 }
 
 /** Paths that the publish checks still report after the merge (the guide fills them, or uses "Buat dengan AI"). */

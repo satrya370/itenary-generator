@@ -3,7 +3,7 @@ import { rm } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import type { openStore } from '../store.js';
 import type { ItineraryMode } from '../../contracts/types.js';
-import { ImportError, MAX_PDF_BYTES, SOURCE_TEXT_REMOVED_CODE, SOURCE_TEXT_REMOVED_MESSAGE, importError, intakePdf, intakeText, readSourceTextOrNull, storeSourceText } from './intake.js';
+import { ImportError, MAX_PDF_BYTES, SOURCE_TEXT_REMOVED_CODE, SOURCE_TEXT_REMOVED_MESSAGE, importError, intakePdf, intakeText, layoutExcludedLines, readSourceLayoutOrNull, readSourceTextOrNull, storeSourceLayout, storeSourceText } from './intake.js';
 import { parseDocument } from './parse/extract.js';
 import type { ImportService } from './service.js';
 
@@ -34,12 +34,14 @@ export function registerImportRoutes(app: FastifyInstance, { store, dataDir, ser
       }
       const id = randomUUID();
       const file = await storeSourceText(dataDir, id, intake.text);
+      let layoutFile: string | null = null;
       const createdAt = new Date().toISOString();
       try {
+        if (intake.layout) layoutFile = await storeSourceLayout(dataDir, id, intake.layout);
         store.db.prepare('INSERT INTO import_sources(id,workspace_id,kind,sha256,byte_size,page_count,char_count,language_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)')
           .run(id, store.workspaceId, intake.kind, intake.sha256, intake.byteSize, intake.pageCount, intake.charCount, JSON.stringify(intake.languageProposal), createdAt);
       } catch (cause) {
-        await rm(file, { force: true }); // no orphan text file when the row was not written
+        await Promise.all([rm(file, { force: true }), layoutFile ? rm(layoutFile, { force: true }) : Promise.resolve()]); // no orphan source artifacts when the row was not written
         throw cause;
       }
       return reply.code(201).send({ sourceId: id, kind: intake.kind, pageCount: intake.pageCount, charCount: intake.charCount, languageProposal: intake.languageProposal, excerpt: excerptOf(intake.text) });
@@ -66,8 +68,21 @@ export function registerImportRoutes(app: FastifyInstance, { store, dataDir, ser
     if (!row) return reply.code(404).send(errorBody('NOT_FOUND', 'Sumber import tidak ditemukan.', request.id));
     const text = await readSourceTextOrNull(dataDir, row.id);
     if (text === null) return reply.code(404).send(errorBody(SOURCE_TEXT_REMOVED_CODE, SOURCE_TEXT_REMOVED_MESSAGE, request.id));
-    const parsed = parseDocument(text, body.mode as ItineraryMode);
-    return { sourceId: row.id, mode: parsed.mode, fields: parsed.fields, unconsumed: parsed.unconsumed, notes: parsed.notes, totalLines: parsed.totalLines, consumedLines: parsed.consumedLines };
+    const layout = row.kind === 'pdf' ? await readSourceLayoutOrNull(dataDir, row.id) : null;
+    const parsed = parseDocument(text, body.mode as ItineraryMode, layoutExcludedLines(layout, text));
+    const pageForTextLine = layout ? buildPageLineMap(layout, text) : [];
+    const unconsumed = parsed.unconsumed.map((line) => ({ ...line, pageNumber: pageForTextLine[line.index] ?? null }));
+    const diagnostics = parsed.diagnostics.map((diagnostic) => ({ ...diagnostic, pageNumber: diagnostic.line ? pageForTextLine[diagnostic.line - 1] ?? null : undefined }));
+    const conflicts = parsed.conflicts.map((conflict) => ({ ...conflict, pageNumber: pageForTextLine[conflict.line - 1] ?? null }));
+    const pageDiagnostics = layout?.diagnostics ?? [];
+    const pageCoverage = layout?.pages.map((page) => {
+      const status = pageDiagnostics.some((item) => item.code === 'PDF_SOURCE_LAYOUT_STALE' || (item.pageNumber === page.pageNumber && item.code === 'PDF_LAYOUT_AMBIGUOUS')) ? 'ambiguous'
+        : pageDiagnostics.some((item) => item.pageNumber === page.pageNumber && item.code === 'PDF_SPARSE_TEXT_PAGE') ? 'sparse'
+        : pageDiagnostics.some((item) => item.pageNumber === page.pageNumber && item.code === 'PDF_EMPTY_OR_NON_TEXT_PAGE') ? 'empty-or-non-text'
+          : 'usable';
+      return { pageNumber: page.pageNumber, status, width: page.width, height: page.height, rotation: page.rotation, textItems: page.items.length };
+    }) ?? [];
+    return { sourceId: row.id, kind: row.kind, pageCount: row.page_count, mode: parsed.mode, fields: parsed.fields, unconsumed, notes: parsed.notes, diagnostics: [...diagnostics, ...pageDiagnostics], conflicts, sourceBlocks: layout?.blocks ?? [], coverage: { ...parsed.coverage, pages: pageCoverage }, totalLines: parsed.totalLines, consumedLines: parsed.consumedLines };
   });
 
   app.post<{ Params: { id: string }; Body: unknown }>('/api/v1/imports/sources/:id/apply', async (request, reply) => {
@@ -88,4 +103,13 @@ export function registerImportRoutes(app: FastifyInstance, { store, dataDir, ser
     const result = service.latest(itineraryId);
     return reply.code(result.status).send(result.body);
   });
+}
+
+function buildPageLineMap(layout: NonNullable<Awaited<ReturnType<typeof readSourceLayoutOrNull>>>, sourceText: string): Array<number | null> {
+  const lineMap: Array<number | null> = [];
+  for (const block of layout.blocks ?? []) {
+    const lineNumber = sourceText.slice(0, block.startUtf16).split('\n').length - 1;
+    lineMap[lineNumber] = block.pageNumber;
+  }
+  return sourceText.split('\n').map((_line, index) => lineMap[index] ?? null);
 }

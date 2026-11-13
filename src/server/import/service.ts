@@ -2,9 +2,9 @@ import type { openStore } from '../store.js';
 import type { ImportExtractor } from '../ai/provider.js';
 import { validateDraft } from '../../contracts/validator.js';
 import type { ItineraryMode, WebItineraryContent } from '../../contracts/types.js';
-import { SOURCE_TEXT_REMOVED_CODE, SOURCE_TEXT_REMOVED_MESSAGE, readSourceTextOrNull } from './intake.js';
+import { SOURCE_TEXT_REMOVED_CODE, SOURCE_TEXT_REMOVED_MESSAGE, readSourceTextOrNull, readSourceLayoutOrNull, layoutExcludedLines } from './intake.js';
 import { parseDocument } from './parse/extract.js';
-import { filterCompletion, requestCompletion, segmentsOf, type Completion, type Dropped } from './complete.js';
+import { batchesOf, filterCompletion, MAX_AI_WALL_CLOCK_MS, requestCompletion, segmentsOf, targetsForBatch, type AcceptedEvidence, type Completion, type Dropped, type SourceUnit } from './complete.js';
 import { fitToLimits, missingAfterImport, mergeContent, newDraftBase } from './merge.js';
 
 /** Import service (CP031): deterministic parse, optional AI completion, merge into a new or the open draft, ledger, undo. */
@@ -19,7 +19,11 @@ const DROP_MESSAGES: Record<Dropped['code'], string> = {
   IMPORT_NOT_APPLICABLE: 'tidak berlaku untuk mode ini',
   IMPORT_ACTIVITY_NOT_FOUND: 'aktivitas tidak ditemukan di hasil baca',
   IMPORT_ACTIVITY_AMBIGUOUS: 'judul aktivitas sama di lebih dari satu hari; diisi manual',
-  IMPORT_ALREADY_FILLED: 'sudah terisi'
+  IMPORT_ALREADY_FILLED: 'sudah terisi',
+  IMPORT_TARGET_MISMATCH: 'target aktivitas tidak cocok dengan target sumber yang diizinkan',
+  IMPORT_COLLECTION_INCOMPLETE: 'koleksi tidak lengkap; kandidat tidak diterapkan ke draf lama',
+  IMPORT_SOURCE_UNIT_INCOMPLETE: 'batas kalimat/syarat sumber belum lengkap; perlu review',
+  IMPORT_ENTITY_CONTEXT_MISMATCH: 'kutipan tidak berada dalam konteks tempat yang sama'
 };
 function error(status: number, code: string, message: string): ServiceResult { return { status, body: { error: { code, message } } }; }
 
@@ -101,9 +105,11 @@ export class ImportService {
       store.db.prepare("UPDATE import_operations SET status='failed', error_code=?, updated_at=? WHERE operation_id=?").run(SOURCE_TEXT_REMOVED_CODE, new Date().toISOString(), operationId);
       return error(404, SOURCE_TEXT_REMOVED_CODE, SOURCE_TEXT_REMOVED_MESSAGE);
     }
-    const parse = parseDocument(text, mode);
-    const { sent: segments, plain: plainSegments } = segmentsOf(parse);
-    const notes = [...parse.notes];
+    const layout = await readSourceLayoutOrNull(dataDir, sourceId);
+    const parse = parseDocument(text, mode, layoutExcludedLines(layout, text));
+    const { units } = segmentsOf(parse);
+    const batchPlan = batchesOf(parse, units);
+    const notes = [...parse.notes, ...(layout?.diagnostics.map((item) => item.message) ?? [])];
     const proposal = JSON.parse(args.sourceLanguageJson) as { status: string; locale: string | null };
     const profile = store.workspace().profile as { defaultCountry?: string; defaultLanguage?: string | null; guides?: Array<{ id: string; name: string; phone: string }> };
     const guides = profile.guides ?? [];
@@ -115,28 +121,67 @@ export class ImportService {
 
     let completion: Completion = {};
     let dropped: Dropped[] = [];
-    let usage = { promptTokens: 0, completionTokens: 0, actualUsd: null as number | null };
+    let acceptedEvidence: AcceptedEvidence[] = [];
+    const batchResults: Array<{ lineIndexes: number[]; attempts: number; status: 'completed' | 'incomplete'; note: string | null }> = [];
+    let usage: { promptTokens: number | null; completionTokens: number | null; actualUsd: number | null } = { promptTokens: 0, completionTokens: 0, actualUsd: null };
     let aiUsed = 0;
-    const unsent = parse.unconsumed.length - segments.length;
-    if (unsent > 0) notes.push(`${unsent} baris tidak dikirim ke AI karena batas 20.000 karakter; periksa bagian itu secara manual.`);
-    if (segments.length) {
+    let aiBatches = 0;
+    let aiAttempts = 0;
+    const omittedUnits: SourceUnit[] = [...batchPlan.omitted, ...parse.unconsumed.filter((line) => line.section === 'layout-ambiguous').map((line) => ({ lineIndex: line.index, text: line.text, section: line.section }))];
+    if (omittedUnits.length) notes.push(`${omittedUnits.length} baris berlayout ambigu, terlalu panjang atau melewati batas 8 batch; tidak dikirim ke AI dan perlu diperiksa manual.`);
+    if (batchPlan.batches.length) {
       if (extractor && extractor.credentialState === 'configured') {
-        const outcome = await requestCompletion(extractor, { mode, locale: language.locale, segments });
-        usage = outcome.usage;
-        aiUsed = outcome.attempts > 0 ? 1 : 0;
-        if (outcome.completion) {
-          const filtered = filterCompletion(outcome.completion, segments.join('\n'), parse, mode);
-          completion = filtered.accepted;
-          dropped = filtered.dropped;
+        const deadlineAt = Date.now() + MAX_AI_WALL_CLOCK_MS;
+        for (let batchIndex = 0; batchIndex < batchPlan.batches.length; batchIndex += 1) {
+          const batch = batchPlan.batches[batchIndex];
+          if (Date.now() >= deadlineAt) { omittedUnits.push(...batchPlan.batches.slice(batchIndex).flat()); break; }
+          const segments = batch.map((unit) => unit.section ? `[${unit.section}] ${unit.text}` : unit.text);
+          const outcome = await requestCompletion(extractor, { mode, locale: language.locale, segments, targets: targetsForBatch(parse, batch), deadlineAt });
+          batchResults.push({ lineIndexes: batch.map((unit) => unit.lineIndex), attempts: outcome.attempts, status: outcome.completion ? 'completed' : 'incomplete', note: outcome.note });
+          usage.promptTokens = outcome.usage.promptTokens === null || usage.promptTokens === null ? null : usage.promptTokens + outcome.usage.promptTokens;
+          usage.completionTokens = outcome.usage.completionTokens === null || usage.completionTokens === null ? null : usage.completionTokens + outcome.usage.completionTokens;
+          usage.actualUsd = outcome.usage.actualUsd === null || usage.actualUsd === null ? null : usage.actualUsd + outcome.usage.actualUsd;
+          if (aiUsed === 0 && outcome.attempts > 0) usage.actualUsd = outcome.usage.actualUsd;
+          if (outcome.attempts > 0) { aiUsed = 1; aiBatches += 1; aiAttempts += outcome.attempts; }
+          if (outcome.completion) {
+            const filtered = filterCompletion(outcome.completion, parse, mode, batch);
+            completion = combineCompletion(completion, filtered.accepted);
+            dropped.push(...filtered.dropped);
+            acceptedEvidence.push(...filtered.evidence);
+          }
+          if (outcome.note) notes.push(outcome.note);
         }
-        if (outcome.note) notes.push(outcome.note);
       } else {
         notes.push('AI tidak aktif; bagian yang tidak terbaca kode dibiarkan kosong.');
       }
     }
+    const unsent = extractor?.credentialState === 'configured' ? omittedUnits : units;
+    if (unsent.length && !notes.some((note) => note.includes('baris terlalu panjang'))) notes.push(`${unsent.length} baris belum dikirim ke AI; periksa bagian itu secara manual.`);
 
+    const unsafeCollections = new Set<string>();
+    const structuralDayIssue = parse.notes.some((note) => /hari melompat|penanda hari berulang|urutan nomor hari mundur|nomor hari melebihi|hari pertama|lebih dari \d+ hari|dibatasi/i.test(note));
+    const hasUnresolvedDayText = parse.fields.days.some((day, index) => {
+      const nextLine = parse.fields.days[index + 1]?.line ?? Number.POSITIVE_INFINITY;
+      return parse.unconsumed.some((line) => line.index > day.line && line.index < nextLine);
+    }) || omittedUnits.some((unit) => parse.fields.days.some((day, index) => unit.lineIndex > day.line && unit.lineIndex < (parse.fields.days[index + 1]?.line ?? Number.POSITIVE_INFINITY)));
+    if (structuralDayIssue || hasUnresolvedDayText || omittedUnits.length) unsafeCollections.add('days');
+    for (const list of ['included', 'notIncluded', 'whatToBring', 'notSuitableFor', 'notAllowed', 'localTips']) {
+      if (parse.unconsumed.some((line) => line.section === list) || omittedUnits.some((unit) => unit.section === list)) unsafeCollections.add(list);
+    }
+    if (omittedUnits.some((unit) => unit.section === 'layout-ambiguous')) {
+      for (const collection of ['days', 'places', 'included', 'notIncluded', 'whatToBring', 'notSuitableFor', 'notAllowed', 'localTips', 'emergencyContacts', 'activity.highlights', 'activity.steps']) unsafeCollections.add(collection);
+    }
+    if (parse.notes.some((note) => /Highlight dibatasi/.test(note))) unsafeCollections.add('activity.highlights');
+    if (parse.notes.some((note) => /Jalannya kegiatan dibatasi/.test(note))) unsafeCollections.add('activity.steps');
+    const coveredPlaceLines = new Set(acceptedEvidence.filter((item) => item.path.startsWith('places[')).flatMap((item) => item.lineIndexes));
+    if (omittedUnits.length || dropped.some((item) => item.path.startsWith('places')) || units.some((unit) => !coveredPlaceLines.has(unit.lineIndex))) unsafeCollections.add('places');
     const base = target === 'overwrite' ? (saved!.draftContent as WebItineraryContent) : newDraftBase(mode, profile);
-    const merged = mergeContent(base, { mode, parse, completion, guides, locale: language.locale });
+    if (target === 'overwrite' && unsafeCollections.has('days') && completion.activityDetails?.length) {
+      dropped.push(...completion.activityDetails.map((detail) => ({ path: `activities[${detail.targetId}]`, code: 'IMPORT_COLLECTION_INCOMPLETE' as const })));
+      completion = { ...completion, activityDetails: [] };
+    }
+    const merged = mergeContent(base, { mode, parse, completion, guides, locale: language.locale, target, unsafeCollections });
+    if (merged.retainedCollections.length) notes.push(`Koleksi ${merged.retainedCollections.join(', ')} pada draf lama dipertahankan karena cakupan sumber belum lengkap; tidak digabung otomatis.`);
     notes.push(...fitToLimits(merged.content));
     const checked = validateDraft(merged.content);
     if (!checked.ok) {
@@ -159,11 +204,18 @@ export class ImportService {
       return error(409, 'REVISION_CONFLICT', 'Draf sudah berubah sejak dibuka. Muat ulang sebelum import.');
     }
     const report = {
+      evidenceVersion: 1,
+      aiBatches,
+      aiAttempts,
+      batches: batchResults,
+      retainedCollections: merged.retainedCollections,
+      retainedReasons: merged.retainedReasons,
       filled: [...new Set(merged.filled)],
       missingRequired: missingAfterImport(checked.value as WebItineraryContent),
       skipped: dropped.map((item) => ({ path: item.path, label: skippedLabel(item.path), message: DROP_MESSAGES[item.code] })),
       notes,
-      sourceCount: { days: parse.fields.days.length, activities: parse.fields.days.reduce((n, d) => n + d.activities.length, 0), unconsumed: parse.unconsumed.length }
+      sourceCount: { days: parse.fields.days.length, activities: parse.fields.days.reduce((n, d) => n + d.activities.length, 0), unconsumed: parse.unconsumed.length },
+      evidence: { accepted: acceptedEvidence, rejected: dropped.map((item) => ({ path: item.path, reasonCode: item.code })), omittedLineIndexes: [...new Set(unsent.map((unit) => unit.lineIndex))] }
     };
     const actualUsd = usage.actualUsd;
     store.db.prepare("UPDATE import_operations SET status='completed', itinerary_id=?, result_revision=?, previous_draft_json=?, previous_language_json=?, previous_writing_json=?, ai_used=?, prompt_tokens=?, completion_tokens=?, actual_usd=?, report_json=?, updated_at=? WHERE operation_id=?")
@@ -207,5 +259,17 @@ function skippedLabel(path: string): string {
 
 function usageOf(row: Record<string, unknown>) {
   return { aiUsed: Number(row.ai_used ?? 0), promptTokens: row.prompt_tokens ?? null, completionTokens: row.completion_tokens ?? null, actualUsd: row.actual_usd ?? null };
+}
+
+function combineCompletion(current: Completion, next: Completion): Completion {
+  return {
+    summary: current.summary ?? next.summary,
+    closingNote: current.closingNote ?? next.closingNote,
+    policies: current.policies ?? next.policies,
+    places: [...(current.places ?? []), ...(next.places ?? [])],
+    activityDetails: [...(current.activityDetails ?? []), ...(next.activityDetails ?? [])],
+    highlights: [...(current.highlights ?? []), ...(next.highlights ?? [])],
+    steps: [...(current.steps ?? []), ...(next.steps ?? [])]
+  };
 }
 

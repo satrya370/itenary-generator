@@ -16,6 +16,8 @@ const URL_IN_TEXT = /(https?:\/\/\S+|maps\.app\.goo\.gl\/\S+|goo\.gl\/maps\/\S+|
 export interface ParsedActivity { time: string | null; durationMinutes: number | null; title: string; kind: ActivityKind; ambiguousTime: boolean; line: number }
 export interface ParsedDay { dayNumber: number; title: string | null; activities: ParsedActivity[]; line: number }
 export interface UnconsumedLine { index: number; text: string; section: string | null }
+export interface ParseDiagnostic { code: 'PARSER_NOTE' | 'UNCONSUMED_TEXT'; line?: number; message: string }
+export interface ParseConflict { path: string; values: string[]; line: number; message: string }
 /** What the activity mode reads from the text (web-2.2.0). Empty for every other mode. */
 export interface ParsedActivityMode {
   category?: ActivityCategory; durationMinutes?: number; sessionTimes: string[]; difficulty?: ActivityDifficulty;
@@ -38,15 +40,20 @@ export interface ParseResult {
   totalLines: number;
   consumedLines: number;
   notes: string[];
+  diagnostics: ParseDiagnostic[];
+  conflicts: ParseConflict[];
+  coverage: { totalLines: number; consumedLines: number; unconsumedLines: number; ratio: number };
 }
 
 /** Deterministic parse of the document. Copies text that exists; never invents values. Unknown text stays in `unconsumed`. */
-export function parseDocument(text: string, mode: ItineraryMode): ParseResult {
-  const lines = classifyLines(text, mode).filter((line) => line.kind !== 'blank');
+export function parseDocument(text: string, mode: ItineraryMode, excludedLines: ReadonlySet<number> = new Set()): ParseResult {
+  const normalized = text.normalize('NFC').replace(/\r\n?/g, '\n').replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
+  const lines = classifyLines(normalized, mode).filter((line) => line.kind !== 'blank');
   const result: ParseResult = {
     mode,
     fields: { trip: { mode }, guide: {}, meeting: {}, lists: {}, emergencyContacts: [], days: [], activity: { sessionTimes: [], guideLanguages: [], highlights: [], steps: [] } },
-    unconsumed: [], totalLines: lines.length, consumedLines: 0, notes: []
+    unconsumed: [], totalLines: lines.length, consumedLines: 0, notes: [], diagnostics: [], conflicts: [],
+    coverage: { totalLines: lines.length, consumedLines: 0, unconsumedLines: 0, ratio: 0 }
   };
   const dayMode = mode === 'half_day' || mode === 'full_day' || mode === 'multi_day';
   const singleDay = mode === 'half_day' || mode === 'full_day';
@@ -57,6 +64,7 @@ export function parseDocument(text: string, mode: ItineraryMode): ParseResult {
   let capNoted = false;
   let multiDayNoted = false;
   let dayIndex: number | null = null;
+  const scalarConflicts = new Set<string>();
 
   const keep = (line: SourceLine) => result.unconsumed.push({ index: line.index, text: line.text, section });
   const consume = () => { result.consumedLines += 1; };
@@ -64,24 +72,50 @@ export function parseDocument(text: string, mode: ItineraryMode): ParseResult {
   let stepsCapped = false;
 
   for (const line of lines) {
-    if (line.kind === 'heading') { section = line.heading ?? null; consume(); continue; }
+    if (excludedLines.has(line.index)) {
+      result.unconsumed.push({ index: line.index, text: line.text, section: 'layout-ambiguous' });
+      section = null; dayIndex = null;
+      continue;
+    }
+    if (line.kind === 'heading') {
+      section = line.heading ?? null;
+      if (line.inlineValue && section && (LIST_SECTIONS as readonly string[]).includes(section)) {
+        const list = section as ListSection;
+        (result.fields.lists[list] ??= []).push(line.inlineValue);
+      } else if (line.inlineValue) {
+        keep({ ...line, text: line.inlineValue, kind: 'text' });
+      }
+      consume(); continue;
+    }
 
     if (dayMode && line.kind !== 'url') {
       const marker = dayMarkerFor(line.text);
-      if (marker && marker.number === lastDay + 1) {
-        lastDay = marker.number;
-        consume();
+      if (marker) {
         section = null;
         if (singleDay && result.fields.days.length >= 1) {
+          consume();
           ignoreDays = true; dayIndex = null;
           if (!multiDayNoted) { multiDayNoted = true; result.notes.push('Dokumen berisi lebih dari satu hari; untuk semuanya pilih mode Beberapa hari. Mode ini hanya memakai hari 1.'); }
           continue;
         }
         if (result.fields.days.length >= MAX_DAYS) {
+          consume();
           ignoreDays = true; dayIndex = null;
           if (!capNoted) { capNoted = true; result.notes.push(`Dokumen berisi lebih dari ${MAX_DAYS} hari; hanya ${MAX_DAYS} hari pertama yang dibaca.`); }
           continue;
         }
+        const duplicate = result.fields.days.some((day) => day.dayNumber === marker.number);
+        if (duplicate || marker.number <= lastDay || marker.number > MAX_DAYS) {
+          dayIndex = null;
+          ignoreDays = true;
+          const reason = duplicate ? 'penanda hari berulang' : marker.number > MAX_DAYS ? 'nomor hari melebihi batas' : 'urutan nomor hari mundur';
+          result.notes.push(`Baris ${line.index + 1}: ${reason}; aktivitas setelahnya tidak ditempel ke hari lain.`);
+          keep(line);
+          continue;
+        }
+        consume();
+        if (marker.number !== lastDay + 1) result.notes.push(`Baris ${line.index + 1}: urutan hari melompat dari ${lastDay} ke ${marker.number}; periksa hari yang tidak tercantum.`);
+        lastDay = marker.number;
         result.fields.days.push({ dayNumber: marker.number, title: marker.title, activities: [], line: line.index });
         dayIndex = result.fields.days.length - 1;
         ignoreDays = false;
@@ -95,7 +129,7 @@ export function parseDocument(text: string, mode: ItineraryMode): ParseResult {
 
     if (line.kind === 'key-value' && line.label && line.value) {
       const key = keyFor(line.label);
-      if (key && handleKeyValue(result, key, line.value, line.index)) { consume(); continue; }
+      if (key && handleKeyValue(result, key, line.value, line.index, scalarConflicts)) { consume(); continue; }
     }
 
     if (section === 'emergencyContacts' && line.kind === 'key-value' && line.label && line.value) {
@@ -123,6 +157,11 @@ export function parseDocument(text: string, mode: ItineraryMode): ParseResult {
       (result.fields.lists[list] ??= []).push(line.bullet); consume(); continue;
     }
 
+    if (section && (LIST_SECTIONS as readonly string[]).includes(section) && line.kind === 'text' && !readTimeLine(line.text)) {
+      const list = section as ListSection;
+      (result.fields.lists[list] ??= []).push(line.text); consume(); continue;
+    }
+
     if (dayMode && !ignoreDays) {
       const reading = readTimeLine(line.text);
       if (reading) {
@@ -140,24 +179,51 @@ export function parseDocument(text: string, mode: ItineraryMode): ParseResult {
     }
     keep(line);
   }
+  result.diagnostics = [
+    ...result.notes.map((message) => ({ code: 'PARSER_NOTE' as const, message })),
+    ...result.unconsumed.map((line) => ({ code: 'UNCONSUMED_TEXT' as const, line: line.index + 1, message: `Baris ${line.index + 1} belum dipetakan ke field.` }))
+  ];
+  result.coverage = {
+    totalLines: result.totalLines,
+    consumedLines: result.consumedLines,
+    unconsumedLines: result.unconsumed.length,
+    ratio: result.totalLines === 0 ? 1 : Math.max(0, Math.min(1, result.consumedLines / result.totalLines))
+  };
   return result;
 }
 
-function handleKeyValue(result: ParseResult, key: keyof typeof dict.keyValue, value: string, index: number): boolean {
+function handleKeyValue(result: ParseResult, key: keyof typeof dict.keyValue, value: string, index: number, conflicts: Set<string>): boolean {
+  const setScalar = (path: string, current: string | undefined, next: string, assign: () => void, clear: () => void, label: string) => {
+    if (conflicts.has(path)) {
+      const conflict = result.conflicts.find((item) => item.path === path);
+      if (conflict && !conflict.values.includes(next)) conflict.values.push(next);
+      return;
+    }
+    if (!current) assign();
+    else if (current !== next) {
+      clear();
+      conflicts.add(path);
+      const message = `Baris ${index + 1}: ${label} memiliki nilai berbeda lebih dari satu kali; pilih nilai yang benar secara manual.`;
+      result.notes.push(message);
+      result.conflicts.push({ path, values: [current, next], line: index + 1, message });
+    }
+  };
   switch (key) {
-    case 'destination': result.fields.trip.destination = value; return true;
-    case 'country': result.fields.trip.country = value; return true;
+    case 'destination': setScalar('destination', result.fields.trip.destination, value, () => { result.fields.trip.destination = value; }, () => { delete result.fields.trip.destination; }, 'Destinasi'); return true;
+    case 'country': setScalar('country', result.fields.trip.country, value, () => { result.fields.trip.country = value; }, () => { delete result.fields.trip.country; }, 'Negara'); return true;
     case 'date': {
       const { date, note } = dateFromText(value);
-      if (date) result.fields.trip.startDate = date; else if (note) result.notes.push(note);
+      if (date) setScalar('date', result.fields.trip.startDate, date, () => { result.fields.trip.startDate = date; }, () => { delete result.fields.trip.startDate; }, 'Tanggal');
+      if (note) result.notes.push(`Baris ${index + 1}: ${note}`);
       return true;
     }
-    case 'guide': result.fields.guide.name = value; return true;
-    case 'phone': result.fields.guide.phone = value; return true;
+    case 'guide': setScalar('guide', result.fields.guide.name, value, () => { result.fields.guide.name = value; }, () => { delete result.fields.guide.name; }, 'Guide'); return true;
+    case 'phone': setScalar('phone', result.fields.guide.phone, value, () => { result.fields.guide.phone = value; }, () => { delete result.fields.guide.phone; }, 'Nomor guide'); return true;
     case 'meetingPlace': {
       const url = URL_IN_TEXT.exec(value)?.[0];
-      if (url) result.fields.meeting.mapsUrl = url.startsWith('http') ? url : `https://${url}`;
-      else result.fields.meeting.place = value;
+      const place = url ? value.replace(url, '').trim().replace(/[|,;\-–—]+$/, '').trim() : value;
+      if (place) setScalar('meeting.place', result.fields.meeting.place, place, () => { result.fields.meeting.place = place; }, () => { delete result.fields.meeting.place; }, 'Titik kumpul');
+      if (url) setScalar('meeting.mapsUrl', result.fields.meeting.mapsUrl, url.startsWith('http') ? url : `https://${url}`, () => { result.fields.meeting.mapsUrl = url.startsWith('http') ? url : `https://${url}`; }, () => { delete result.fields.meeting.mapsUrl; }, 'Link peta');
       return true;
     }
     case 'meetingTime': {

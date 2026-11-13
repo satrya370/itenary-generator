@@ -214,7 +214,7 @@ test('undo restores the previous draft once; after a later edit undo is refused'
 });
 
 test('a duplicated activity title on two days is dropped from the model reply instead of guessed', async (t) => {
-  const d = double([JSON.stringify({ activityDetails: [{ title: 'Ubud', description: { value: 'sawah bagus', quote: 'sawah bagus' }, place: null, tip: null }] })]);
+  const d = double([JSON.stringify({ activityDetails: [{ targetId: 'activity-1-3', title: 'Ubud', description: { value: 'sawah bagus', quote: 'sawah bagus' }, place: null, tip: null }] })]);
   const app = await fixture(t, d.extractor);
   const text = ['Liburan dua hari', 'Hari 1', '09:00 Ubud', 'Hari 2', '09:00 Ubud', 'Ubud: sawah bagus'].join('\n');
   const sourceId = await source(app, text);
@@ -222,18 +222,145 @@ test('a duplicated activity title on two days is dropped from the model reply in
   assert.equal(d.calls.length, 1);
   assert.equal(body.itinerary.draftContent.days[0].activities[0].description, '');
   assert.equal(body.itinerary.draftContent.days[1].activities[0].description, '');
-  assert.ok(body.report.skipped.some((item: { path: string }) => item.path.startsWith('activityDetails[Ubud]')));
+  assert.ok(body.report.skipped.some((item: { path: string }) => item.path.includes('[Ubud]')));
 });
 
-test('text beyond the 20,000 character limit is not sent to the model, and the report says how many lines were left out', async (t) => {
+test('activity detail must quote a complete source unit from its explicit target context', async (t) => {
+  const d = double([JSON.stringify({ activityDetails: [{ targetId: 'activity-1-3', title: 'Museum', description: { value: 'A quiet gallery beside the river.', quote: 'A quiet gallery beside the river.' }, place: null, tip: null }] })]);
+  const app = await fixture(t, d.extractor);
+  const sourceId = await source(app, 'Trip Ubud\nHari 1\n09:00 Museum\nA quiet gallery beside the river.\n10:00 River walk\nThe old bridge is nearby.');
+  const body = (await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'full_day', outputLanguage: 'en' })).json();
+  assert.equal(body.itinerary.draftContent.days[0].activities[0].description, 'A quiet gallery beside the river.');
+  assert.equal(body.itinerary.draftContent.days[0].activities[1].description, '');
+  assert.equal(body.report.evidence.accepted[0].targetId, 'activity-1-3');
+  assert.ok(d.calls[0].targets?.some((target) => target.targetId === 'activity-1-3' && target.title === 'Museum'));
+});
+
+test('valid source quote from a different activity cannot be attached to the requested target', async (t) => {
+  const d = double([JSON.stringify({ activityDetails: [{ targetId: 'activity-1-3', title: 'Museum', description: { value: 'The old bridge is nearby.', quote: 'The old bridge is nearby.' }, place: null, tip: null }] })]);
+  const app = await fixture(t, d.extractor);
+  const sourceId = await source(app, 'Trip Ubud\nHari 1\n09:00 Museum\nA quiet gallery beside the river.\n10:00 River walk\nThe old bridge is nearby.');
+  const body = (await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'full_day', outputLanguage: 'en' })).json();
+  assert.equal(body.itinerary.draftContent.days[0].activities[0].description, '');
+  assert.ok(body.report.skipped.some((item: { path: string; message: string }) => item.path === 'activities[Museum].description' && /kutipan/.test(item.message)));
+});
+
+test('place description and area cannot cite another entity, but local entity prose is accepted', async (t) => {
+  const text = 'Panduan Bali\nTempat\n- Museum Ubud\nA quiet gallery beside the river.\n- Pantai Sanur (Denpasar)\nPantai ini memiliki pasir putih.';
+  const d = double([JSON.stringify({ places: [
+    { name: { value: 'Museum Ubud', quote: 'Museum Ubud' }, area: { value: 'Denpasar', quote: 'Pantai Sanur (Denpasar)' }, description: { value: 'Pantai ini memiliki pasir putih.', quote: 'Pantai ini memiliki pasir putih.' } },
+    { name: { value: 'Pantai Sanur', quote: 'Pantai Sanur (Denpasar)' }, area: { value: 'Denpasar', quote: 'Pantai Sanur (Denpasar)' }, description: { value: 'Pantai ini memiliki pasir putih.', quote: 'Pantai ini memiliki pasir putih.' } }
+  ] }), JSON.stringify({ places: [{ name: { value: 'Museum Ubud', quote: 'Museum Ubud' }, description: { value: 'A quiet gallery beside the river.', quote: 'A quiet gallery beside the river.' } }] })]);
+  const app = await fixture(t, d.extractor);
+  const sourceId = await source(app, text);
+  const result = (await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'destination_guide', outputLanguage: 'en' })).json();
+  assert.equal(result.itinerary.draftContent.places[0].description, '');
+  assert.equal(result.itinerary.draftContent.places[0].area, '');
+  assert.equal(result.itinerary.draftContent.places[1].description, 'Pantai ini memiliki pasir putih.');
+  assert.ok(result.report.evidence.rejected.some((item: { reasonCode: string }) => item.reasonCode === 'IMPORT_ENTITY_CONTEXT_MISMATCH'));
+  const local = (await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'destination_guide', outputLanguage: 'en' })).json();
+  assert.equal(local.itinerary.draftContent.places[0].description, 'A quiet gallery beside the river.');
+});
+
+test('wrapped exception cannot be cut from summary even when the first line ends in punctuation', async (t) => {
+  for (const first of ['Tiket masuk termasuk', 'Tiket masuk termasuk.']) {
+    const whole = `${first}\nkecuali pada hari libur.`;
+    const d = double([JSON.stringify({ summary: { value: first, quote: first } }), JSON.stringify({ summary: { value: whole, quote: whole } })]);
+    const app = await fixture(t, d.extractor);
+    const sourceId = await source(app, `Trip Bali\nHari 1\n09:00 Museum\n${whole}`);
+    const cut = (await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'full_day', outputLanguage: 'id' })).json();
+    assert.equal(cut.itinerary.draftContent.summary, '');
+    assert.ok(cut.report.evidence.rejected.some((item: { reasonCode: string }) => item.reasonCode === 'IMPORT_SOURCE_UNIT_INCOMPLETE'));
+    const complete = (await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'full_day', outputLanguage: 'id' })).json();
+    assert.equal(complete.itinerary.draftContent.summary, whole);
+  }
+});
+
+test('overwrite preflights activity overflow: 30 replaces safely, 31 preserves the entire old schedule', async (t) => {
+  const d = double([]);
+  const app = await fixture(t, d.extractor);
+  for (const count of [30, 31]) {
+    const original = (await apply(app, await source(app, 'Trip lama\nHari 1\n08:00 Old museum'), { operationId: op(), target: 'new', mode: 'full_day', outputLanguage: 'en' })).json().itinerary;
+    const text = ['Trip baru', 'Hari 1', ...Array.from({ length: count }, (_, index) => `09:00 Aktivitas ${index + 1}`)].join('\n');
+    const response = await apply(app, await source(app, text), { operationId: op(), target: 'overwrite', itineraryId: original.id, expectedRevision: original.revision });
+    assert.equal(response.statusCode, 200, response.body);
+    const result = response.json();
+    if (count === 30) {
+      assert.equal(result.itinerary.draftContent.days[0].activities.length, 30);
+      assert.ok(!result.report.retainedCollections.includes('days'));
+    } else {
+      assert.deepEqual(result.itinerary.draftContent.days, original.draftContent.days);
+      assert.ok(result.report.retainedReasons.some((item: { path: string; reasonCode: string }) => item.path === 'days' && item.reasonCode === 'IMPORT_COLLECTION_OVERFLOW'));
+    }
+  }
+});
+
+test('overwrite preflights list count and item length before destructive fitting', async (t) => {
+  const d = double([]);
+  const app = await fixture(t, d.extractor);
+  for (const items of [Array.from({ length: 50 }, (_, i) => `Item ${i}`), Array.from({ length: 51 }, (_, i) => `Item ${i}`), ['x'.repeat(501)]]) {
+    const original = (await apply(app, await source(app, 'Trip lama\nHari 1\n08:00 Museum\nTermasuk\n- Item lama'), { operationId: op(), target: 'new', mode: 'full_day', outputLanguage: 'id' })).json().itinerary;
+    const text = ['Trip baru', 'Termasuk', ...items.map((item) => `- ${item}`)].join('\n');
+    const response = await apply(app, await source(app, text), { operationId: op(), target: 'overwrite', itineraryId: original.id, expectedRevision: original.revision });
+    assert.equal(response.statusCode, 200, response.body);
+    const result = response.json();
+    if (items.length === 50) assert.equal(result.itinerary.draftContent.included.length, 50);
+    else {
+      assert.deepEqual(result.itinerary.draftContent.included, original.draftContent.included);
+      assert.ok(result.report.retainedReasons.some((item: { path: string; reasonCode: string }) => item.path === 'included' && item.reasonCode === 'IMPORT_COLLECTION_OVERFLOW'));
+    }
+  }
+});
+
+test('partial overwrite schedule is preserved instead of replacing or mixing days', async (t) => {
+  const d = double([]);
+  const app = await fixture(t, d.extractor);
+  const existing = (await app.inject({ method: 'POST', url: '/api/v1/itineraries', headers, payload: { mode: 'multi_day' } })).json();
+  const edited = structuredClone(existing.draftContent as WebItineraryContent);
+  edited.days[0].title = 'Hari lama yang harus dipertahankan';
+  const saved = (await app.inject({ method: 'PATCH', url: `/api/v1/itineraries/${existing.id}`, headers, payload: { expectedRevision: existing.revision, draftContent: edited, languageContext: existing.languageContext, writingContext: existing.writingContext } })).json();
+  const sourceId = await source(app, 'Trip baru\nHari 1\n09:00 Museum\nCatatan lanjutan belum terpetakan');
+  const body = (await apply(app, sourceId, { operationId: op(), target: 'overwrite', itineraryId: existing.id, expectedRevision: saved.revision })).json();
+  assert.equal(body.itinerary.draftContent.days[0].title, 'Hari lama yang harus dipertahankan');
+  assert.ok(body.report.retainedCollections.includes('days'));
+});
+
+test('batching preserves later source lines after the first 20,000 characters', async (t) => {
   const d = double([JSON.stringify({})]);
   const app = await fixture(t, d.extractor);
   const long = Array.from({ length: 400 }, (_, i) => `Catatan panjang nomor ${i} yang tidak terbaca kode ${'x'.repeat(60)}`);
   const sourceId = await source(app, ['Judul trip', 'Hari 1', '09:00 Ubud', ...long].join('\n'));
   const body = (await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'multi_day', outputLanguage: 'id' })).json();
+  assert.ok(d.calls.length > 1 && d.calls.length <= 8);
+  assert.ok(d.calls.every((call) => call.segments.join('\n').length < 20_000));
+  assert.ok(d.calls.at(-1)!.segments.join('\n').includes('Catatan panjang nomor 399'), 'later lines are included in a subsequent batch');
+  assert.equal(body.report.evidence.omittedLineIndexes.length, 0);
+});
+
+test('one over-sized source line is reported without blocking a later short line', async (t) => {
+  const d = double([JSON.stringify({ summary: { value: 'Ringkasan valid dari sumber.', quote: 'Ringkasan valid dari sumber.' } })]);
+  const app = await fixture(t, d.extractor);
+  const tooLong = `Catatan ${'x'.repeat(20_100)}`;
+  const later = 'Ringkasan valid dari sumber.';
+  const sourceId = await source(app, `Trip\nHari 1\n09:00 Ubud\n${tooLong}\n\n${later}`);
+  const body = (await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'full_day', outputLanguage: 'id' })).json();
   assert.equal(d.calls.length, 1);
-  assert.ok(d.calls[0].segments.join('\n').length <= 20_000 + 200);
-  assert.ok(body.report.notes.some((note: string) => /tidak dikirim ke AI/.test(note)));
+  assert.ok(d.calls[0].segments.includes(later));
+  assert.equal(body.itinerary.draftContent.summary, later);
+  assert.ok(body.report.evidence.omittedLineIndexes.length > 0);
+});
+
+test('batch retry cap is two attempts and token/cost usage includes both attempts', async (t) => {
+  const summary = 'Perjalanan santai di Ubud.';
+  const d = double([new ProviderFailure('retryable', 503, 1), JSON.stringify({ summary: { value: summary, quote: summary } })]);
+  const app = await fixture(t, d.extractor);
+  const sourceId = await source(app, `Trip Ubud\nHari 1\n09:00 Palace\n${summary}`);
+  const body = (await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'full_day', outputLanguage: 'id' })).json();
+  assert.equal(d.calls.length, 2);
+  assert.equal(body.report.aiBatches, 1);
+  assert.equal(body.report.aiAttempts, 2);
+  assert.equal(body.usage.promptTokens, null, 'failed provider call had no usage metadata');
+  assert.equal(body.usage.actualUsd, null, 'the failed call may have incurred unknown cost');
 });
 
 test('the same operationId replays the stored result without a second model call; a running one is busy', async (t) => {
@@ -392,7 +519,7 @@ test('activity import: model highlights must be whole lines and never replace a 
   const reply = JSON.stringify({ highlights: [
     { value: 'Air jernih dan penuh ikan warna-warni.', quote: 'Air jernih dan penuh ikan warna-warni.' },
     { value: 'termasuk alat selam pribadi.', quote: 'Tidak termasuk alat selam pribadi.' },
-    { value: 'Cocok untuk pemula', quote: 'Cocok untuk pemula.' }
+    { value: 'Cocok untuk pemula.', quote: 'Cocok untuk pemula.' }
   ] });
   const d = double([reply]);
   const app = await fixture(t, d.extractor);
@@ -400,7 +527,7 @@ test('activity import: model highlights must be whole lines and never replace a 
   assert.equal(response.statusCode, 201, response.body);
   const body = response.json();
   const content = body.itinerary.draftContent as WebItineraryContent;
-  assert.deepEqual(content.activity!.highlights, ['Air jernih dan penuh ikan warna-warni.', 'Cocok untuk pemula'], 'the cut quote that flips the meaning is dropped');
+  assert.deepEqual(content.activity!.highlights, ['Air jernih dan penuh ikan warna-warni.', 'Cocok untuk pemula.'], 'the cut quote that flips the meaning is dropped');
   assert.ok(body.report.skipped.some((item: { path: string }) => item.path === 'highlights'));
 
   // The code already read a Highlights list: the model's list is ignored.

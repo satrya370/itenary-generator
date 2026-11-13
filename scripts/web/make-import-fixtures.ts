@@ -1,4 +1,4 @@
-import { copyFile, mkdir, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import puppeteer from 'puppeteer';
 import sharp from 'sharp';
@@ -109,15 +109,39 @@ async function pdfFrom(browser: Awaited<ReturnType<typeof puppeteer.launch>>, ht
 
 async function main() {
   await mkdir(OUT, { recursive: true });
-  for (const [file, body] of Object.entries(texts)) await writeFile(path.join(OUT, file), body + '\n', 'utf8');
-  await writeFile(path.join(OUT, 'id-multi-day-15.txt'), longMultiDay(15) + '\n', 'utf8');
+  const pdfOnly = process.argv.includes('--pdf-only');
+  if (!pdfOnly) {
+    for (const [file, body] of Object.entries(texts)) await writeFile(path.join(OUT, file), body + '\n', 'utf8');
+    await writeFile(path.join(OUT, 'id-multi-day-15.txt'), longMultiDay(15) + '\n', 'utf8');
+  }
 
   const browser = await puppeteer.launch({ headless: 'shell', args: ['--disable-background-networking', '--no-first-run'] });
   try {
     const pre = (text: string) => `<html><body><pre style="font:12px monospace">${text.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[ch] ?? ch)}</pre></body></html>`;
-    await pdfFrom(browser, pre(texts['id-full-day-tidy.txt']), 'id-full-day-tidy.pdf');
-    await pdfFrom(browser, pre(texts['id-multi-day-3.txt']), 'id-multi-day-3.pdf');
-    await pdfFrom(browser, pre(texts['en-half-day-messy.txt']), 'en-half-day-messy.pdf');
+    const textForPdf = async (name: string) => pdfOnly ? await readFile(path.join(OUT, name), 'utf8') : texts[name];
+    await pdfFrom(browser, pre(await textForPdf('id-full-day-tidy.txt')), 'id-full-day-tidy.pdf');
+    await pdfFrom(browser, pre(await textForPdf('id-multi-day-3.txt')), 'id-multi-day-3.pdf');
+    await pdfFrom(browser, pre(await textForPdf('en-half-day-messy.txt')), 'en-half-day-messy.pdf');
+
+    const layoutHtml = `<html><head><style>
+      @page { size: A4; margin: 18mm; } body { font: 12px Arial; }
+      .header { font-size: 9px; }
+      .footer { font-size: 9px; }
+      .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }
+      .page { break-after: page; min-height: 220mm; }
+      table { border-collapse: collapse; width: 100%; } td,th { border: 1px solid #333; padding: 5px; vertical-align: top; }
+    </style></head><body>
+      <section class="page"><p class="header">ITINERARY SAMPLE</p><h1>Day 1 — Ubud</h1><div class="cols"><div><h2>Morning activities</h2><p>08:00 Museum visit and guided walk through the old town.</p><p>10:00 Garden visit.</p></div><div><h2>Practical notes</h2><p>Bring comfortable shoes and drinking water.</p><p>Meeting point: Ubud Palace.</p></div></div>
+      <table><thead><tr><th>Time</th><th>Activity</th><th>Notes</th></tr></thead><tbody><tr><td>12:00</td><td>Lunch at the market with a longer wrapped description that continues in this same table cell on the next visual line.</td><td>Own expense</td></tr><tr><td>14:00</td><td>Workshop</td><td>Includes materials</td></tr></tbody></table></section>
+      <section><p class="header">ITINERARY SAMPLE</p><h1>Day 2 — Tegallalang</h1><p>09:00 Rice terrace walk.</p><p>Repeated footer text must not be confused with repeated itinerary content.</p></section>
+    </body></html>`;
+    await pdfFrom(browser, layoutHtml, 'layout-multipage-columns-table.pdf');
+
+    const sparseHtml = `<html><head><style>@page { size:A4; margin:20mm; } body { font:12px Arial; }</style></head><body>
+      <h1>Readable first page</h1>${Array.from({ length: 18 }, (_, i) => `<p>Detailed itinerary text block ${i + 1} with enough content to establish a usable text layer.</p>`).join('')}
+      <div style="page-break-before:always"><p>Only a short fragment</p><img src="data:image/png;base64,${(await sharp({ create: { width: 400, height: 300, channels: 3, background: { r: 225, g: 225, b: 225 } } }).png().toBuffer()).toString('base64')}" style="width:90%"></div>
+    </body></html>`;
+    await pdfFrom(browser, sparseHtml, 'mixed-sparse-text-layer.pdf');
 
     const png = await sharp({ create: { width: 600, height: 400, channels: 3, background: { r: 230, g: 240, b: 235 } } }).png().toBuffer();
     await pdfFrom(browser, `<html><body><img src="data:image/png;base64,${png.toString('base64')}" style="width:100%"></body></html>`, 'image-only-scan.pdf');

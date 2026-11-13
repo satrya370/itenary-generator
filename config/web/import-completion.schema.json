@@ -55,8 +55,9 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["title"],
+        "required": ["targetId", "title"],
         "properties": {
+          "targetId": { "type": "string", "minLength": 1, "maxLength": 80 },
           "title": { "type": "string", "minLength": 1, "maxLength": 200 },
           "place": { "$ref": "#/$defs/nullableText" },
           "description": { "$ref": "#/$defs/nullableText" },

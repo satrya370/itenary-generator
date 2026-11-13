@@ -4,15 +4,19 @@ import os from 'node:os';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
 import { createApp } from '../../src/server/app.js';
-import { ImportError, MAX_TEXT_CHARS, normalizeText, readPdfPages, pageToLines, pdfPagesToText, assertTextLayer, intakeText } from '../../src/server/import/intake.js';
+import { ImportError, MAX_TEXT_CHARS, normalizeText, readPdfPages, pageToLines, pdfPagesToText, assertTextLayer, intakeText, buildPdfSource, layoutExcludedLines, type PdfLayout, intakePdf, readSourceLayoutOrNull } from '../../src/server/import/intake.js';
+import { parseDocument } from '../../src/server/import/parse/extract.js';
+import { segmentsOf } from '../../src/server/import/complete.js';
+import puppeteer from 'puppeteer';
+import type { ImportExtractor } from '../../src/server/ai/provider.js';
 
 const FIXTURES = path.resolve('tests/fixtures/web/import');
 const origin = 'http://127.0.0.1:3000';
 const headers = { origin, 'x-engine-request': '1', 'content-type': 'application/json' };
 
-async function fixture(t: TestContext) {
+async function fixture(t: TestContext, importExtractor?: ImportExtractor) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), 'itinerary-cp030-'));
-  let app = await createApp({ dataDir, publicOrigin: origin, allowedOrigins: [origin] });
+  let app = await createApp({ dataDir, publicOrigin: origin, allowedOrigins: [origin], importExtractor });
   t.after(async () => { await app.close(); await rm(dataDir, { recursive: true, force: true }); });
   return { dataDir, get app() { return app; }, async restart() { await app.close(); app = await createApp({ dataDir, publicOrigin: origin, allowedOrigins: [origin] }); } };
 }
@@ -71,7 +75,19 @@ test('a text-layer PDF is read page by page with line rebuilding and its stats a
   assert.ok(text.includes('07:30 Jemput di hotel - 1 jam'), 'a visual row stays one line');
   assert.ok(text.includes('Termasuk'));
   const files = await readdir(path.join(f.dataDir, 'imports'));
-  assert.deepEqual(files, [`${body.sourceId}.txt`], 'only the extracted text is kept, never the PDF bytes');
+  assert.deepEqual(files.sort(), [`${body.sourceId}.layout.json`, `${body.sourceId}.txt`].sort(), 'private text and layout sidecar are stored, never the PDF bytes');
+  const layout = JSON.parse(await readFile(path.join(f.dataDir, 'imports', `${body.sourceId}.layout.json`), 'utf8'));
+  assert.equal(layout.version, 1);
+  assert.equal(layout.pages[0].pageNumber, 1);
+  assert.ok(layout.pages[0].width > 0 && layout.pages[0].height > 0);
+  const parsed = await f.app.inject({ method: 'POST', url: `/api/v1/imports/sources/${body.sourceId}/parse`, headers, payload: { mode: 'full_day' } });
+  const source = (await f.app.inject({ url: `/api/v1/imports/sources/${body.sourceId}` })).json().text as string;
+  assert.ok(parsed.json().sourceBlocks.length > 0);
+  for (const block of parsed.json().sourceBlocks as Array<{ text: string; startUtf16: number; endUtf16: number; pageNumber: number; bounds: { x: number; y: number; width: number; height: number } }>) {
+    assert.equal(source.slice(block.startUtf16, block.endUtf16), block.text);
+    assert.equal(block.pageNumber, 1);
+    assert.ok(block.bounds.width > 0);
+  }
 });
 
 test('PDF rejections: image-only scan, too many pages, and a renamed non-PDF each get their own code and nothing is stored', async (t) => {
@@ -138,6 +154,12 @@ test('the parse endpoint is a dry run: it reads the source and writes no draft',
   const body = parsed.json();
   assert.equal(body.fields.days[0].activities[0].time, '09:00');
   assert.equal(body.fields.days[0].activities[0].durationMinutes, 60);
+  assert.equal(body.kind, 'text');
+  assert.equal(body.pageCount, 1);
+  assert.deepEqual(body.coverage.pages, [], 'plain text has no PDF page geometry');
+  assert.equal(body.coverage.totalLines, body.totalLines);
+  assert.ok(body.coverage.ratio >= 0 && body.coverage.ratio <= 1);
+  assert.ok(Array.isArray(body.diagnostics));
   assert.equal((await f.app.inject({ url: '/api/v1/itineraries' })).json().items.length, itinerariesBefore, 'no draft was created');
   const badMode = await f.app.inject({ method: 'POST', url: `/api/v1/imports/sources/${created.sourceId}/parse`, headers, payload: { mode: 'auto' } });
   assert.equal(badMode.statusCode, 400);
@@ -150,4 +172,140 @@ test('pure helpers: line rebuilding joins items on one row and the text-layer ch
   assert.equal(pdfPagesToText(pages).nonSpaceChars, 1);
   assert.throws(() => assertTextLayer(pages, 1), (cause: unknown) => cause instanceof ImportError && cause.code === 'IMPORT_NO_TEXT_LAYER');
   assert.equal(intakeText('Tur Bali 09:00').pageCount, 1);
+});
+
+test('multi-page layout PDF keeps page geometry, repeated content, and source-page diagnostics', async (t) => {
+  const sent: string[] = [];
+  const f = await fixture(t, { credentialState: 'configured', async extract(request) {
+    sent.push(...request.segments);
+    return { text: '{}', usage: { promptTokens: 1, completionTokens: 1, costUsd: 0 } };
+  } });
+  const response = await f.app.inject(multipart('file', 'layout.pdf', await pdfOf('layout-multipage-columns-table.pdf')));
+  assert.equal(response.statusCode, 201, response.body);
+  const created = response.json();
+  assert.ok(created.pageCount >= 2);
+  const sidecar = JSON.parse(await readFile(path.join(f.dataDir, 'imports', `${created.sourceId}.layout.json`), 'utf8'));
+  assert.equal(sidecar.pages.length, created.pageCount);
+  assert.ok(sidecar.pages.every((page: { width: number; height: number; rotation: number; items: unknown[] }) => page.width > 0 && page.height > 0 && Number.isFinite(page.rotation) && page.items.length > 0));
+  assert.ok(sidecar.blocks.every((block: { startUtf16: number; endUtf16: number; bounds: { width: number; height: number } | null }) => block.endUtf16 >= block.startUtf16 && block.bounds?.width > 0 && block.bounds.height >= 0));
+  assert.ok(sidecar.diagnostics.some((item: { code: string }) => item.code === 'PDF_REPEATED_MARGIN_TEXT_REVIEW'));
+  const source = await readFile(path.join(f.dataDir, 'imports', `${created.sourceId}.txt`), 'utf8');
+  assert.match(source, /Day 1/);
+  assert.match(source, /Day 2/);
+  assert.match(source, /12:00/);
+  assert.match(source, /Workshop/);
+  assert.ok(sidecar.diagnostics.some((item: { code: string }) => item.code === 'PDF_LAYOUT_AMBIGUOUS'), 'mixed prose/table relationships require review');
+  const parsed = await f.app.inject({ method: 'POST', url: `/api/v1/imports/sources/${created.sourceId}/parse`, headers, payload: { mode: 'multi_day' } });
+  assert.ok(parsed.json().sourceBlocks.some((block: { pageNumber: number; text: string }) => block.pageNumber === 2 && /Day 2/.test(block.text)));
+  assert.equal(parsed.json().coverage.pages[0].status, 'ambiguous');
+  assert.ok(parsed.json().unconsumed.some((line: { section: string }) => line.section === 'layout-ambiguous'));
+  const applied = await f.app.inject({ method: 'POST', url: `/api/v1/imports/sources/${created.sourceId}/apply`, headers, payload: { operationId: '03333333-3333-4333-8333-333333333333', target: 'new', mode: 'multi_day', outputLanguage: 'en' } });
+  assert.equal(applied.statusCode, 201, applied.body);
+  assert.ok(!sent.some((line) => /Morning activities|Museum visit|Lunch at the market|Practical notes/.test(line)), 'ambiguous page must not reach AI');
+  assert.ok(!applied.json().itinerary.draftContent.days.some((day: { activities: Array<{ title: string }> }) => day.activities.some((activity) => /Museum|Lunch at the market/.test(activity.title))));
+  assert.ok(applied.json().report.evidence.omittedLineIndexes.length > 0);
+});
+
+test('mixed text and sparse/image page is accepted only with a page-specific diagnostic', async (t) => {
+  const f = await fixture(t);
+  const response = await f.app.inject(multipart('file', 'mixed.pdf', await pdfOf('mixed-sparse-text-layer.pdf')));
+  assert.equal(response.statusCode, 201, response.body);
+  const created = response.json();
+  const layout = JSON.parse(await readFile(path.join(f.dataDir, 'imports', `${created.sourceId}.layout.json`), 'utf8'));
+  assert.ok(layout.diagnostics.some((item: { code: string; pageNumber?: number }) => item.code === 'PDF_SPARSE_TEXT_PAGE' && item.pageNumber === 2));
+  const parsed = await f.app.inject({ method: 'POST', url: `/api/v1/imports/sources/${created.sourceId}/parse`, headers, payload: { mode: 'full_day' } });
+  assert.ok(parsed.json().diagnostics.some((item: { code: string; pageNumber?: number }) => item.code === 'PDF_SPARSE_TEXT_PAGE' && item.pageNumber === 2));
+  assert.equal(parsed.json().coverage.pages[1].status, 'sparse');
+});
+
+test('PDF reconstruction joins only a bounded explicit two-cell time/activity table', () => {
+  const lines = pageToLines([
+    { str: 'Time', x: 40, y: 720, width: 30 }, { str: 'Activity', x: 200, y: 720, width: 60 },
+    { str: '08:00', x: 40, y: 700, width: 30 }, { str: 'Museum', x: 200, y: 700, width: 45 },
+    { str: '09:00', x: 40, y: 680, width: 30 }, { str: 'Garden', x: 200, y: 680, width: 42 }
+  ]);
+  assert.deepEqual(lines, ['Time Activity', '08:00 Museum', '09:00 Garden']);
+});
+
+test('time-led independent PDF columns stay separate and cannot enter parser or AI facts', () => {
+  const layout: PdfLayout = { version: 1, blocks: [], diagnostics: [], pages: [{ pageNumber: 1, width: 595, height: 842, rotation: 0, items: [
+    { str: '09:00 Museum', x: 40, y: 700, width: 100 }, { str: 'Bring water', x: 340, y: 700, width: 90 },
+    { str: '10:00 Garden', x: 40, y: 680, width: 100 }, { str: 'Wear shoes', x: 340, y: 680, width: 90 }
+  ] }] };
+  const text = buildPdfSource(layout);
+  assert.equal(text, '09:00 Museum\n10:00 Garden\nBring water\nWear shoes');
+  assert.ok(layout.diagnostics.some((item) => item.code === 'PDF_LAYOUT_AMBIGUOUS'));
+  const parsed = parseDocument(text, 'full_day', layoutExcludedLines(layout, text));
+  assert.equal(parsed.fields.days.length, 0);
+  assert.equal(parsed.unconsumed.length, 4);
+  assert.equal(segmentsOf(parsed).units.length, 0);
+});
+
+test('PDF normalized spans survive leading/trailing empty pages, Unicode and invisible text', () => {
+  const layout: PdfLayout = { version: 1, blocks: [], diagnostics: [], pages: [
+    { pageNumber: 1, width: 595, height: 842, rotation: 0, items: [] },
+    { pageNumber: 2, width: 595, height: 842, rotation: 0, items: [{ str: '  Cafe\u0301 \u200b🌴  ', x: 40, y: 700, width: 100 }, { str: 'Next line', x: 40, y: 680, width: 100 }] },
+    { pageNumber: 3, width: 595, height: 842, rotation: 0, items: [] }
+  ] };
+  const text = buildPdfSource(layout);
+  assert.equal(text, 'Café 🌴\nNext line');
+  assert.equal(layout.blocks[0].startUtf16, 0);
+  for (const block of layout.blocks) assert.equal(text.slice(block.startUtf16, block.endUtf16), block.text);
+});
+
+test('actual PDF worker keeps spans exact after a leading blank page', async () => {
+  const browser = await puppeteer.launch({ headless: 'shell', args: ['--disable-background-networking', '--no-first-run'] });
+  try {
+    const page = await browser.newPage();
+    await page.setContent('<html><body><div style="break-after:page;height:100px"></div><p>Day 1 Museum itinerary with enough readable text to pass the text layer check for these two pages. Visit the museum and garden with the local guide.</p></body></html>');
+    const result = await intakePdf(await page.pdf({ format: 'A4' }));
+    assert.equal(result.pageCount, 2);
+    assert.equal(result.layout!.blocks[0].pageNumber, 2);
+    assert.equal(result.layout!.blocks[0].startUtf16, 0);
+    for (const block of result.layout!.blocks) assert.equal(result.text.slice(block.startUtf16, block.endUtf16), block.text);
+  } finally { await browser.close(); }
+});
+
+test('legacy PDF sidecars are rebuilt against stored source; incompatible old column joins are review-only', async (t) => {
+  const f = await fixture(t);
+  const sourceText = 'A valid museum description with enough text.';
+  const created = (await f.app.inject({ method: 'POST', url: '/api/v1/imports/sources', headers, payload: { text: sourceText } })).json();
+  const layout: PdfLayout = { version: 1, diagnostics: [], blocks: [{ blockId: 'old', pageNumber: 2, readingOrder: 0, text: sourceText, startUtf16: 2, endUtf16: sourceText.length + 2, bounds: null }], pages: [
+    { pageNumber: 1, width: 595, height: 842, rotation: 0, items: [] },
+    { pageNumber: 2, width: 595, height: 842, rotation: 0, items: [{ str: sourceText, x: 40, y: 700, width: 250 }] }
+  ] };
+  await writeFile(path.join(f.dataDir, 'imports', `${created.sourceId}.layout.json`), JSON.stringify(layout));
+  const rebuilt = await readSourceLayoutOrNull(f.dataDir, created.sourceId);
+  assert.equal(rebuilt!.blocks[0].startUtf16, 0);
+  assert.equal(sourceText.slice(rebuilt!.blocks[0].startUtf16, rebuilt!.blocks[0].endUtf16), sourceText);
+  await writeFile(path.join(f.dataDir, 'imports', `${created.sourceId}.txt`), 'Old joined columns | not the same source');
+  const stale = await readSourceLayoutOrNull(f.dataDir, created.sourceId);
+  assert.equal(stale!.blocks.length, 0, 'invalid provenance must not be exposed');
+  assert.ok(stale!.diagnostics.some((item) => item.code === 'PDF_SOURCE_LAYOUT_STALE'));
+  assert.deepEqual([...layoutExcludedLines(stale, 'Old joined columns | not the same source')], [0]);
+});
+
+test('PDF reconstruction reads prose columns top-to-bottom before moving to the next column', () => {
+  const lines = pageToLines([
+    { str: 'About this tour', x: 40, y: 700, width: 90 }, { str: 'What to bring', x: 340, y: 700, width: 85 },
+    { str: 'Explore the old town', x: 40, y: 680, width: 110 }, { str: 'Bring comfortable shoes', x: 340, y: 680, width: 130 }
+  ]);
+  assert.deepEqual(lines, ['About this tour', 'Explore the old town', 'What to bring', 'Bring comfortable shoes']);
+});
+
+test('PDF text-layer checks use total density while preserving blank decorative pages', () => {
+  const pages = [Array.from({ length: 45 }, (_, index) => ({ str: `Readable${index}`, x: 10, y: 700 - index * 10, width: 40 })), []];
+  assert.doesNotThrow(() => assertTextLayer(pages, pdfPagesToText(pages).nonSpaceChars));
+});
+
+test('PDF page-level diagnostics expose substantive sparse and empty/non-text pages', async () => {
+  const sparse = [{ str: 'Brief text', x: 20, y: 700, width: 55 }];
+  const dense = Array.from({ length: 45 }, (_, index) => ({ str: `Readable${index}`, x: 10, y: 700 - index * 10, width: 40 }));
+  const pages = [dense, sparse, []];
+  assert.doesNotThrow(() => assertTextLayer(pages, pdfPagesToText(pages).nonSpaceChars));
+  const diagnostics = pages.flatMap((items, index) => {
+    const chars = [...pageToLines(items).join(' ')].filter((character) => !/\s/.test(character)).length;
+    return chars > 0 && chars < 40 ? [`sparse:${index + 1}`] : items.length === 0 ? [`empty-or-non-text:${index + 1}`] : [];
+  });
+  assert.deepEqual(diagnostics, ['sparse:2', 'empty-or-non-text:3']);
 });
