@@ -17,7 +17,7 @@ export interface Completion {
   /** Activity mode only (web-2.2.0). Whole-sentence quotes; ignored when the code already read the list. */
   highlights?: TextValue[]; steps?: Array<{ title: TextValue }>;
 }
-export interface Dropped { path: string; code: 'IMPORT_QUOTE_NOT_FOUND' | 'IMPORT_NOT_APPLICABLE' | 'IMPORT_ACTIVITY_NOT_FOUND' | 'IMPORT_ACTIVITY_AMBIGUOUS' | 'IMPORT_ALREADY_FILLED' | 'IMPORT_TARGET_MISMATCH' | 'IMPORT_COLLECTION_INCOMPLETE' | 'IMPORT_SOURCE_UNIT_INCOMPLETE' | 'IMPORT_ENTITY_CONTEXT_MISMATCH'; }
+export interface Dropped { path: string; code: 'IMPORT_QUOTE_NOT_FOUND' | 'IMPORT_NOT_APPLICABLE' | 'IMPORT_ACTIVITY_NOT_FOUND' | 'IMPORT_ACTIVITY_AMBIGUOUS' | 'IMPORT_ALREADY_FILLED' | 'IMPORT_TARGET_MISMATCH' | 'IMPORT_COLLECTION_INCOMPLETE' | 'IMPORT_SOURCE_UNIT_INCOMPLETE' | 'IMPORT_ENTITY_CONTEXT_MISMATCH'; proposal?: { value: string; quote: string; lineIndexes: number[]; targetId?: string } }
 export interface SourceUnit { lineIndex: number; text: string; section: string | null }
 export interface AcceptedEvidence { path: string; targetId?: string; lineIndexes: number[]; quote: string }
 
@@ -122,8 +122,9 @@ export function filterCompletion(completion: Completion, parse: ParseResult, mod
     const sourceUnits = locate(item.quote, kind, candidates);
     const quote = item.quote.normalize('NFC').trim();
     const value = item.value.normalize('NFC').trim();
-    if (!sourceUnits || (kind === 'whole' && value !== quote) || (kind === 'part' && !quote.includes(value))) { dropped.push({ path, code: 'IMPORT_QUOTE_NOT_FOUND' }); return false; }
-    if (kind === 'whole' && !wholeUnit(sourceUnits, path)) { dropped.push({ path, code: 'IMPORT_SOURCE_UNIT_INCOMPLETE' }); return false; }
+    const proposal = { value: value.slice(0, 2000), quote: quote.slice(0, 2000), lineIndexes: sourceUnits?.map((unit) => unit.lineIndex) ?? [], ...(targetId ? { targetId } : {}) };
+    if (!sourceUnits || (kind === 'whole' && value !== quote) || (kind === 'part' && !quote.includes(value))) { dropped.push({ path, code: 'IMPORT_QUOTE_NOT_FOUND', proposal }); return false; }
+    if (kind === 'whole' && !wholeUnit(sourceUnits, path)) { dropped.push({ path, code: 'IMPORT_SOURCE_UNIT_INCOMPLETE', proposal }); return false; }
     evidence.push({ path, ...(targetId ? { targetId } : {}), lineIndexes: sourceUnits.map((unit) => unit.lineIndex), quote: item.quote });
     return true;
   };

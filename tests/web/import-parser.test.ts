@@ -272,7 +272,66 @@ test('conflicting scalar values are left empty instead of last-write-wins', () =
   assert.equal(result.fields.trip.country, 'Indonesia');
   assert.ok(result.notes.some((note) => note.includes('Destinasi memiliki nilai berbeda')));
   assert.deepEqual(result.conflicts[0], {
-    path: 'destination', values: ['Bali', 'Lombok'], line: 3,
+    path: 'destination', values: ['Bali', 'Lombok'], line: 3, occurrences: [{ value: 'Bali', line: 2 }, { value: 'Lombok', line: 3 }],
     message: 'Baris 3: Destinasi memiliki nilai berbeda lebih dari satu kali; pilih nilai yang benar secara manual.'
+  });
+});
+
+test('conflict source occurrences retain repeated and later alternatives in input order', () => {
+  const result = parseDocument('Tur\nDestinasi: Bali\nDestinasi: Bali\nDestinasi: Lombok\nDestinasi: Ubud', 'full_day');
+  assert.deepEqual(result.conflicts[0].occurrences, [
+    { value: 'Bali', line: 2 }, { value: 'Bali', line: 3 },
+    { value: 'Lombok', line: 4 }, { value: 'Ubud', line: 5 }
+  ]);
+  assert.equal(result.fields.trip.destination, undefined);
+});
+
+test('golden text corpus: 40 independently asserted date, conflict, duration and unresolved-span cases', async (t) => {
+  const dates: Array<[string, string | null, boolean]> = [
+    ['2026-01-01', '2026-01-01', false], ['2024-02-29', '2024-02-29', false], ['2026-12-31', '2026-12-31', false],
+    ['31/12/2026', '2026-12-31', false], ['12/31/2026', '2026-12-31', false], ['03/04/2026', null, true],
+    ['February 1, 2026', '2026-02-01', false], ['1 February 2026', '2026-02-01', false], ['29 Februari 2024', '2024-02-29', false],
+    ['2026-02-29', null, false]
+  ];
+  for (const [input, expected, ambiguous] of dates) await t.test(`date: ${input}`, () => {
+    const result = dateFromText(input);
+    assert.equal(result.date, expected);
+    if (ambiguous) assert.ok(result.note?.includes('ambigu'));
+    if (input === '2026-02-29') assert.ok(result.note?.includes('tidak valid'));
+  });
+
+  const conflicts: Array<[string, string]> = [
+    ['Bali', 'Lombok'], ['Jakarta', 'Bandung'], ['Ubud', 'Sanur'], ['Tokyo', 'Kyoto'], ['Paris', 'Lyon'],
+    ['Médan', 'Padang'], ['Yogyakarta', 'Surabaya'], ['Osaka', 'Nara'], ['Denpasar', 'Amlapura'], ['Makassar', 'Manado']
+  ];
+  for (const [first, second] of conflicts) await t.test(`conflict: ${first} vs ${second}`, () => {
+    const result = parseDocument(`Trip\nDestinasi: ${first}\nDestinasi: ${second}`, 'full_day');
+    assert.equal(result.fields.trip.destination, undefined);
+    assert.deepEqual(result.conflicts[0].occurrences.map((item) => item.value), [first, second]);
+    assert.deepEqual(result.conflicts[0].occurrences.map((item) => item.line), [2, 3]);
+  });
+
+  const durations: Array<[string, number | null, string]> = [
+    ['09:00-11:00 Museum', 120, 'Museum'], ['01:00 PM - 03:00 PM Gallery', 120, 'Gallery'],
+    ['09:00 Tour (1 jam 30 menit)', 90, 'Tour'], ['08:00   WIB Museum', null, 'Museum'],
+    ['08:00 am Walk', null, 'Walk'], ['08:00-09:15 Garden', 75, 'Garden'],
+    ['23:00-01:00 Night transfer', null, 'Night transfer'], ['10:00 Workshop (90 menit)', 90, 'Workshop'],
+    ['14:00 Market (2 jam)', 120, 'Market'], ['12:00 Lunch (1h 30m)', 90, 'Lunch']
+  ];
+  for (const [input, duration, title] of durations) await t.test(`time: ${input}`, () => {
+    const result = readTimeLine(input);
+    assert.equal(result?.durationMinutes, duration);
+    assert.equal(result?.rest, title);
+  });
+
+  const unresolved = [
+    'Tidak termasuk tiket masuk', 'Kecuali cuaca buruk', 'Harga belum ditentukan oleh operator', 'Usia minimal 12 tahun',
+    'Hubungi guide setelah tiba', 'Catatan perubahan jadwal', 'Bawa obat pribadi bila perlu', 'Tunggu konfirmasi hotel',
+    'Rute alternatif tersedia saat hujan', 'Pastikan kembali titik jemput'
+  ];
+  for (const line of unresolved) await t.test(`unresolved span preserved: ${line}`, () => {
+    const result = parseDocument(`Judul perjalanan\nHari 1\n09:00 Museum\n${line}`, 'full_day');
+    assert.ok(result.unconsumed.some((item) => item.text.includes(line)), `source line must remain reviewable: ${line}`);
+    assert.equal(result.coverage.consumedLines + result.coverage.unconsumedLines, result.coverage.totalLines);
   });
 });

@@ -51,7 +51,8 @@
 
 ## 2. Status overview
 
-**Revisi hardening import 2026-11-13:** structured clarification memilih PDF berteks (tanpa OCR) dan review eksplisit untuk ambiguitas/konflik. Shared plan: `plans/cp030-cp032_revision-plan_text-and-pdf-parser-hardening.md`. CP030 bounded revision plus layout-aware source coverage revision are recorded in `plans/cp030_revision-plan_text-and-pdf-parser.md`, `plans/cp030_revision-plan_layout-aware-pdf-and-source-coverage.md`, and `logs/cp030_completion-log_text-and-pdf-parser.md`. CP030 revisions verified; owner-authorized dependency-gate exception remains recorded. CP031 may proceed as a separate revision; CP032 and all other statuses remain unchanged.
+**Revisi hardening import 2026-11-13/14:** structured clarification memilih PDF berteks (tanpa OCR) dan review eksplisit untuk ambiguitas/konflik; revisi SPEC §12.15 tercatat 2026-11-14. Shared plan: `plans/cp030-cp032_revision-plan_text-and-pdf-parser-hardening.md`. CP030 bounded/layout-aware revisions are recorded in their plans and completion log. CP031/CP032 revision scope is completed per their plans and completion/review logs; evidence includes private scalar decisions, non-actionable rejected-AI diagnostics, replay/transaction/retention, cross-mode handling, 40 text cases, 12 PDF layouts, and 5/5 mutation checks. See `logs/cp030-cp032_chapter-review_2026-11-14.md`; Linux unavailable, no live AI, no universal accuracy claim.
+**Disposition 2026-11-14:** active CP031/CP032 revision gates, 40 text assertions, 12 generated PDF layouts, 5/5 mutation checks, Windows browser/visual, regression, type and release gates passed. Chapter review: `logs/cp030-cp032_chapter-review_2026-11-14.md` (self-review; Linux unavailable, no live AI). No cross-platform or universal accuracy claim.
 
 **CP031 revisions 2026-11-13:** separate OpenRouter models/five live tests and backend evidence/safe-merge hardening are recorded in `plans/cp031_revision-plan_split-import-model.md`, `plans/cp031_revision-plan-evidence-guards-and-safe-merge.md`, and `logs/cp031_completion-log_split-import-model.md`. The hardening revision used deterministic tests only; no paid/live calls or migration. CP032 and all other statuses remain unchanged.
 
@@ -73,8 +74,8 @@
 | CP035 | ota-practical-fields-wizard-and-validation | CP034 | in_progress (S1-S4 gate run 2026-11-11: pass; deviations listed in stage log; awaiting review) |
 | CP036 | google-places-autocomplete | CP035 | in_progress (gate + review fixes done 2026-11-11; default provider now Photon/OSM, no card; Google optional; awaiting owner acceptance) |
 | CP030 | import-intake-and-parser | CP033–CP036 diterima | completed (review corrections: normalized spans + conservative ambiguous-column exclusion; see `logs/cp030_completion-log_text-and-pdf-parser.md`; dependency exception unchanged) |
-| CP031 | import-ai-merge-and-write | CP030 | completed (five review findings corrected across CP030/CP031; entity-context/qualifier/overflow gates recorded in `logs/cp031_completion-log_split-import-model.md`; dependency exception and other statuses unchanged) |
-| CP032 | import-ui-and-e2e | CP031 | in_progress (working selesai, E2E import hijau, live check 6 impor ~US$0.0007, gate hijau 2026-11-11; menunggu review) |
+| CP031 | import-ai-merge-and-write | CP030 | completed (revision gate: private scalar review, rejected-AI diagnostics, mode applicability, replay/transaction/retention, 40 text assertions, 12 layout PDFs and 5/5 safety mutations pass; Linux unavailable, no live AI; see completion log) |
+| CP032 | import-ui-and-e2e | CP031 | completed (revision UI/E2E gates pass on Windows: 5 modes, text/PDF, review/privacy, 390/1280 visual; build+release validation pass; Linux/live AI not claimed; see `logs/cp032_completion-log_import-review-hardening.md`) |
 | CP037 | create-flow-three-steps | CP032 | completed (revisi audit 2026-11-12, gate hijau; diterima owner 2026-11-12) |
 | SI1 | activity-mode-web-2.2.0 | CP037 | in_progress (plan `plans/si_plan_site-integration-private-and-driver-urls.md` §4) |
 | CP029 | laravel-saas-integration | CP032 + kesiapan SaaS Laravel | pending (deferred — last) |

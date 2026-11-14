@@ -16,7 +16,7 @@ const extractor: ImportExtractor = {
   credentialState: 'configured',
   async extract(request: ImportExtractRequest) {
     const joined = request.segments.join('\n');
-    const reply = joined.includes(SUMMARY_QUOTE) ? { summary: { value: SUMMARY_QUOTE, quote: SUMMARY_QUOTE } } : {};
+    const reply = joined.includes('Review usulan tertentu.') ? { summary: { value: 'Pernyataan tanpa bukti.', quote: 'Pernyataan tanpa bukti.' } } : joined.includes(SUMMARY_QUOTE) ? { summary: { value: SUMMARY_QUOTE, quote: SUMMARY_QUOTE } } : {};
     return { text: JSON.stringify(reply), usage: { promptTokens: 120, completionTokens: 40, costUsd: 0.0002 } };
   }
 };
@@ -46,7 +46,7 @@ async function main() {
   const bodyText = () => page.evaluate(() => document.body.innerText);
   const waitText = (text: string) => page.waitForFunction(expected => document.body.innerText.includes(expected), { timeout: 20000 }, text);
   const status = () => page.evaluate(() => document.querySelector('[role="status"]')?.textContent ?? '');
-  const waitStatus = (text: string) => page.waitForFunction(expected => document.querySelector('[role="status"]')?.textContent?.includes(expected), { timeout: 20000 }, text);
+  const waitStatus = async (text: string) => { try { await page.waitForFunction(expected => document.querySelector('[role="status"]')?.textContent?.includes(expected), { timeout: 20000 }, text); } catch (cause) { throw new Error(`Expected status ${text}; actual: ${await status()}; body: ${(await bodyText()).slice(-1800)}`, { cause }); } };
   const title = () => page.evaluate(() => document.querySelector('h2.text-xl')?.textContent ?? '');
   async function clickText(text: string, { tag = 'button' }: { tag?: string } = {}) {
     await page.waitForFunction((expected, selectorTag) => [...document.querySelectorAll<HTMLElement>(selectorTag)].some(item => item.textContent?.trim() === expected && !item.hasAttribute('disabled')), { timeout: 20000 }, text, tag);
@@ -76,7 +76,9 @@ async function main() {
   /** Create flow (CP037): step 1 picks the type, step 2 picks the method. */
   async function startCreate(mode: string, method: 'paste' | 'pdf') {
     await clickText('Buat itinerary baru');
+    try { await page.waitForSelector(`[data-mode-card="${mode}"]`, { visible: true }); } catch (cause) { throw new Error(`create ${mode}: ${(await bodyText()).slice(0, 2500)}`, { cause }); }
     await page.click(`[data-mode-card="${mode}"]`);
+    await page.waitForSelector(`[data-method="${method}"]`, { visible: true });
     await page.click(`[data-method="${method}"]`);
   }
   async function pasteAndProcess(name: string, mode = 'half_day', expectedTitle?: string) {
@@ -96,6 +98,60 @@ async function main() {
 
   try {
     await page.goto(origin); await waitStatus('Engine tersambung');
+
+    // Private review: explicit source alternatives, revision-safe selection, reload and mobile layout.
+    await startCreate('full_day', 'paste');
+    await page.waitForSelector('#import-text');
+    await setTextarea('Trip review\nDestinasi: Bali\nDestinasi: Lombok\nHari 1\n09:00 Museum');
+    await clickText('Baca teks');
+    await clickText('Lihat hasil baca');
+    await waitText('konflik perlu dipilih');
+    await clickText('Proses');
+    await waitStatus('Draf baru dari import tersimpan');
+    await waitText('Pilih Lombok');
+    assert.match(await bodyText(), /baris 2:.*Destinasi: Bali/s);
+    await screenshot('cp032-review-390.png', 390);
+    await screenshot('cp032-review-1280.png', 1280);
+    await clickText('Pilih Lombok');
+    await waitStatus('Review tersimpan');
+    await waitText('diselesaikan');
+    const reviewedList = (await app.inject({ url: '/api/v1/itineraries' })).json().items as Array<{ id: string; title: string }>;
+    const reviewed = reviewedList.find((item) => item.title === 'Trip review');
+    assert.ok(reviewed);
+    const savedReview = (await app.inject({ url: `/api/v1/imports/operations?itineraryId=${reviewed.id}` })).json();
+    assert.equal(savedReview.operation.report.review.candidates[0].status, 'resolved');
+    const destination = await page.$eval<HTMLInputElement, string>('[data-field-path="trip.destination"]', (node) => node.value);
+    assert.equal(destination, 'Lombok');
+    await startCreate('full_day', 'paste');
+    await page.waitForSelector('#import-text');
+    await setTextarea('Trip konflik usang\nDestinasi: Bali\nDestinasi: Lombok\nHari 1\n09:00 Museum');
+    await clickText('Baca teks'); await clickText('Lihat hasil baca'); await clickText('Proses');
+    await waitStatus('Draf baru dari import tersimpan'); await waitText('Pilih Lombok');
+    const staleList = (await app.inject({ url: '/api/v1/itineraries' })).json().items as Array<{ id: string; title: string }>;
+    const staleItem = staleList.find((item) => item.title === 'Trip konflik usang');
+    assert.ok(staleItem);
+    const before = (await app.inject({ url: `/api/v1/itineraries/${staleItem.id}` })).json();
+    const changed = await app.inject({ method: 'PATCH', url: `/api/v1/itineraries/${staleItem.id}`, headers: { origin, 'x-engine-request': '1', 'content-type': 'application/json' }, payload: { expectedRevision: before.revision, draftContent: before.draftContent, languageContext: before.languageContext, writingContext: before.writingContext } });
+    assert.equal(changed.statusCode, 200, changed.body);
+    await clickText('Pilih Lombok'); await waitText('Draf sudah berubah sejak dibuka.');
+    assert.equal((await app.inject({ url: `/api/v1/itineraries/${staleItem.id}` })).json().draftContent.trip.destination, '', 'stale review must not mutate the draft');
+    await page.reload(); await waitStatus('Engine tersambung');
+    await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent?.includes('Trip review')), { timeout: 20000 });
+    await page.evaluate(() => [...document.querySelectorAll('button')].find(button => button.textContent?.includes('Trip review'))?.click());
+    await waitStatus('Draft dibuka'); await waitText('diselesaikan');
+    assert.equal(await page.$eval<HTMLInputElement, string>('[data-field-path="trip.destination"]', node => node.value), 'Lombok');
+    await startCreate('full_day', 'paste'); await page.waitForSelector('#import-text');
+    await setTextarea('Review AI\nHari 1\n09:00 Museum\nReview usulan tertentu.');
+    await clickText('Baca teks'); await clickText('Lihat hasil baca'); await clickText('Proses');
+    await waitStatus('Draf baru dari import tersimpan');
+    await page.waitForFunction(() => [...document.querySelectorAll('summary')].some(element => element.textContent?.includes('Usulan AI yang ditolak')));
+    await page.evaluate(() => [...document.querySelectorAll('summary')].find(element => element.textContent?.includes('Usulan AI yang ditolak'))?.click());
+    await waitText('Pernyataan tanpa bukti.'); await waitText('Usulan, bukan fakta');
+    await screenshot('cp032-rejected-ai-390.png', 390);
+    await screenshot('cp032-rejected-ai-1280.png', 1280);
+    const aiItem = (await app.inject({ url: '/api/v1/itineraries' })).json().items.find((item: { title: string }) => item.title === 'Review AI');
+    assert.ok(aiItem);
+    assert.notEqual((await app.inject({ url: `/api/v1/itineraries/${aiItem.id}` })).json().draftContent.summary, 'Pernyataan tanpa bukti.');
 
     // 1. Paste import for the half-day fixture: the report appears and missing required fields are listed.
     await startCreate('half_day', 'paste');
@@ -125,8 +181,23 @@ async function main() {
     await pasteAndProcess('id-full-day-tidy.txt', 'full_day', 'Tur Ubud dan Tegallalang');
     await pasteAndProcess('id-multi-day-3.txt', 'multi_day', 'Liburan Bali 3 Hari 2 Malam');
     await pasteAndProcess('id-destination-guide.txt', 'destination_guide', 'Panduan Yogyakarta');
+    await pasteAndProcess('id-activity-rafting.txt', 'activity');
 
-    // 3. Text-layer PDF.
+    // 3. Text-layer PDF in every mode; the full-day case last supplies the draft used below.
+    for (const [mode, filename] of [['half_day', 'en-half-day-messy.pdf'], ['multi_day', 'id-multi-day-3.pdf'], ['destination_guide', 'id-destination-guide.pdf'], ['activity', 'id-activity-rafting.pdf']]) {
+      await startCreate(mode, 'pdf');
+      const input = await page.waitForSelector('input#import-pdf') as import('puppeteer').ElementHandle<HTMLInputElement>;
+      await input.uploadFile(path.join(FIXTURES, filename));
+      await clickText('Baca PDF'); await clickText('Lihat hasil baca'); await clickText('Proses');
+      await waitStatus('Draf baru dari import tersimpan');
+      await waitText('Hasil import');
+    }
+    // Cross-mode source: mode-inapplicable meeting facts are reported, not written or fatal.
+    await startCreate('destination_guide', 'pdf');
+    const crossModePdf = await page.waitForSelector('input#import-pdf') as import('puppeteer').ElementHandle<HTMLInputElement>;
+    await crossModePdf.uploadFile(path.join(FIXTURES, 'id-full-day-tidy.pdf'));
+    await clickText('Baca PDF'); await clickText('Lihat hasil baca'); await clickText('Proses');
+    try { await page.waitForFunction(() => !document.querySelector('#import-pdf') && document.body.innerText.includes('tidak berlaku untuk mode panduan destinasi'), { timeout: 20000 }); } catch (cause) { throw new Error(`cross-mode import: ${(await bodyText()).slice(-2000)}`, { cause }); }
     await startCreate('full_day', 'pdf');
     const pdfInput = await page.waitForSelector('input#import-pdf') as import('puppeteer').ElementHandle<HTMLInputElement>;
     await pdfInput.uploadFile(path.join(FIXTURES, 'id-full-day-tidy.pdf'));
@@ -202,7 +273,7 @@ async function main() {
     assert.equal(external.length, 0, 'the browser made no external request');
     assert.equal(failures.length, 0, `console errors: ${failures.join(' | ')}`);
 
-    const summary = { modes: ['half_day', 'full_day', 'multi_day', 'destination_guide'], pdfText: true, scanRejected: true, overwriteUndo: true, importWaitsForSave: true, publishedNoSource: true, externalRequests: external.length, consoleErrors: failures.length };
+    const summary = { modes: ['half_day', 'full_day', 'multi_day', 'destination_guide', 'activity'], conflictReview: true, pdfText: true, scanRejected: true, overwriteUndo: true, importWaitsForSave: true, publishedNoSource: true, externalRequests: external.length, consoleErrors: failures.length };
     await writeFile(path.join(evidenceDir, 'verification-summary.json'), JSON.stringify(summary, null, 2));
     console.log(JSON.stringify(summary));
   } finally {

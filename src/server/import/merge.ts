@@ -46,7 +46,7 @@ export function mergeContent(saved: WebItineraryContent, input: MergeInput): Mer
   if (parse.fields.trip.title) set('trip.title', () => { content.trip.title = parse.fields.trip.title!; });
   if (parse.fields.trip.destination) set('trip.destination', () => { content.trip.destination = parse.fields.trip.destination!; });
   if (parse.fields.trip.country) set('trip.country', () => { content.trip.country = parse.fields.trip.country!; });
-  if (parse.fields.trip.startDate) set('trip.startDate', () => { content.trip.startDate = parse.fields.trip.startDate!; });
+  if (parse.fields.trip.startDate && mode !== 'destination_guide') set('trip.startDate', () => { content.trip.startDate = parse.fields.trip.startDate!; });
   if (input.locale) set('trip.language', () => { content.trip.language = input.locale; });
 
   if (parse.fields.guide.name || parse.fields.guide.phone) {
@@ -59,9 +59,11 @@ export function mergeContent(saved: WebItineraryContent, input: MergeInput): Mer
   }
 
   const meeting = parse.fields.meeting;
-  if (meeting.place) set('meeting.place', () => { content.meeting.place = meeting.place!; });
-  if (meeting.time) set('meeting.time', () => { content.meeting.time = meeting.time!; });
-  if (meeting.mapsUrl) set('meeting.mapsUrl', () => { content.meeting.mapsUrl = meeting.mapsUrl!; });
+  if (mode !== 'destination_guide') {
+    if (meeting.place) set('meeting.place', () => { content.meeting.place = meeting.place!; });
+    if (meeting.time) set('meeting.time', () => { content.meeting.time = meeting.time!; });
+    if (meeting.mapsUrl) set('meeting.mapsUrl', () => { content.meeting.mapsUrl = meeting.mapsUrl!; });
+  }
 
   for (const list of ['included', 'notIncluded', 'whatToBring', 'notSuitableFor', 'notAllowed', 'localTips'] as const) {
     const items = parse.fields.lists[list];

@@ -10,6 +10,27 @@ export async function sweepImportSources(store: ReturnType<typeof openStore>, da
   const rows = store.db.prepare('SELECT id FROM import_sources WHERE workspace_id=? AND created_at<?').all(store.workspaceId, cutoff) as Array<{ id: string }>;
   for (const row of rows) {
     if (!/^[A-Za-z0-9-]+$/.test(row.id)) continue;
+    // Older reports stored accepted source quotes inline. Remove those copies as
+    // well as the source sidecars; line references and the draft remain intact.
+    const reports = store.db.prepare('SELECT operation_id, report_json FROM import_operations WHERE workspace_id=? AND source_id=? AND report_json IS NOT NULL').all(store.workspaceId, row.id) as Array<{ operation_id: string; report_json: string }>;
+    for (const item of reports) {
+      let report: any;
+      try { report = JSON.parse(item.report_json); } catch { continue; }
+      let changed = false;
+      for (const part of [report, report?._replay?.report]) {
+        if (Array.isArray(part?.review?.rejectedProposals)) {
+          for (const candidate of part.review.rejectedProposals) {
+            if (candidate && typeof candidate === 'object') {
+              if ('value' in candidate) { delete candidate.value; changed = true; }
+              if ('quote' in candidate) { delete candidate.quote; changed = true; }
+            }
+          }
+        }
+        if (!Array.isArray(part?.evidence?.accepted)) continue;
+        for (const reference of part.evidence.accepted) if (reference && typeof reference === 'object' && 'quote' in reference) { delete reference.quote; changed = true; }
+      }
+      if (changed) store.db.prepare('UPDATE import_operations SET report_json=? WHERE operation_id=? AND workspace_id=?').run(JSON.stringify(report), item.operation_id, store.workspaceId);
+    }
     await Promise.all([
       rm(path.join(dataDir, 'imports', `${row.id}.txt`), { force: true }),
       rm(path.join(dataDir, 'imports', `${row.id}.layout.json`), { force: true })

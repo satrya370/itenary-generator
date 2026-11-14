@@ -27,6 +27,7 @@
     "test:web-ai": "tsx --test tests/web/ai*.test.ts",
     "verify:web-import-live": "tsx scripts/web/verify-import-live.ts",
     "verify:web-import": "tsx scripts/web/verify-import.ts",
+    "verify:web-import-mutations": "tsx scripts/web/verify-import-mutations.ts",
     "verify:web-places": "tsx scripts/web/verify-places.ts",
     "verify:web-editor": "tsx scripts/web/verify-editor.ts",
     "verify:web-preview": "tsx scripts/web/verify-preview.ts",

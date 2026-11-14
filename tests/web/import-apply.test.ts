@@ -225,6 +225,23 @@ test('a duplicated activity title on two days is dropped from the model reply in
   assert.ok(body.report.skipped.some((item: { path: string }) => item.path.includes('[Ubud]')));
 });
 
+test('destination-guide import reports mode-inapplicable meeting facts instead of invalidating draft', async (t) => {
+  const app = await fixture(t, double([]).extractor);
+  const text = 'Panduan Bali\nDestinasi: Bali\nTanggal: 2026-12-20\nTitik kumpul: Hotel Melati https://maps.app.goo.gl/abc\nJam kumpul: 08:00';
+  const created = await apply(app, await source(app, text), { operationId: op(), target: 'new', mode: 'destination_guide', outputLanguage: 'id' });
+  assert.equal(created.statusCode, 201, created.body);
+  const body = created.json();
+  assert.equal(body.itinerary.draftContent.meeting.place, null);
+  assert.equal(body.itinerary.draftContent.meeting.mapsUrl, null);
+  assert.equal(body.itinerary.draftContent.meeting.time, null);
+  assert.equal(body.itinerary.draftContent.trip.startDate, null);
+  assert.ok(body.report.notes.some((note: string) => note.includes('Tanggal mulai tidak berlaku')));
+  for (const key of ['place', 'mapsUrl', 'time']) assert.ok(body.report.notes.some((note: string) => note.includes(`(${key})`)), key);
+  const overwrite = await apply(app, await source(app, text), { operationId: op(), target: 'overwrite', itineraryId: body.itinerary.id, expectedRevision: body.itinerary.revision, outputLanguage: 'id' });
+  assert.equal(overwrite.statusCode, 200, overwrite.body);
+  assert.equal(overwrite.json().itinerary.draftContent.meeting.place, null);
+});
+
 test('activity detail must quote a complete source unit from its explicit target context', async (t) => {
   const d = double([JSON.stringify({ activityDetails: [{ targetId: 'activity-1-3', title: 'Museum', description: { value: 'A quiet gallery beside the river.', quote: 'A quiet gallery beside the river.' }, place: null, tip: null }] })]);
   const app = await fixture(t, d.extractor);
@@ -325,6 +342,89 @@ test('partial overwrite schedule is preserved instead of replacing or mixing day
   assert.ok(body.report.retainedCollections.includes('days'));
 });
 
+test('private conflict review revalidates source, candidate and revision before applying a selected value', async (t) => {
+  const app = await fixture(t, double([]).extractor);
+  const sourceId = await source(app, 'Trip\nDestinasi: Bali\nDestinasi: Lombok\nHari 1\n09:00 Museum');
+  const created = (await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'full_day', outputLanguage: 'id' })).json();
+  const url = `/api/v1/imports/operations/${created.operationId}/resolve`;
+  assert.deepEqual(created.report.review.candidates[0].lines, [2, 3]);
+  const invalid = await app.inject({ method: 'POST', url, headers, payload: { expectedRevision: created.itinerary.revision, candidateId: 'conflict-1', action: 'select', line: 1 } });
+  assert.equal(invalid.statusCode, 422);
+  const response = await app.inject({ method: 'POST', url, headers, payload: { expectedRevision: created.itinerary.revision, candidateId: 'conflict-1', action: 'select', line: 3 } });
+  assert.equal(response.statusCode, 200, response.body);
+  assert.equal(response.json().itinerary.draftContent.trip.destination, 'Lombok');
+  assert.equal(response.json().report.review.candidates[0].decision.provenance, 'source');
+  const again = await app.inject({ method: 'POST', url, headers, payload: { expectedRevision: created.itinerary.revision, candidateId: 'conflict-1', action: 'select', line: 2 } });
+  assert.equal(again.statusCode, 409);
+});
+
+test('private conflict review rejects stale draft revisions and labels edits as manual', async (t) => {
+  const app = await fixture(t, double([]).extractor);
+  const sourceId = await source(app, 'Trip\nDestinasi: Bali\nDestinasi: Lombok\nHari 1\n09:00 Museum');
+  const created = (await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'full_day', outputLanguage: 'id' })).json();
+  const url = `/api/v1/imports/operations/${created.operationId}/resolve`;
+  const stale = await app.inject({ method: 'POST', url, headers, payload: { expectedRevision: created.itinerary.revision + 1, candidateId: 'conflict-1', action: 'edit', value: 'Ubud' } });
+  assert.equal(stale.statusCode, 409);
+  const edited = await app.inject({ method: 'POST', url, headers, payload: { expectedRevision: created.itinerary.revision, candidateId: 'conflict-1', action: 'edit', value: 'Ubud' } });
+  assert.equal(edited.statusCode, 200, edited.body);
+  assert.equal(edited.json().itinerary.draftContent.trip.destination, 'Ubud');
+  assert.equal(edited.json().report.review.candidates[0].decision.provenance, 'manual');
+});
+
+test('private review ignores a candidate without treating it as source evidence', async (t) => {
+  const app = await fixture(t, double([]).extractor);
+  const sourceId = await source(app, 'Trip\nDestinasi: Bali\nDestinasi: Lombok\nHari 1\n09:00 Museum');
+  const created = (await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'full_day', outputLanguage: 'id' })).json();
+  const url = `/api/v1/imports/operations/${created.operationId}/resolve`;
+  const forged = await app.inject({ method: 'POST', url, headers, payload: { expectedRevision: created.itinerary.revision, candidateId: 'conflict-1', action: 'select', line: 3, quote: 'forged' } });
+  assert.equal(forged.statusCode, 400);
+  const ignored = await app.inject({ method: 'POST', url, headers, payload: { expectedRevision: created.itinerary.revision, candidateId: 'conflict-1', action: 'ignore' } });
+  assert.equal(ignored.statusCode, 200, ignored.body);
+  assert.equal(ignored.json().itinerary.draftContent.trip.destination, created.itinerary.draftContent.trip.destination);
+  assert.equal(ignored.json().report.review.candidates[0].decision.provenance, null);
+});
+
+test('private review fails closed after source removal or tampering and rejects unknown operations', async (t) => {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), 'review-source-'));
+  const app = await createApp({ dataDir, publicOrigin: origin, allowedOrigins: [origin], importExtractor: double([]).extractor });
+  t.after(async () => { await app.close(); await rm(dataDir, { recursive: true, force: true }); });
+  const sourceId = await source(app, 'Trip\nDestinasi: Bali\nDestinasi: Lombok\nHari 1\n09:00 Museum');
+  const created = (await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'full_day', outputLanguage: 'id' })).json();
+  const url = `/api/v1/imports/operations/${created.operationId}/resolve`;
+  const payload = { expectedRevision: created.itinerary.revision, candidateId: 'conflict-1', action: 'select', line: 2 };
+  const sourceFile = path.join(dataDir, 'imports', `${sourceId}.txt`);
+  const { writeFile } = await import('node:fs/promises');
+  await writeFile(sourceFile, 'Trip\nDestinasi: forged');
+  assert.equal((await app.inject({ method: 'POST', url, headers, payload })).statusCode, 409);
+  await rm(sourceFile);
+  assert.equal((await app.inject({ method: 'POST', url, headers, payload })).statusCode, 404);
+  assert.equal((await app.inject({ method: 'POST', url: `/api/v1/imports/operations/${op()}/resolve`, headers, payload })).statusCode, 404);
+});
+
+test('apply fails closed before provider dispatch when retained text differs from its intake hash', async (t) => {
+  const d = double([JSON.stringify({ summary: { value: 'Invented.', quote: 'Invented.' } })]);
+  const app = await fixture(t, d.extractor);
+  const sourceId = await source(app, 'Hari 1\n09:00 Museum');
+  const sourceFile = path.join((app as unknown as { store: { dataDir: string } }).store.dataDir, 'imports', `${sourceId}.txt`);
+  const { writeFile } = await import('node:fs/promises');
+  await writeFile(sourceFile, 'Hari 1\n09:00 Changed museum');
+  const response = await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'full_day', outputLanguage: 'id' });
+  assert.equal(response.statusCode, 409);
+  assert.equal(response.json().error.code, 'IMPORT_SOURCE_CHANGED');
+  assert.equal(d.calls.length, 0);
+  assert.equal((await app.inject({ url: '/api/v1/itineraries' })).json().items.length, 0);
+});
+
+test('private conflict review cannot resolve an operation owned by a different workspace', async (t) => {
+  const app = await fixture(t, double([]).extractor);
+  const sourceId = await source(app, 'Trip\nDestinasi: Bali\nDestinasi: Lombok\nHari 1\n09:00 Museum');
+  const created = (await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'full_day', outputLanguage: 'id' })).json();
+  const store = (app as unknown as { store: { db: { prepare(sql: string): { run(...args: unknown[]): unknown } } } }).store;
+  store.db.prepare('UPDATE import_operations SET workspace_id=? WHERE operation_id=?').run('different-workspace', created.operationId);
+  const response = await app.inject({ method: 'POST', url: `/api/v1/imports/operations/${created.operationId}/resolve`, headers, payload: { expectedRevision: created.itinerary.revision, candidateId: 'conflict-1', action: 'select', line: 2 } });
+  assert.equal(response.statusCode, 404);
+});
+
 test('batching preserves later source lines after the first 20,000 characters', async (t) => {
   const d = double([JSON.stringify({})]);
   const app = await fixture(t, d.extractor);
@@ -373,6 +473,18 @@ test('the same operationId replays the stored result without a second model call
   assert.equal(replay.statusCode, 200);
   assert.equal(replay.json().itinerary.id, first.itinerary.id, 'no second draft');
   assert.equal(d.calls.length, 1, 'no second model call');
+  const mismatch = await apply(app, sourceId, { operationId: key, target: 'new', mode: 'activity', outputLanguage: 'id' });
+  assert.equal(mismatch.statusCode, 409);
+  const anotherSource = await source(app, 'Sumber berbeda');
+  assert.equal((await apply(app, anotherSource, { operationId: key, target: 'new', mode: 'full_day', outputLanguage: 'id' })).statusCode, 409);
+  const changedDraft = structuredClone(first.itinerary.draftContent);
+  changedDraft.trip.destination = 'Changed after import';
+  const changed = await app.inject({ method: 'PATCH', url: `/api/v1/itineraries/${first.itinerary.id}`, headers, payload: { expectedRevision: first.itinerary.revision, draftContent: changedDraft, languageContext: first.itinerary.languageContext, writingContext: first.itinerary.writingContext } });
+  assert.equal(changed.statusCode, 200);
+  const originalReplay = await apply(app, sourceId, { operationId: key, target: 'new', mode: 'full_day', outputLanguage: 'id' });
+  assert.deepEqual(originalReplay.json().itinerary, first.itinerary);
+  assert.deepEqual(originalReplay.json().report, first.report);
+  assert.equal(d.calls.length, 1);
 });
 
 test('one import in flight: a second import while the first waits on the model answers IMPORT_BUSY', async (t) => {
@@ -387,6 +499,32 @@ test('one import in flight: a second import while the first waits on the model a
   assert.equal(second.json().error.code, 'IMPORT_BUSY');
   d.let();
   assert.equal((await first).statusCode, 201);
+});
+
+test('operation completion failure rolls back the draft write', async (t) => {
+  const app = await fixture(t, double([]).extractor);
+  const sourceId = await source(app, 'Trip\nDestinasi: Bali\nHari 1\n09:00 Museum');
+  const store = (app as unknown as { store: { db: { exec(sql: string): void } } }).store;
+  store.db.exec("CREATE TRIGGER fail_import_completion BEFORE UPDATE OF status ON import_operations WHEN NEW.status='completed' BEGIN SELECT RAISE(ABORT, 'test completion failure'); END");
+  const before = (await app.inject({ url: '/api/v1/itineraries' })).json().items.length;
+  const result = await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'full_day', outputLanguage: 'id' });
+  assert.equal(result.statusCode, 500);
+  assert.equal((await app.inject({ url: '/api/v1/itineraries' })).json().items.length, before);
+});
+
+test('undo ledger failure rolls back the restored draft', async (t) => {
+  const app = await fixture(t, double([]).extractor);
+  const existing = (await app.inject({ method: 'POST', url: '/api/v1/itineraries', headers, payload: { mode: 'half_day' } })).json();
+  const sourceId = await source(app, 'Perjalanan baru\nDestinasi: Bali\n09:00 Museum');
+  const key = op();
+  const applied = (await apply(app, sourceId, { operationId: key, target: 'overwrite', itineraryId: existing.id, expectedRevision: existing.revision, outputLanguage: 'id' })).json();
+  const store = (app as unknown as { store: { db: { exec(sql: string): void } } }).store;
+  store.db.exec("CREATE TRIGGER fail_undo BEFORE UPDATE OF undone_at ON import_operations BEGIN SELECT RAISE(ABORT, 'test undo failure'); END");
+  const response = await app.inject({ method: 'POST', url: `/api/v1/imports/operations/${key}/undo`, headers, payload: { expectedRevision: applied.itinerary.revision } });
+  assert.equal(response.statusCode, 500);
+  const after = (await app.inject({ url: `/api/v1/itineraries/${existing.id}` })).json();
+  assert.deepEqual(after, applied.itinerary);
+  assert.equal((await app.inject({ url: `/api/v1/imports/operations?itineraryId=${existing.id}` })).json().operation.undoAvailable, true);
 });
 
 test('a run that was interrupted is marked uncertain on the next start, and its operationId cannot be replayed', async (t) => {
@@ -462,6 +600,9 @@ test('a model value that is only part of a sentence quote is dropped, and engine
   assert.equal(content.policies, null);
   assert.notEqual(content.summary, '[summary] Perjalanan santai di Ubud.');
   assert.ok(!content.summary.includes('['));
+  const proposals = response.json().report.review.rejectedProposals;
+  assert.ok(proposals.some((item: { path: string; value: string }) => item.path === 'policies' && item.value === 'termasuk tiket masuk'));
+  assert.equal(response.json().report.review.candidates.some((item: { path: string }) => item.path === 'policies'), false, 'unsafe AI output must not become an actionable source candidate');
 });
 
 test('a new import does not copy the source into the writing brief', async (t) => {

@@ -17,7 +17,7 @@ export interface ParsedActivity { time: string | null; durationMinutes: number |
 export interface ParsedDay { dayNumber: number; title: string | null; activities: ParsedActivity[]; line: number }
 export interface UnconsumedLine { index: number; text: string; section: string | null }
 export interface ParseDiagnostic { code: 'PARSER_NOTE' | 'UNCONSUMED_TEXT'; line?: number; message: string }
-export interface ParseConflict { path: string; values: string[]; line: number; message: string }
+export interface ParseConflict { path: string; values: string[]; line: number; message: string; occurrences: Array<{ value: string; line: number }> }
 /** What the activity mode reads from the text (web-2.2.0). Empty for every other mode. */
 export interface ParsedActivityMode {
   category?: ActivityCategory; durationMinutes?: number; sessionTimes: string[]; difficulty?: ActivityDifficulty;
@@ -65,6 +65,7 @@ export function parseDocument(text: string, mode: ItineraryMode, excludedLines: 
   let multiDayNoted = false;
   let dayIndex: number | null = null;
   const scalarConflicts = new Set<string>();
+  const scalarOccurrences = new Map<string, Array<{ value: string; line: number }>>();
 
   const keep = (line: SourceLine) => result.unconsumed.push({ index: line.index, text: line.text, section });
   const consume = () => { result.consumedLines += 1; };
@@ -129,7 +130,7 @@ export function parseDocument(text: string, mode: ItineraryMode, excludedLines: 
 
     if (line.kind === 'key-value' && line.label && line.value) {
       const key = keyFor(line.label);
-      if (key && handleKeyValue(result, key, line.value, line.index, scalarConflicts)) { consume(); continue; }
+      if (key && handleKeyValue(result, key, line.value, line.index, scalarConflicts, scalarOccurrences)) { consume(); continue; }
     }
 
     if (section === 'emergencyContacts' && line.kind === 'key-value' && line.label && line.value) {
@@ -192,11 +193,14 @@ export function parseDocument(text: string, mode: ItineraryMode, excludedLines: 
   return result;
 }
 
-function handleKeyValue(result: ParseResult, key: keyof typeof dict.keyValue, value: string, index: number, conflicts: Set<string>): boolean {
+function handleKeyValue(result: ParseResult, key: keyof typeof dict.keyValue, value: string, index: number, conflicts: Set<string>, occurrences: Map<string, Array<{ value: string; line: number }>>): boolean {
   const setScalar = (path: string, current: string | undefined, next: string, assign: () => void, clear: () => void, label: string) => {
+    const prior = occurrences.get(path) ?? [];
+    prior.push({ value: next, line: index + 1 });
+    occurrences.set(path, prior);
     if (conflicts.has(path)) {
       const conflict = result.conflicts.find((item) => item.path === path);
-      if (conflict && !conflict.values.includes(next)) conflict.values.push(next);
+      if (conflict) { if (!conflict.values.includes(next)) conflict.values.push(next); conflict.occurrences = [...prior]; }
       return;
     }
     if (!current) assign();
@@ -205,7 +209,7 @@ function handleKeyValue(result: ParseResult, key: keyof typeof dict.keyValue, va
       conflicts.add(path);
       const message = `Baris ${index + 1}: ${label} memiliki nilai berbeda lebih dari satu kali; pilih nilai yang benar secara manual.`;
       result.notes.push(message);
-      result.conflicts.push({ path, values: [current, next], line: index + 1, message });
+      result.conflicts.push({ path, values: [current, next], line: index + 1, message, occurrences: [...prior] });
     }
   };
   switch (key) {

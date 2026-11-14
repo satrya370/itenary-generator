@@ -73,7 +73,7 @@ export function registerImportRoutes(app: FastifyInstance, { store, dataDir, ser
     const pageForTextLine = layout ? buildPageLineMap(layout, text) : [];
     const unconsumed = parsed.unconsumed.map((line) => ({ ...line, pageNumber: pageForTextLine[line.index] ?? null }));
     const diagnostics = parsed.diagnostics.map((diagnostic) => ({ ...diagnostic, pageNumber: diagnostic.line ? pageForTextLine[diagnostic.line - 1] ?? null : undefined }));
-    const conflicts = parsed.conflicts.map((conflict) => ({ ...conflict, pageNumber: pageForTextLine[conflict.line - 1] ?? null }));
+    const conflicts = parsed.conflicts.map((conflict) => ({ ...conflict, pageNumber: pageForTextLine[conflict.line - 1] ?? null, occurrences: conflict.occurrences.map((item) => ({ ...item, pageNumber: pageForTextLine[item.line - 1] ?? null })) }));
     const pageDiagnostics = layout?.diagnostics ?? [];
     const pageCoverage = layout?.pages.map((page) => {
       const status = pageDiagnostics.some((item) => item.code === 'PDF_SOURCE_LAYOUT_STALE' || (item.pageNumber === page.pageNumber && item.code === 'PDF_LAYOUT_AMBIGUOUS')) ? 'ambiguous'
@@ -94,6 +94,11 @@ export function registerImportRoutes(app: FastifyInstance, { store, dataDir, ser
     const body = request.body && typeof request.body === 'object' ? request.body as Record<string, unknown> : {};
     if (Object.keys(body).some((key) => key !== 'expectedRevision') || !Number.isInteger(body.expectedRevision)) return reply.code(400).send(errorBody('INVALID_REQUEST', 'Kirim expectedRevision.', request.id));
     const result = service.undo(request.params.id, body.expectedRevision);
+    return reply.code(result.status).send(result.body);
+  });
+
+  app.post<{ Params: { id: string }; Body: unknown }>('/api/v1/imports/operations/:id/resolve', async (request, reply) => {
+    const result = await service.resolve(request.params.id, request.body);
     return reply.code(result.status).send(result.body);
   });
 

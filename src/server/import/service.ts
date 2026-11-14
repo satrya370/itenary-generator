@@ -1,4 +1,5 @@
 import type { openStore } from '../store.js';
+import { createHash } from 'node:crypto';
 import type { ImportExtractor } from '../ai/provider.js';
 import { validateDraft } from '../../contracts/validator.js';
 import type { ItineraryMode, WebItineraryContent } from '../../contracts/types.js';
@@ -26,6 +27,9 @@ const DROP_MESSAGES: Record<Dropped['code'], string> = {
   IMPORT_ENTITY_CONTEXT_MISMATCH: 'kutipan tidak berada dalam konteks tempat yang sama'
 };
 function error(status: number, code: string, message: string): ServiceResult { return { status, body: { error: { code, message } } }; }
+function requestFingerprint(sourceId: string, sourceHash: string, input: Record<string, unknown>): string {
+  return createHash('sha256').update(JSON.stringify(['import-replay-v1', 'parser-v1', 'extractor-v1', sourceId, sourceHash, input.target, input.mode ?? null, input.itineraryId ?? null, input.expectedRevision ?? null, input.outputLanguage ?? null])).digest('hex');
+}
 
 export class ImportService {
   private busy = false;
@@ -53,14 +57,20 @@ export class ImportService {
     const outputLanguage = input.outputLanguage === undefined || input.outputLanguage === null ? null : String(input.outputLanguage);
     if (outputLanguage && !LOCALES.has(outputLanguage)) return error(422, 'INVALID_LANGUAGE', 'Bahasa tidak didukung.');
 
+    const source = store.db.prepare('SELECT language_json, sha256, kind FROM import_sources WHERE id=? AND workspace_id=?').get(sourceId, store.workspaceId) as { language_json: string; sha256: string; kind: string } | undefined;
     const replay = store.db.prepare('SELECT * FROM import_operations WHERE operation_id=? AND workspace_id=?').get(input.operationId, store.workspaceId) as Record<string, unknown> | undefined;
     if (replay) {
-      if (replay.status === 'completed') return { status: 200, body: { itinerary: store.getItinerary(String(replay.itinerary_id)), report: JSON.parse(String(replay.report_json)), usage: usageOf(replay), operationId: input.operationId, sourceId: String(replay.source_id), replayed: true } };
+      const savedReport = replay.report_json ? JSON.parse(String(replay.report_json)) : null;
+      if (!source || !savedReport?._replay || savedReport._replay.fingerprint !== requestFingerprint(sourceId, source.sha256, input)) return error(409, 'IMPORT_NOT_REPEATABLE', 'Permintaan tidak cocok dengan operasi sebelumnya; gunakan operationId baru.');
+      if (replay.status === 'completed') {
+        if (!savedReport._replay.itinerary) return error(409, 'IMPORT_NOT_REPEATABLE', 'Hasil asli tidak tersedia; mulai import baru.');
+        const { _replay } = savedReport;
+        return { status: 200, body: { itinerary: _replay.itinerary, report: _replay.report, usage: usageOf(replay), operationId: input.operationId, sourceId: String(replay.source_id), replayed: true } };
+      }
       if (replay.status === 'running') return error(409, 'IMPORT_BUSY', 'Import ini masih berjalan.');
       return error(409, 'IMPORT_NOT_REPEATABLE', 'Import dengan operationId ini sudah gagal; mulai dengan operationId baru.');
     }
 
-    const source = store.db.prepare('SELECT * FROM import_sources WHERE id=? AND workspace_id=?').get(sourceId, store.workspaceId) as { language_json: string } | undefined;
     if (!source) return error(404, 'NOT_FOUND', 'Sumber import tidak ditemukan.');
 
     let saved: ReturnType<Store['getItinerary']> = null;
@@ -79,15 +89,15 @@ export class ImportService {
     this.busy = true;
     const now = new Date().toISOString();
     try {
-      store.db.prepare("INSERT INTO import_operations(operation_id,workspace_id,source_id,itinerary_id,target,mode,status,previous_revision,ai_used,created_at,updated_at) VALUES(?,?,?,?,?,?,'running',?,0,?,?)")
-        .run(input.operationId, store.workspaceId, sourceId, saved?.id ?? null, target, mode, saved?.revision ?? null, now, now);
+      store.db.prepare("INSERT INTO import_operations(operation_id,workspace_id,source_id,itinerary_id,target,mode,status,previous_revision,ai_used,report_json,created_at,updated_at) VALUES(?,?,?,?,?,?,'running',?,0,?,?,?)")
+        .run(input.operationId, store.workspaceId, sourceId, saved?.id ?? null, target, mode, saved?.revision ?? null, JSON.stringify({ _replay: { fingerprint: requestFingerprint(sourceId, source.sha256, input) } }), now, now);
     } catch (cause) {
       this.busy = false;
       if (cause instanceof Error && /UNIQUE/i.test(cause.message)) return error(409, 'IMPORT_NOT_REPEATABLE', 'operationId ini sudah dipakai; mulai dengan operationId baru.');
       throw cause;
     }
     try {
-      return await this.run({ input, target, mode, saved, outputLanguage, sourceLanguageJson: source.language_json, operationId: input.operationId, sourceId });
+      return await this.run({ input, target, mode, saved, outputLanguage, sourceLanguageJson: source.language_json, sourceHash: source.sha256, sourceKind: source.kind, operationId: input.operationId, sourceId });
     } catch (cause) {
       store.db.prepare("UPDATE import_operations SET status='failed', error_code='IMPORT_INTERNAL', updated_at=? WHERE operation_id=?").run(new Date().toISOString(), input.operationId);
       throw cause;
@@ -96,7 +106,7 @@ export class ImportService {
     }
   }
 
-  private async run(args: { input: Record<string, unknown>; target: 'new' | 'overwrite'; mode: ItineraryMode; saved: ReturnType<Store['getItinerary']>; outputLanguage: string | null; sourceLanguageJson: string; operationId: string; sourceId: string }): Promise<ServiceResult> {
+  private async run(args: { input: Record<string, unknown>; target: 'new' | 'overwrite'; mode: ItineraryMode; saved: ReturnType<Store['getItinerary']>; outputLanguage: string | null; sourceLanguageJson: string; sourceHash: string; sourceKind: string; operationId: string; sourceId: string }): Promise<ServiceResult> {
     const { store, dataDir, extractor } = this.deps;
     const { target, mode, saved, outputLanguage, operationId, sourceId } = args;
     const text = await readSourceTextOrNull(dataDir, sourceId);
@@ -105,11 +115,17 @@ export class ImportService {
       store.db.prepare("UPDATE import_operations SET status='failed', error_code=?, updated_at=? WHERE operation_id=?").run(SOURCE_TEXT_REMOVED_CODE, new Date().toISOString(), operationId);
       return error(404, SOURCE_TEXT_REMOVED_CODE, SOURCE_TEXT_REMOVED_MESSAGE);
     }
+    if (args.sourceKind === 'text' && createHash('sha256').update(text, 'utf8').digest('hex') !== args.sourceHash) {
+      store.db.prepare("UPDATE import_operations SET status='failed', error_code='IMPORT_SOURCE_CHANGED', updated_at=? WHERE operation_id=?").run(new Date().toISOString(), operationId);
+      return error(409, 'IMPORT_SOURCE_CHANGED', 'Teks sumber berubah setelah dibaca; buat intake baru sebelum import.');
+    }
     const layout = await readSourceLayoutOrNull(dataDir, sourceId);
     const parse = parseDocument(text, mode, layoutExcludedLines(layout, text));
     const { units } = segmentsOf(parse);
     const batchPlan = batchesOf(parse, units);
     const notes = [...parse.notes, ...(layout?.diagnostics.map((item) => item.message) ?? [])];
+    if (mode === 'destination_guide') for (const [field, value] of Object.entries(parse.fields.meeting)) if (value) notes.push(`Titik kumpul (${field}) tidak berlaku untuk mode panduan destinasi; fakta sumber tidak diterapkan, periksa teks sumber.`);
+    if (mode === 'destination_guide' && parse.fields.trip.startDate) notes.push('Tanggal mulai tidak berlaku untuk mode panduan destinasi; fakta sumber tidak diterapkan, periksa teks sumber.');
     const proposal = JSON.parse(args.sourceLanguageJson) as { status: string; locale: string | null };
     const profile = store.workspace().profile as { defaultCountry?: string; defaultLanguage?: string | null; guides?: Array<{ id: string; name: string; phone: string }> };
     const guides = profile.guides ?? [];
@@ -196,15 +212,19 @@ export class ImportService {
         : { requestedLanguage: 'auto', outputLanguage: null, source: 'unresolved' };
     const writing = target === 'overwrite' ? saved!.writingContext : { brief: '', notes: [] };
 
+    store.db.exec('BEGIN IMMEDIATE');
+    try {
     const record = target === 'new'
       ? store.createItinerary(checked.value, languageContext, writing)
       : store.updateItinerary(saved!.id, Number(args.input.expectedRevision), checked.value, languageContext, writing);
     if (!record) {
+      store.db.exec('ROLLBACK');
       store.db.prepare("UPDATE import_operations SET status='failed', error_code='REVISION_CONFLICT', updated_at=? WHERE operation_id=?").run(new Date().toISOString(), operationId);
       return error(409, 'REVISION_CONFLICT', 'Draf sudah berubah sejak dibuka. Muat ulang sebelum import.');
     }
     const report = {
       evidenceVersion: 1,
+      review: { version: 1, sourceTextHash: createHash('sha256').update(text).digest('hex'), candidates: parse.conflicts.map((conflict, index) => ({ id: `conflict-${index + 1}`, path: conflict.path, lines: conflict.occurrences.map((item) => item.line), status: 'pending' })).filter((item) => mode !== 'destination_guide' || !['date', 'meeting.place', 'meeting.mapsUrl'].includes(item.path)), unsupported: dropped.length + omittedUnits.length + (mode === 'destination_guide' ? parse.conflicts.filter((item) => ['date', 'meeting.place', 'meeting.mapsUrl'].includes(item.path)).length : 0), rejectedProposals: dropped.filter((item) => item.proposal).slice(0, 100).map((item, index) => ({ id: `rejected-${index + 1}`, path: item.path, reasonCode: item.code, ...item.proposal })) },
       aiBatches,
       aiAttempts,
       batches: batchResults,
@@ -215,13 +235,70 @@ export class ImportService {
       skipped: dropped.map((item) => ({ path: item.path, label: skippedLabel(item.path), message: DROP_MESSAGES[item.code] })),
       notes,
       sourceCount: { days: parse.fields.days.length, activities: parse.fields.days.reduce((n, d) => n + d.activities.length, 0), unconsumed: parse.unconsumed.length },
-      evidence: { accepted: acceptedEvidence, rejected: dropped.map((item) => ({ path: item.path, reasonCode: item.code })), omittedLineIndexes: [...new Set(unsent.map((unit) => unit.lineIndex))] }
+      evidence: { accepted: acceptedEvidence.map(({ quote: _quote, ...reference }) => reference), rejected: dropped.map((item) => ({ path: item.path, reasonCode: item.code })), omittedLineIndexes: [...new Set(unsent.map((unit) => unit.lineIndex))] }
     };
     const actualUsd = usage.actualUsd;
     store.db.prepare("UPDATE import_operations SET status='completed', itinerary_id=?, result_revision=?, previous_draft_json=?, previous_language_json=?, previous_writing_json=?, ai_used=?, prompt_tokens=?, completion_tokens=?, actual_usd=?, report_json=?, updated_at=? WHERE operation_id=?")
       .run(record.id, record.revision, target === 'overwrite' ? JSON.stringify(saved!.draftContent) : null, target === 'overwrite' ? JSON.stringify(saved!.languageContext) : null, target === 'overwrite' ? JSON.stringify(saved!.writingContext) : null,
-        aiUsed, usage.promptTokens, usage.completionTokens, actualUsd, JSON.stringify(report), new Date().toISOString(), operationId);
+        aiUsed, usage.promptTokens, usage.completionTokens, actualUsd, JSON.stringify({ ...report, _replay: { fingerprint: requestFingerprint(sourceId, args.sourceHash, args.input), itinerary: record, report } }), new Date().toISOString(), operationId);
+    store.db.exec('COMMIT');
     return { status: target === 'new' ? 201 : 200, body: { itinerary: record, report, usage: { aiUsed, promptTokens: usage.promptTokens, completionTokens: usage.completionTokens, actualUsd }, operationId, sourceId } };
+    } catch (cause) { store.db.exec('ROLLBACK'); throw cause; }
+  }
+
+  async resolve(operationId: string, body: unknown): Promise<ServiceResult> {
+    const { store, dataDir } = this.deps;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return error(400, 'INVALID_REQUEST', 'Kirim keputusan review.');
+    const input = body as Record<string, unknown>;
+    if (Object.keys(input).some((key) => !['expectedRevision', 'candidateId', 'action', 'line', 'value'].includes(key)) || !Number.isInteger(input.expectedRevision) || typeof input.candidateId !== 'string' || !['select', 'edit', 'ignore'].includes(String(input.action))) return error(400, 'INVALID_REQUEST', 'Keputusan review tidak valid.');
+    const row = store.db.prepare('SELECT * FROM import_operations WHERE operation_id=? AND workspace_id=?').get(operationId, store.workspaceId) as Record<string, unknown> | undefined;
+    if (!row || row.status !== 'completed' || row.undone_at) return error(404, 'NOT_FOUND', 'Operasi import tidak ditemukan.');
+    const report = JSON.parse(String(row.report_json));
+    const candidate = report.review?.version === 1 ? report.review.candidates.find((item: { id: string }) => item.id === input.candidateId) : null;
+    if (!candidate || candidate.status !== 'pending') return error(409, 'IMPORT_REVIEW_UNAVAILABLE', 'Kandidat tidak tersedia atau sudah diselesaikan.');
+    const text = await readSourceTextOrNull(dataDir, String(row.source_id));
+    if (text === null) return error(404, SOURCE_TEXT_REMOVED_CODE, SOURCE_TEXT_REMOVED_MESSAGE);
+    if (createHash('sha256').update(text).digest('hex') !== report.review.sourceTextHash) return error(409, 'IMPORT_SOURCE_CHANGED', 'Sumber berubah; mulai import ulang.');
+    const layout = await readSourceLayoutOrNull(dataDir, String(row.source_id));
+    const parsed = parseDocument(text, row.mode as ItineraryMode, layoutExcludedLines(layout, text));
+    const index = Number(String(candidate.id).replace(/^conflict-/, '')) - 1;
+    const conflict = parsed.conflicts[index];
+    if (!conflict || conflict.path !== candidate.path || JSON.stringify(conflict.occurrences.map((item) => item.line)) !== JSON.stringify(candidate.lines)) return error(409, 'IMPORT_REVIEW_UNAVAILABLE', 'Kandidat tidak lagi cocok dengan sumber.');
+    const current = store.getItinerary(String(row.itinerary_id));
+    if (!current || current.revision !== input.expectedRevision) return error(409, 'REVISION_CONFLICT', 'Draf sudah berubah sejak dibuka.');
+    const paths: Record<string, ['trip' | 'guide' | 'meeting', string]> = { destination: ['trip', 'destination'], country: ['trip', 'country'], date: ['trip', 'startDate'], guide: ['guide', 'name'], phone: ['guide', 'phone'], 'meeting.place': ['meeting', 'place'], 'meeting.mapsUrl': ['meeting', 'mapsUrl'] };
+    const target = paths[conflict.path];
+    if (!target) return error(422, 'IMPORT_REVIEW_UNSUPPORTED', 'Kandidat ini belum dapat diterapkan otomatis.');
+    let value: string | undefined;
+    if (input.action === 'select') {
+      if (!Number.isInteger(input.line)) return error(400, 'INVALID_REQUEST', 'Pilih baris sumber.');
+      value = conflict.occurrences.find((item) => item.line === input.line)?.value;
+      if (value === undefined) return error(422, 'IMPORT_REVIEW_UNSUPPORTED', 'Baris sumber bukan kandidat.');
+    } else if (input.action === 'edit') {
+      if (typeof input.value !== 'string' || !input.value.trim()) return error(400, 'INVALID_REQUEST', 'Isi nilai manual.');
+      value = input.value.trim();
+    }
+    const draft = structuredClone(current.draftContent as WebItineraryContent);
+    if (value !== undefined) (draft[target[0]] as unknown as Record<string, unknown>)[target[1]] = value;
+    const checked = validateDraft(draft);
+    if (!checked.ok) return error(422, 'IMPORT_DRAFT_INVALID', 'Nilai tidak sesuai aturan draf.');
+    store.db.exec('BEGIN IMMEDIATE');
+    try {
+      const fresh = store.db.prepare('SELECT status, undone_at, report_json FROM import_operations WHERE operation_id=? AND workspace_id=?').get(operationId, store.workspaceId) as { status: string; undone_at: string | null; report_json: string } | undefined;
+      if (!fresh || fresh.status !== 'completed' || fresh.undone_at || fresh.report_json !== row.report_json) {
+        store.db.exec('ROLLBACK');
+        return error(409, 'IMPORT_REVIEW_UNAVAILABLE', 'Operasi review sudah berubah; muat ulang.');
+      }
+      const updated = store.updateItinerary(current.id, Number(input.expectedRevision), checked.value, current.languageContext, current.writingContext);
+      if (!updated) { store.db.exec('ROLLBACK'); return error(409, 'REVISION_CONFLICT', 'Draf sudah berubah sejak dibuka.'); }
+      candidate.status = input.action === 'ignore' ? 'ignored' : 'resolved';
+      candidate.decision = { action: input.action, provenance: input.action === 'select' ? 'source' : input.action === 'edit' ? 'manual' : null, ...(input.action === 'select' ? { line: input.line } : {}) };
+      report.missingRequired = missingAfterImport(checked.value as WebItineraryContent);
+      store.db.prepare('UPDATE import_operations SET report_json=?, updated_at=? WHERE operation_id=? AND workspace_id=?').run(JSON.stringify(report), new Date().toISOString(), operationId, store.workspaceId);
+      store.db.exec('COMMIT');
+      const { _replay, ...visibleReport } = report;
+      return { status: 200, body: { itinerary: updated, report: visibleReport } };
+    } catch (cause) { store.db.exec('ROLLBACK'); throw cause; }
   }
 
   undo(operationId: string, expectedRevision: unknown): ServiceResult {
@@ -232,10 +309,14 @@ export class ImportService {
     if (row.target !== 'overwrite' || row.status !== 'completed' || row.undone_at) return unavailable();
     const current = store.getItinerary(String(row.itinerary_id));
     if (!current || current.revision !== row.result_revision || expectedRevision !== row.result_revision) return unavailable();
-    const restored = store.updateItinerary(current.id, current.revision, JSON.parse(String(row.previous_draft_json)), JSON.parse(String(row.previous_language_json)), JSON.parse(String(row.previous_writing_json)));
-    if (!restored) return unavailable();
-    store.db.prepare('UPDATE import_operations SET undone_at=?, updated_at=? WHERE operation_id=?').run(new Date().toISOString(), new Date().toISOString(), operationId);
-    return { status: 200, body: { itinerary: restored, undone: true } };
+    store.db.exec('BEGIN IMMEDIATE');
+    try {
+      const restored = store.updateItinerary(current.id, current.revision, JSON.parse(String(row.previous_draft_json)), JSON.parse(String(row.previous_language_json)), JSON.parse(String(row.previous_writing_json)));
+      if (!restored) { store.db.exec('ROLLBACK'); return unavailable(); }
+      store.db.prepare('UPDATE import_operations SET undone_at=?, updated_at=? WHERE operation_id=? AND workspace_id=?').run(new Date().toISOString(), new Date().toISOString(), operationId, store.workspaceId);
+      store.db.exec('COMMIT');
+      return { status: 200, body: { itinerary: restored, undone: true } };
+    } catch (cause) { store.db.exec('ROLLBACK'); throw cause; }
   }
 
   latest(itineraryId: string): ServiceResult {
@@ -244,7 +325,9 @@ export class ImportService {
     if (!row) return { status: 200, body: { operation: null } };
     const current = store.getItinerary(itineraryId);
     const undoAvailable = row.target === 'overwrite' && row.status === 'completed' && !row.undone_at && current?.revision === row.result_revision;
-    return { status: 200, body: { operation: { operationId: row.operation_id, sourceId: row.source_id, status: row.status, target: row.target, report: row.report_json ? JSON.parse(String(row.report_json)) : null, usage: usageOf(row), undoAvailable } } };
+    const storedReport = row.report_json ? JSON.parse(String(row.report_json)) : null;
+    if (storedReport) delete storedReport._replay;
+    return { status: 200, body: { operation: { operationId: row.operation_id, sourceId: row.source_id, status: row.status, target: row.target, report: storedReport, usage: usageOf(row), undoAvailable } } };
   }
 }
 

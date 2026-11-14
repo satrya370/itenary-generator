@@ -206,6 +206,29 @@ test('multi-page layout PDF keeps page geometry, repeated content, and source-pa
   assert.ok(applied.json().report.evidence.omittedLineIndexes.length > 0);
 });
 
+test('twelve generated layout PDFs preserve their unique source anchor through intake and dry-run parse', async (t) => {
+  const f = await fixture(t);
+  const cases = [
+    ['layout-case-01-two-columns.pdf', 'North column anchor'], ['layout-case-02-two-cell-table.pdf', 'Table row anchor'],
+    ['layout-case-03-three-cell-table.pdf', 'Three cell anchor'], ['layout-case-04-wrapped-cell.pdf', 'Wrapped description continues'],
+    ['layout-case-05-repeated-header.pdf', 'Repeated header anchor'], ['layout-case-06-page-continuation.pdf', 'Continuation page two anchor'],
+    ['layout-case-07-unequal-columns.pdf', 'Wide column anchor'], ['layout-case-08-independent-time-columns.pdf', 'Independent left anchor'],
+    ['layout-case-09-heading-column-order.pdf', 'Heading column anchor'], ['layout-case-10-bordered-schedule.pdf', 'Bordered schedule anchor'],
+    ['layout-case-11-three-prose-columns.pdf', 'First prose column anchor'], ['layout-case-12-page-day-boundary.pdf', 'Day two boundary anchor']
+  ];
+  for (const [filename, anchor] of cases) {
+    const intake = await f.app.inject(multipart('file', filename, await pdfOf(filename)));
+    assert.equal(intake.statusCode, 201, `${filename}: ${intake.body}`);
+    const id = intake.json().sourceId;
+    const sourceResult = await f.app.inject({ url: `/api/v1/imports/sources/${id}` });
+    assert.equal(sourceResult.statusCode, 200, `${filename} source read`);
+    assert.ok(sourceResult.json().text.includes(anchor), `${filename} must retain its unique source anchor`);
+    const parse = await f.app.inject({ method: 'POST', url: `/api/v1/imports/sources/${id}/parse`, headers, payload: { mode: 'full_day' } });
+    assert.equal(parse.statusCode, 200, `${filename} dry-run parse: ${parse.body}`);
+    assert.ok(parse.json().coverage.ratio <= 1, `${filename} coverage bounds`);
+  }
+});
+
 test('mixed text and sparse/image page is accepted only with a page-specific diagnostic', async (t) => {
   const f = await fixture(t);
   const response = await f.app.inject(multipart('file', 'mixed.pdf', await pdfOf('mixed-sparse-text-layer.pdf')));

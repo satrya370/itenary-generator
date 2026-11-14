@@ -13,10 +13,26 @@ import { fieldLabels, pathLabels } from '../../src/editor/labels.js';
 import { blankToNull, changeMode, ensureMeals, hasModeLoss, makeActivity, makeDay, makePlace, moveById, moveIndex, normalizeBlanks, normalizeHotel, setPhotoCredit, targetIdFor } from '../../src/editor/model.js';
 import { appliesTo, fieldMeta } from '../../src/editor/schema-meta.js';
 import { createContentV2 } from './fixtures-v2.js';
+import { ImportReport } from '../../src/editor/import/ImportReport.js';
+import type { ImportOperationDto, RecordDto } from '../../src/api/client.js';
 
 const MODES: ItineraryMode[] = ['half_day', 'full_day', 'multi_day', 'destination_guide'];
 const ALL_MODES: ItineraryMode[] = [...MODES, 'activity'];
 const noop = () => {};
+
+test('import report displays unknown AI usage honestly and supports legacy reports', () => {
+  const record: RecordDto = { id: 'draft', revision: 1, schemaVersion: 'web-2.2.0', draftContent: createContentV2('full_day'), languageContext: { requestedLanguage: 'auto', outputLanguage: null, source: 'unresolved' }, writingContext: { brief: '', notes: [] }, createdAt: '', updatedAt: '' };
+  const operation: ImportOperationDto = { operationId: 'operation', sourceId: 'source', status: 'completed', target: 'new', undoAvailable: false, usage: { aiUsed: 1, promptTokens: null, completionTokens: 10, actualUsd: null }, report: { filled: [], missingRequired: [], skipped: [], notes: [], sourceCount: { days: 0, activities: 0, unconsumed: 0 } } };
+  const html = renderToStaticMarkup(React.createElement(ImportReport, { operation, record, dirty: false, busy: false, labelFor: (value: string) => value, onJump: noop, onUndo: noop, onClose: noop, onResolved: noop }));
+  assert.match(html, /jumlah token tidak diketahui/);
+  assert.match(html, /biaya tidak diketahui/);
+  assert.match(html, /Laporan lama/);
+  operation.report!.review = { version: 1, unsupported: 1, candidates: [], rejectedProposals: [{ id: 'rejected-1', path: 'summary', reasonCode: 'IMPORT_QUOTE_NOT_FOUND', value: '<unsafe>', quote: 'unverified', lineIndexes: [] }] };
+  const reviewHtml = renderToStaticMarkup(React.createElement(ImportReport, { operation, record, dirty: false, busy: false, labelFor: (value: string) => value, onJump: noop, onUndo: noop, onClose: noop, onResolved: noop }));
+  assert.match(reviewHtml, /belum diverifikasi/);
+  assert.match(reviewHtml, /&lt;unsafe&gt;/);
+  assert.doesNotMatch(reviewHtml, /<unsafe>/);
+});
 const isRendered = (field: (typeof registry.fields)[number]) => field.control !== 'hidden' && field.control !== 'derived';
 
 function editorProps(mode: ItineraryMode, content: WebItineraryContent): EditorProps {

@@ -6,7 +6,7 @@ import { modeCopy } from '../labels.js';
 import { importCopy } from './copy.js';
 import { DEFAULT_IMPORT_LIMITS, type ImportLimits, type ImportStage } from './limits.js';
 
-const MODES: ItineraryMode[] = ['half_day', 'full_day', 'multi_day', 'destination_guide'];
+const MODES: ItineraryMode[] = ['half_day', 'full_day', 'multi_day', 'destination_guide', 'activity'];
 const MB = 1024 * 1024;
 
 function failureMessage(caught: unknown): string {
@@ -51,7 +51,8 @@ export function ImportScreen({ target, draftMode, draftId, draftRevision, aiActi
   useEffect(() => { setPreview(null); }, [newMode]);
   const detected = intake?.languageProposal.status === 'resolved' ? intake.languageProposal.locale : null;
   const chosenLanguage = outputLanguage === 'auto' ? detected : outputLanguage;
-  const textTooLong = text.length > limits.maxTextChars;
+  const textChars = [...text].length;
+  const textTooLong = textChars > limits.maxTextChars;
   const maxPdfMb = Math.round(limits.maxPdfBytes / MB);
 
   async function readSource() {
@@ -143,7 +144,7 @@ export function ImportScreen({ target, draftMode, draftId, draftRevision, aiActi
           <label htmlFor="import-text" className="sr-only">Teks itinerary</label>
           <textarea id="import-text" ref={areaRef} rows={6} value={text} placeholder={importCopy.pastePlaceholder} onChange={(event) => { setText(event.target.value); setIntake(null); setPreview(null); }} className={`${inputClass} min-h-[10rem] resize-none text-base`} />
           <p className={`text-right text-xs ${textTooLong ? 'font-semibold text-red-800' : 'text-slate-500'}`}>
-            {importCopy.charCount(text.length, limits.maxTextChars)}
+            {importCopy.charCount(textChars, limits.maxTextChars)}
           </p>
           {textTooLong && <p role="alert" className="text-sm text-red-800">{importCopy.textTooLong(limits.maxTextChars)}</p>}
           {!embedded && <button type="button" className={primaryClass} disabled={busy !== null || !text.trim() || textTooLong} onClick={readSource}>{busy === 'intake' ? importCopy.readText + '…' : importCopy.readText}</button>}
@@ -200,7 +201,9 @@ export function ImportScreen({ target, draftMode, draftId, draftRevision, aiActi
           <p>{preview.fields.days.length ? importCopy.previewDays(preview.fields.days.length, preview.fields.days.reduce((n, d) => n + d.activities.length, 0)) : importCopy.previewNone}</p>
           {sectionsToReplace().length > 0 && <p><span className="font-medium">{importCopy.previewSections}:</span> {sectionsToReplace().join('; ')}</p>}
           {preview.notes.map((note, index) => <p key={index} className="text-slate-700">{note}</p>)}
-          {preview.unconsumed.length > 0 && <p className="text-slate-600">{preview.unconsumed.length} baris lain akan dibaca otomatis{aiActive ? '' : ' (AI tidak aktif, dibiarkan kosong)'}.</p>}
+          {preview.diagnostics?.filter((item) => item.code.startsWith('PDF_')).map((item, index) => <p key={`${item.code}-${index}`} className="text-amber-900">{item.message}</p>)}
+          {!!preview.conflicts?.length && <p className="text-amber-900">{preview.conflicts.length} konflik perlu dipilih atau diedit setelah import; nilai ambigu tidak dipilih otomatis.</p>}
+          {preview.unconsumed.length > 0 && <p className="text-slate-600">{preview.unconsumed.length} baris belum dipetakan; sebagian mungkin dibaca AI, bagian ambigu atau tidak didukung tetap perlu diperiksa manual.</p>}
         </section>
       )}
 

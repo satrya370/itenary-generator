@@ -122,6 +122,8 @@ async function main() {
     await pdfFrom(browser, pre(await textForPdf('id-full-day-tidy.txt')), 'id-full-day-tidy.pdf');
     await pdfFrom(browser, pre(await textForPdf('id-multi-day-3.txt')), 'id-multi-day-3.pdf');
     await pdfFrom(browser, pre(await textForPdf('en-half-day-messy.txt')), 'en-half-day-messy.pdf');
+    await pdfFrom(browser, pre(await readFile(path.join(OUT, 'id-destination-guide.txt'), 'utf8')), 'id-destination-guide.pdf');
+    await pdfFrom(browser, pre(await readFile(path.join(OUT, 'id-activity-rafting.txt'), 'utf8')), 'id-activity-rafting.pdf');
 
     const layoutHtml = `<html><head><style>
       @page { size: A4; margin: 18mm; } body { font: 12px Arial; }
@@ -136,6 +138,22 @@ async function main() {
       <section><p class="header">ITINERARY SAMPLE</p><h1>Day 2 — Tegallalang</h1><p>09:00 Rice terrace walk.</p><p>Repeated footer text must not be confused with repeated itinerary content.</p></section>
     </body></html>`;
     await pdfFrom(browser, layoutHtml, 'layout-multipage-columns-table.pdf');
+
+    const layoutCases = [
+      { name: 'layout-case-01-two-columns.pdf', expected: 'North column anchor', html: '<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px"><div><h2>North column anchor</h2><p>08:00 Visit the old museum.</p></div><div><h2>South column anchor</h2><p>Bring drinking water.</p></div></div>' },
+      { name: 'layout-case-02-two-cell-table.pdf', expected: 'Table row anchor', html: '<table><tr><th>Time</th><th>Activity</th></tr><tr><td>08:00</td><td>Table row anchor and guided walk</td></tr></table>' },
+      { name: 'layout-case-03-three-cell-table.pdf', expected: 'Three cell anchor', html: '<table><tr><th>Time</th><th>Activity</th><th>Notes</th></tr><tr><td>09:00</td><td>Three cell anchor</td><td>Wear comfortable shoes.</td></tr></table>' },
+      { name: 'layout-case-04-wrapped-cell.pdf', expected: 'Wrapped description continues', html: '<table><tr><th>Time</th><th>Activity</th></tr><tr><td>10:00</td><td>Wrapped description continues<br/>inside this same table cell.</td></tr></table>' },
+      { name: 'layout-case-05-repeated-header.pdf', expected: 'Repeated header anchor', html: '<p class="header">DAILY TOUR · SAMPLE</p><h2>Repeated header anchor</h2><p>08:00 Start the walk.</p><p class="footer">Page footer · sample</p><div style="page-break-before:always"><p class="header">DAILY TOUR · SAMPLE</p><h2>Second page anchor</h2><p>09:00 Visit the garden.</p><p class="footer">Page footer · sample</p></div>' },
+      { name: 'layout-case-06-page-continuation.pdf', expected: 'Continuation page two anchor', html: '<h2>Day 1 — Ubud</h2><p>08:00 Museum visit with a local guide and time for questions.</p><p>Continue through the historic district and river path.</p><div style="page-break-before:always"><p>Continuation page two anchor: 10:00 Garden walk.</p><p>Visit the gardens with the guide and take time to explore the nearby village.</p></div>' },
+      { name: 'layout-case-07-unequal-columns.pdf', expected: 'Wide column anchor', html: '<div style="display:grid;grid-template-columns:2fr 1fr;gap:20px"><div><h2>Wide column anchor</h2><p>11:00 Rice terrace walk.</p></div><div><h3>Narrow note</h3><p>Carry a hat.</p></div></div>' },
+      { name: 'layout-case-08-independent-time-columns.pdf', expected: 'Independent left anchor', html: '<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px"><div><p>08:00 Independent left anchor</p><p>09:00 Left garden visit</p></div><div><p>13:00 Independent right anchor</p><p>14:00 Right gallery visit</p></div></div>' },
+      { name: 'layout-case-09-heading-column-order.pdf', expected: 'Heading column anchor', html: '<div style="display:grid;grid-template-columns:1fr 1fr;gap:28px"><div><h2>Heading column anchor</h2><p>Morning prose before event.</p><p>08:30 Old town walk.</p></div><div><h2>Logistics column</h2><p>Meeting at the palace.</p></div></div>' },
+      { name: 'layout-case-10-bordered-schedule.pdf', expected: 'Bordered schedule anchor', html: '<table><tbody><tr><td>Day 1</td><td>Bordered schedule anchor</td></tr><tr><td>15:00</td><td>Craft workshop</td></tr></tbody></table>' },
+      { name: 'layout-case-11-three-prose-columns.pdf', expected: 'First prose column anchor', html: '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px"><div><h3>First prose column anchor</h3><p>Walk through the village.</p></div><div><h3>Second prose column</h3><p>Stop at the market.</p></div><div><h3>Third prose column</h3><p>Return by the river.</p></div></div>' },
+      { name: 'layout-case-12-page-day-boundary.pdf', expected: 'Day two boundary anchor', html: '<section><h2>Day 1 — Ubud</h2><p>08:00 Palace visit with a local guide and time for questions.</p><p>Continue through the historic district and nearby gardens.</p></section><section style="page-break-before:always"><h2>Day 2 — Gianyar</h2><p>Day two boundary anchor: 09:00 Art village.</p><p>Explore the artists district, local market and riverside trail with the guide.</p></section>' }
+    ];
+    for (const item of layoutCases) await pdfFrom(browser, `<html><head><style>@page{size:A4;margin:20mm}body{font:12px Arial}.header,.footer{font-size:9px}</style></head><body>${item.html}</body></html>`, item.name);
 
     const sparseHtml = `<html><head><style>@page { size:A4; margin:20mm; } body { font:12px Arial; }</style></head><body>
       <h1>Readable first page</h1>${Array.from({ length: 18 }, (_, i) => `<p>Detailed itinerary text block ${i + 1} with enough content to establish a usable text layer.</p>`).join('')}

@@ -36,3 +36,25 @@ Reviewer: Claude Haiku 5.5, same session as the executor. Date: 2026-11-11. Comm
 - The report panel on a phone was not screenshotted separately.
 - Restart during an import is not tested in the browser (covered by the server tests).
 - Copy lives in `src/editor/import/copy.ts`, not `labels.ts` (deviation recorded).
+
+## Revision review: 2026-11-14
+
+The hardening revision was re-reviewed against `plans/cp032_implementation-plan_import-review-hardening.md` and the shared CP030–CP032 safety requirements.
+
+| Check | Result |
+|---|---|
+| Conflict choices and stale revision | PASS; source revalidated server-side, CAS conflict leaves canonical draft unchanged. |
+| Rejected AI output | PASS; visibly marked unverified, non-actionable, escaped, and never applied to the draft. |
+| Evidence retention | PASS; legacy quotes and rejected proposal text are removed when the associated source ages out. |
+| Replay/undo atomicity | PASS; request mismatch rejected; original result preserved; injected ledger failures roll back writes. |
+| Browser modes, text/PDF, scan, overwrite/undo/reload, public privacy | PASS with deterministic provider; no external requests or console errors. |
+| Visual 390px/1280px | PASS; `cp032-review-*` and `cp032-rejected-ai-*` screenshots opened and inspected. |
+| Release and types | PASS on Windows Node 24; release validation reports valid. |
+
+Verdict: ACCEPT for CP032's active revision plan. Not an acceptance of Linux, live-provider, 40/12 golden-corpus or mutation-test gates in the broader shared hardening plan; those limitations remain explicit and no universal accuracy claim is made.
+
+### Follow-up corpus gate
+- 40 labeled text assertions and 12 generated layout-PDF intake/dry-run cases passed on Windows.
+- Five safety mutations were run and killed through `verify:web-import-mutations`.
+- Linux remains unavailable (`wsl --status`: not installed); no live provider call was made.
+- CP032 revision verdict remains ACCEPT; no universal accuracy/cross-platform claim.
