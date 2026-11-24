@@ -1,14 +1,14 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import completionSchema from '../../../config/web/import-completion.schema.json' with { type: 'json' };
 import type { ItineraryMode } from '../../contracts/types.js';
-import type { ImportExtractor, ProviderUsage } from '../ai/provider.js';
+import type { ImportExtractor, ImportSourceUnit, ProviderUsage } from '../ai/provider.js';
 import { ProviderFailure } from '../ai/provider.js';
 import { fold } from './parse/text.js';
 import { MAX_HIGHLIGHTS, MAX_STEPS, type ParseResult } from './parse/extract.js';
 
 /** AI completion (CP031): only what the parser left, quote-checked on the server before it can reach a draft. */
 
-export interface TextValue { value: string; quote: string }
+export interface TextValue { value: string; quote: string; sourceUnitIds?: string[] }
 export interface CompletionPlace { name: TextValue; area?: TextValue | null; description?: TextValue | null }
 export interface CompletionActivity { targetId: string; title: string; place?: TextValue | null; description?: TextValue | null; tip?: TextValue | null }
 export interface Completion {
@@ -17,9 +17,9 @@ export interface Completion {
   /** Activity mode only (web-2.2.0). Whole-sentence quotes; ignored when the code already read the list. */
   highlights?: TextValue[]; steps?: Array<{ title: TextValue }>;
 }
-export interface Dropped { path: string; code: 'IMPORT_QUOTE_NOT_FOUND' | 'IMPORT_NOT_APPLICABLE' | 'IMPORT_ACTIVITY_NOT_FOUND' | 'IMPORT_ACTIVITY_AMBIGUOUS' | 'IMPORT_ALREADY_FILLED' | 'IMPORT_TARGET_MISMATCH' | 'IMPORT_COLLECTION_INCOMPLETE' | 'IMPORT_SOURCE_UNIT_INCOMPLETE' | 'IMPORT_ENTITY_CONTEXT_MISMATCH'; proposal?: { value: string; quote: string; lineIndexes: number[]; targetId?: string } }
-export interface SourceUnit { lineIndex: number; text: string; section: string | null }
-export interface AcceptedEvidence { path: string; targetId?: string; lineIndexes: number[]; quote: string }
+export interface Dropped { path: string; code: 'IMPORT_QUOTE_NOT_FOUND' | 'IMPORT_NOT_APPLICABLE' | 'IMPORT_ACTIVITY_NOT_FOUND' | 'IMPORT_ACTIVITY_AMBIGUOUS' | 'IMPORT_ALREADY_FILLED' | 'IMPORT_TARGET_MISMATCH' | 'IMPORT_COLLECTION_INCOMPLETE' | 'IMPORT_SOURCE_UNIT_INCOMPLETE' | 'IMPORT_ENTITY_CONTEXT_MISMATCH'; proposal?: { value: string; quote: string; lineIndexes: number[]; sourceUnitIds: string[]; targetId?: string } }
+export interface SourceUnit { id: string; lineIndex: number; text: string; section: string | null; ownerTargetId?: string; dayNumber?: number; allowedPaths: string[]; structuralEnd: boolean }
+export interface AcceptedEvidence { path: string; targetId?: string; lineIndexes: number[]; sourceUnitIds: string[]; quote: string }
 
 const Ajv = Ajv2020 as unknown as new (options: Record<string, unknown>) => { compile(schema: unknown): ((value: unknown) => boolean) & { errors?: unknown[] | null } };
 const validateCompletion = new Ajv({ allErrors: true, strict: false }).compile(completionSchema);
@@ -36,11 +36,56 @@ export function segmentsOf(parse: ParseResult): { sent: string[]; plain: string[
   const sent: string[] = [];
   const plain: string[] = [];
   const units: SourceUnit[] = [];
+  const perLine = new Map<number, number>();
+  const activities = parse.fields.days.flatMap((day, dayIndex) => day.activities.map((activity, activityIndex) => {
+    const nextActivity = day.activities[activityIndex + 1]?.line ?? parse.fields.days[dayIndex + 1]?.line;
+    return { dayNumber: day.dayNumber, activity, nextActivity };
+  }));
   for (const line of parse.unconsumed) {
     if (line.section === 'layout-ambiguous') continue;
-    units.push({ lineIndex: line.index, text: line.text, section: line.section });
+    const ordinal = perLine.get(line.index) ?? 0;
+    perLine.set(line.index, ordinal + 1);
+    const unit: SourceUnit = {
+      id: `source-${line.index}-${ordinal}`,
+      lineIndex: line.index,
+      text: line.text,
+      section: line.section,
+      allowedPaths: [],
+      structuralEnd: false
+    };
+    if (line.section === 'summary' || line.section === 'closingNote' || line.section === 'policies') unit.allowedPaths.push(line.section);
+    if (line.section === 'places' && parse.mode === 'destination_guide') unit.allowedPaths.push('places');
+    if (line.section === 'highlights' && parse.mode === 'activity') unit.allowedPaths.push('highlights');
+    if (line.section === 'steps' && parse.mode === 'activity') unit.allowedPaths.push('steps');
+    if (line.section === null && parse.mode === 'activity') unit.allowedPaths.push('highlights', 'steps');
+    if (line.section === null && isDayMode(parse.mode)) {
+      const day = [...parse.fields.days].reverse().find((candidate) => candidate.line < line.index);
+      if (day) unit.dayNumber = day.dayNumber;
+      const sameLine = activities.filter(({ activity }) => activity.line === line.index && !fold(line.text).includes(fold(activity.title)));
+      const betweenEvents = activities.filter(({ dayNumber, activity, nextActivity }) => {
+        if (nextActivity === undefined || line.index <= activity.line || line.index >= nextActivity) return false;
+        const targetId = `activity-${dayNumber}-${activity.line + 1}`;
+        const previous = units.at(-1);
+        return line.index === activity.line + 1 || (previous?.ownerTargetId === targetId && previous.lineIndex + 1 === line.index);
+      });
+      const owners = sameLine.length ? sameLine : betweenEvents;
+      if (owners.length === 1) {
+        const owner = owners[0];
+        unit.ownerTargetId = `activity-${owner.dayNumber}-${owner.activity.line + 1}`;
+        unit.dayNumber = owner.dayNumber;
+        unit.allowedPaths.push('activityDetails');
+        unit.structuralEnd = sameLine.length > 0;
+      }
+    }
+    units.push(unit);
     sent.push(line.section ? `[${line.section}] ${line.text}` : line.text);
     plain.push(line.text);
+  }
+  for (const unit of units) {
+    if (!unit.ownerTargetId || unit.structuralEnd) continue;
+    const hasLaterOwnerUnit = units.some((candidate) => candidate.ownerTargetId === unit.ownerTargetId && candidate.lineIndex > unit.lineIndex);
+    const owner = activities.find(({ dayNumber, activity }) => `activity-${dayNumber}-${activity.line + 1}` === unit.ownerTargetId);
+    unit.structuralEnd = Boolean(owner?.nextActivity !== undefined && !hasLaterOwnerUnit && unit.lineIndex < owner.nextActivity);
   }
   return { sent, plain, units };
 }
@@ -51,7 +96,8 @@ export function batchesOf(parse: ParseResult, units: SourceUnit[]): { batches: S
   let batch: SourceUnit[] = [];
   const requestSize = (candidate: SourceUnit[]) => JSON.stringify({
     segments: candidate.map((unit) => unit.section ? `[${unit.section}] ${unit.text}` : unit.text),
-    targets: targetsForBatch(parse, candidate)
+    targets: targetsForBatch(parse, candidate),
+    sourceUnits: candidate
   }).length + 128;
   for (let index = 0; index < units.length; index += 1) {
     const unit = units[index];
@@ -70,12 +116,13 @@ export function batchesOf(parse: ParseResult, units: SourceUnit[]): { batches: S
 
 export function targetsForBatch(parse: ParseResult, units: SourceUnit[]): Array<{ targetId: string; title: string; dayNumber: number; line: number }> {
   const targets: Array<{ targetId: string; title: string; dayNumber: number; line: number }> = [];
+  const owners = new Set(units.flatMap((unit) => unit.ownerTargetId ? [unit.ownerTargetId] : []));
   for (const [dayIndex, day] of parse.fields.days.entries()) {
     for (let activityIndex = 0; activityIndex < day.activities.length; activityIndex += 1) {
       const activity = day.activities[activityIndex];
-      const nextActivity = day.activities[activityIndex + 1]?.line ?? parse.fields.days[dayIndex + 1]?.line ?? Number.POSITIVE_INFINITY;
-      if (!units.some((unit) => unit.lineIndex > activity.line && unit.lineIndex < nextActivity)) continue;
-      targets.push({ targetId: `activity-${day.dayNumber}-${activity.line + 1}`, title: activity.title, dayNumber: day.dayNumber, line: activity.line + 1 });
+      const targetId = `activity-${day.dayNumber}-${activity.line + 1}`;
+      if (!owners.has(targetId)) continue;
+      targets.push({ targetId, title: activity.title, dayNumber: day.dayNumber, line: activity.line + 1 });
     }
   }
   return targets;
@@ -86,46 +133,71 @@ export function filterCompletion(completion: Completion, parse: ParseResult, mod
   const dropped: Dropped[] = [];
   const evidence: AcceptedEvidence[] = [];
   const accepted: Completion = { places: [], activityDetails: [], highlights: [], steps: [] };
+  const allSourceUnits = segmentsOf(parse).units;
   const bullet = /^\s*(?:[-*\u2022\u00b7]|\d{1,2}[.)]|[a-z][.)])\s+/i;
   const quoteLine = (unit: SourceUnit) => unit.text.replace(bullet, '');
-  const sourceUnits = parse.unconsumed.map((line) => ({ lineIndex: line.index, text: line.text, section: line.section }));
   const terminal = (text: string) => /[.!?。！？][\s"'”’)]*$/.test(text.trim());
   const qualifier = (text: string) => /^(?:kecuali|except|unless|namun|tetapi|but|hanya|only|berlaku|valid|tidak berlaku|not valid|untuk (?:usia|anak)|for (?:ages|children)|dengan syarat|provided|subject to)\b/i.test(text.trim());
-  const wholeUnit = (matched: SourceUnit[], path: string): boolean => {
+  const wholeUnit = (matched: SourceUnit[], path: string, targetId?: string): boolean => {
     const first = matched[0];
     const last = matched.at(-1)!;
-    const before = sourceUnits.find((unit) => unit.lineIndex === first.lineIndex - 1 && unit.section === first.section);
-    const after = sourceUnits.find((unit) => unit.lineIndex === last.lineIndex + 1 && unit.section === last.section);
+    const before = allSourceUnits.find((unit) => unit.lineIndex === first.lineIndex - 1 && unit.section === first.section);
+    const after = allSourceUnits.find((unit) => unit.lineIndex === last.lineIndex + 1 && unit.section === last.section);
     // A visual newline cannot terminate a wrapped sentence or sever an exception.
     if (before && !bullet.test(first.text) && (qualifier(first.text) || (!terminal(before.text) && !bullet.test(before.text)))) return false;
     if (after && !bullet.test(after.text) && (qualifier(after.text) || !terminal(last.text))) return false;
-    return terminal(last.text) || (['highlights', 'steps'].includes(path) && bullet.test(first.text));
+    const structurallyBoundActivityDetail = Boolean(targetId && matched.every((unit) => unit.ownerTargetId === targetId) && last.structuralEnd);
+    const explicitSectionUnit = matched.every((unit) => unit.allowedPaths.includes(path)) && !after;
+    return terminal(last.text) || (['highlights', 'steps'].includes(path) && bullet.test(first.text)) || structurallyBoundActivityDetail || explicitSectionUnit;
   };
-  const locate = (quote: string, kind: 'part' | 'whole' = 'whole', candidates = units): SourceUnit[] | null => {
+  const locate = (quote: string, kind: 'part' | 'whole' = 'whole', candidates = units, sourceUnitIds?: string[]): SourceUnit[] | null => {
     const wanted = quote.normalize('NFC').trim();
     if (!wanted) return null;
-    for (let start = 0; start < candidates.length; start += 1) {
+    const matches: SourceUnit[][] = [];
+    const restricted = sourceUnitIds ? candidates.filter((unit) => sourceUnitIds.includes(unit.id)) : candidates;
+    for (let start = 0; start < restricted.length; start += 1) {
       let joined = '';
       const matched: SourceUnit[] = [];
-      for (let end = start; end < candidates.length; end += 1) {
-        if (matched.length && candidates[end].lineIndex !== matched.at(-1)!.lineIndex + 1) break;
-        joined = joined ? `${joined}\n${quoteLine(candidates[end])}` : quoteLine(candidates[end]);
-        matched.push(candidates[end]);
-        if (joined.normalize('NFC').trim() === wanted) return matched;
+      for (let end = start; end < restricted.length; end += 1) {
+        if (matched.length && restricted[end].lineIndex !== matched.at(-1)!.lineIndex + 1) break;
+        joined = joined ? `${joined}\n${quoteLine(restricted[end])}` : quoteLine(restricted[end]);
+        matched.push(restricted[end]);
+        if (joined.normalize('NFC').trim() === wanted) { matches.push([...matched]); break; }
         if (joined.length >= wanted.length) break;
       }
     }
-    return null;
+    const unique = matches.length === 1 ? matches[0] : null;
+    if (unique && sourceUnitIds && (unique.length !== sourceUnitIds.length || unique.some((unit, index) => unit.id !== sourceUnitIds[index]))) return null;
+    return unique;
+  };
+  const assignedPathByUnit = new Map<string, string>();
+  const allowedForPath = (unit: SourceUnit, path: string, targetId?: string) => {
+    if (path.startsWith('activities[')) return Boolean(targetId && unit.ownerTargetId === targetId && unit.allowedPaths.includes('activityDetails'));
+    if (path.startsWith('places[')) return unit.allowedPaths.includes('places');
+    return unit.allowedPaths.includes(path);
   };
   const textEvidence = (path: string, item: TextValue | null | undefined, kind: 'part' | 'whole' = 'whole', candidates = units, targetId?: string) => {
     if (!item) return false;
-    const sourceUnits = locate(item.quote, kind, candidates);
+    const allowed = candidates.filter((unit) => allowedForPath(unit, path, targetId));
+    const sourceUnits = locate(item.quote, kind, allowed, item.sourceUnitIds);
     const quote = item.quote.normalize('NFC').trim();
     const value = item.value.normalize('NFC').trim();
-    const proposal = { value: value.slice(0, 2000), quote: quote.slice(0, 2000), lineIndexes: sourceUnits?.map((unit) => unit.lineIndex) ?? [], ...(targetId ? { targetId } : {}) };
-    if (!sourceUnits || (kind === 'whole' && value !== quote) || (kind === 'part' && !quote.includes(value))) { dropped.push({ path, code: 'IMPORT_QUOTE_NOT_FOUND', proposal }); return false; }
-    if (kind === 'whole' && !wholeUnit(sourceUnits, path)) { dropped.push({ path, code: 'IMPORT_SOURCE_UNIT_INCOMPLETE', proposal }); return false; }
-    evidence.push({ path, ...(targetId ? { targetId } : {}), lineIndexes: sourceUnits.map((unit) => unit.lineIndex), quote: item.quote });
+    const anywhere = sourceUnits ?? locate(item.quote, kind, candidates, item.sourceUnitIds);
+    const sourceUnitIds = anywhere?.map((unit) => unit.id) ?? [];
+    const proposal = { value: value.slice(0, 2000), quote: quote.slice(0, 2000), lineIndexes: anywhere?.map((unit) => unit.lineIndex) ?? [], sourceUnitIds, ...(targetId ? { targetId } : {}) };
+    if (!sourceUnits) {
+      const code = anywhere ? 'IMPORT_ENTITY_CONTEXT_MISMATCH' : 'IMPORT_QUOTE_NOT_FOUND';
+      dropped.push({ path, code, proposal }); return false;
+    }
+    const conflictsWithPriorAssignment = sourceUnits.some((unit) => {
+      const previous = assignedPathByUnit.get(unit.id);
+      return previous !== undefined && !(previous.startsWith('places[') && path.startsWith('places[') && previous !== path);
+    });
+    if (conflictsWithPriorAssignment) { dropped.push({ path, code: 'IMPORT_SOURCE_UNIT_INCOMPLETE', proposal }); return false; }
+    if ((kind === 'whole' && value !== quote) || (kind === 'part' && !quote.includes(value))) { dropped.push({ path, code: 'IMPORT_QUOTE_NOT_FOUND', proposal }); return false; }
+    if (kind === 'whole' && !wholeUnit(sourceUnits, path, targetId)) { dropped.push({ path, code: 'IMPORT_SOURCE_UNIT_INCOMPLETE', proposal }); return false; }
+    for (const unit of sourceUnits) assignedPathByUnit.set(unit.id, path);
+    evidence.push({ path, ...(targetId ? { targetId } : {}), lineIndexes: sourceUnits.map((unit) => unit.lineIndex), sourceUnitIds: sourceUnits.map((unit) => unit.id), quote: item.quote });
     return true;
   };
   const textPath = (name: 'summary' | 'closingNote' | 'policies', item: TextValue | null | undefined) => {
@@ -138,11 +210,12 @@ export function filterCompletion(completion: Completion, parse: ParseResult, mod
 
   for (const place of completion.places ?? []) {
     if (mode !== 'destination_guide') { dropped.push({ path: 'places', code: 'IMPORT_NOT_APPLICABLE' }); break; }
-    if (sourceUnits.filter((unit) => quoteLine(unit).normalize('NFC').trim() === place.name.quote.normalize('NFC').trim()).length > 1) {
+    const placeUnits = units.filter((unit) => allowedForPath(unit, 'places[].name'));
+    if (placeUnits.filter((unit) => quoteLine(unit).normalize('NFC').trim() === place.name.quote.normalize('NFC').trim()).length > 1) {
       dropped.push({ path: 'places[].name', code: 'IMPORT_ENTITY_CONTEXT_MISMATCH' }); continue;
     }
-    if (!textEvidence('places[].name', place.name, 'part')) continue;
-    const nameUnits = locate(place.name.quote, 'part')!;
+    if (!textEvidence('places[].name', place.name, 'part', placeUnits)) continue;
+    const nameUnits = locate(place.name.quote, 'part', placeUnits, place.name.sourceUnitIds)!;
     const nameLine = nameUnits[0];
     const context = [...nameUnits];
     // Only a complete explicit bullet entity can own immediately following prose.
@@ -199,16 +272,7 @@ export function filterCompletion(completion: Completion, parse: ParseResult, mod
     // The same title on two days cannot be told apart by the model; dropping is safer than guessing the day.
     if (matches.length > 1) { dropped.push({ path: `activityDetails[${detail.title}]`, code: 'IMPORT_ACTIVITY_AMBIGUOUS' }); continue; }
     const target = matches[0];
-    const sameDay = parse.fields.days.find((day) => day.dayNumber === target.dayNumber)!;
-    const nextActivity = sameDay.activities.find((activity) => activity.line > target.line)?.line ?? parse.fields.days.find((day) => day.line > sameDay.line)?.line ?? Number.POSITIVE_INFINITY;
-    const context: SourceUnit[] = [];
-    let expectedLine = target.line + 1;
-    for (const unit of units) {
-      if (unit.lineIndex <= target.line || unit.lineIndex >= nextActivity) continue;
-      if (unit.lineIndex !== expectedLine || unit.section !== null) break;
-      context.push(unit);
-      expectedLine += 1;
-    }
+    const context = units.filter((unit) => unit.ownerTargetId === detail.targetId);
     const keep = (field: 'place' | 'description' | 'tip', item: TextValue | null | undefined) => {
       if (!item) return null;
       if (!textEvidence(`activities[${detail.title}].${field}`, item, field === 'place' ? 'part' : 'whole', context, detail.targetId)) return null;
@@ -225,11 +289,12 @@ export function parseCompletionText(text: string): unknown {
   return JSON.parse((fenced ? fenced[1] : text).trim());
 }
 
-export interface CompletionOutcome { completion: Completion | null; usage: { promptTokens: number | null; completionTokens: number | null; actualUsd: number | null }; attempts: number; note: string | null }
+export interface CompletionOutcome { completion: Completion | null; usage: { promptTokens: number | null; completionTokens: number | null; actualUsd: number | null }; attempts: number; responses: Array<{ modelId: string | null; generationId: string | null }>; note: string | null }
 
 /** Calls the model at most MAX_AI_ATTEMPTS times; one retry on a retryable provider failure or on invalid output. */
-export async function requestCompletion(extractor: ImportExtractor, args: { mode: ItineraryMode; locale: string | null; segments: string[]; targets?: Array<{ targetId: string; title: string; dayNumber: number; line: number }>; deadlineAt?: number }, sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms))): Promise<CompletionOutcome> {
+export async function requestCompletion(extractor: ImportExtractor, args: { mode: ItineraryMode; locale: string | null; segments: string[]; sourceUnits?: ImportSourceUnit[]; targets?: Array<{ targetId: string; title: string; dayNumber: number; line: number }>; deadlineAt?: number; onDispatch?: () => void; onAttemptUsage?: (usage: ProviderUsage | null) => void }, sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms))): Promise<CompletionOutcome> {
   const usage: CompletionOutcome['usage'] = { promptTokens: 0, completionTokens: 0, actualUsd: 0 };
+  const responses: CompletionOutcome['responses'] = [];
   let attempts = 0;
   let lastNote: string | null = null;
   const addUsage = (part: ProviderUsage) => {
@@ -239,31 +304,37 @@ export async function requestCompletion(extractor: ImportExtractor, args: { mode
   };
   while (attempts < MAX_AI_ATTEMPTS) {
     const remaining = args.deadlineAt === undefined ? 120_000 : args.deadlineAt - Date.now();
-    if (remaining <= 0) return { completion: null, usage, attempts, note: 'Batas waktu AI tercapai; sisa bagian dibiarkan untuk diperiksa manual.' };
+    if (remaining <= 0) return { completion: null, usage, attempts, responses, note: 'Batas waktu AI tercapai; sisa bagian dibiarkan untuk diperiksa manual.' };
     attempts += 1;
+    // Reserve an uncertain in-flight attempt durably before crossing the provider boundary.
+    args.onDispatch?.();
+    let result: Awaited<ReturnType<ImportExtractor['extract']>>;
     try {
-      const result = await extractor.extract({ mode: args.mode, locale: args.locale, segments: args.segments, targets: args.targets, maxTokens: 3000 }, Math.min(120_000, remaining));
-      addUsage(result.usage);
-      try {
-        const json = parseCompletionText(result.text);
-        if (validateCompletion(json)) return { completion: json as Completion, usage, attempts, note: null };
-        lastNote = 'Jawaban AI tidak sesuai bentuk yang diminta.';
-      } catch {
-        lastNote = 'Jawaban AI tidak bisa dibaca sebagai JSON.';
-      }
+      result = await extractor.extract({ mode: args.mode, locale: args.locale, segments: args.segments, sourceUnits: args.sourceUnits, targets: args.targets, maxTokens: 3000 }, Math.min(120_000, remaining));
     } catch (cause) {
       // The provider may have processed/billed a request before failing without usage data.
       usage.promptTokens = null;
       usage.completionTokens = null;
       usage.actualUsd = null;
+      args.onAttemptUsage?.(null);
       if (cause instanceof ProviderFailure && cause.kind === 'retryable' && attempts < MAX_AI_ATTEMPTS) {
         const wait = Math.min(cause.retryAfterMs || 1000, 5000, args.deadlineAt === undefined ? 5000 : Math.max(0, args.deadlineAt - Date.now()));
-        if (wait <= 0) return { completion: null, usage, attempts, note: 'Batas waktu AI tercapai; sisa bagian dibiarkan untuk diperiksa manual.' };
+        if (wait <= 0) return { completion: null, usage, attempts, responses, note: 'Batas waktu AI tercapai; sisa bagian dibiarkan untuk diperiksa manual.' };
         await sleep(wait);
         continue;
       }
-      return { completion: null, usage, attempts, note: 'AI tidak bisa menyelesaikan bagian yang tidak terbaca; bagian itu dibiarkan kosong.' };
+      return { completion: null, usage, attempts, responses, note: 'AI tidak bisa menyelesaikan bagian yang tidak terbaca; bagian itu dibiarkan kosong.' };
+    }
+    responses.push({ modelId: result.modelId ?? null, generationId: result.generationId ?? null });
+    addUsage(result.usage);
+    args.onAttemptUsage?.(result.usage);
+    try {
+      const json = parseCompletionText(result.text);
+      if (validateCompletion(json)) return { completion: json as Completion, usage, attempts, responses, note: null };
+      lastNote = 'Jawaban AI tidak sesuai bentuk yang diminta.';
+    } catch {
+      lastNote = 'Jawaban AI tidak bisa dibaca sebagai JSON.';
     }
   }
-  return { completion: null, usage, attempts, note: `${lastNote ?? 'Jawaban AI tidak valid.'} Bagian itu dibiarkan kosong.` };
+  return { completion: null, usage, attempts, responses, note: `${lastNote ?? 'Jawaban AI tidak valid.'} Bagian itu dibiarkan kosong.` };
 }

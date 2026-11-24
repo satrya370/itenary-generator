@@ -4,7 +4,7 @@ import type { FieldMeta } from '../schema-meta.js';
 import { NumberField, SelectField, TextArea, TextField, TextList, buttonClass, inputClass } from '../fields.js';
 
 /** Detail of an activity itinerary (mode "activity", web-2.2.0). One block, no day schedule. */
-const CATEGORY_CHOICES: Array<[string, string]> = [['', 'Pilih jenis kegiatan'], ['adventure', 'Petualangan'], ['water', 'Air'], ['culture', 'Budaya'], ['wellness', 'Wellness'], ['nature', 'Alam'], ['family', 'Keluarga']];
+const CATEGORY_CHOICES: Array<[string, string]> = [['adventure', 'Petualangan'], ['water', 'Air'], ['culture', 'Budaya'], ['wellness', 'Wellness'], ['nature', 'Alam'], ['family', 'Keluarga'], ['Kuliner', 'Kuliner'], ['Seni & kerajinan', 'Seni & kerajinan'], ['Olahraga', 'Olahraga'], ['Edukasi', 'Edukasi'], ['Fotografi', 'Fotografi'], ['Wisata kota', 'Wisata kota']];
 const DIFFICULTY_CHOICES: Array<[string, string]> = [['', 'Tidak ditentukan'], ['easy', 'Mudah'], ['moderate', 'Sedang'], ['challenging', 'Menantang']];
 
 const QUICK_SESSIONS: Array<[string, string]> = [['Pagi', '08:00'], ['Siang', '12:00'], ['Sore', '15:00']];
@@ -73,8 +73,12 @@ export function ActivityDetails(props: EditorProps) {
     <section data-editor-section="activity-details" className="space-y-4">
       <h3 className="font-semibold">Detail aktivitas</h3>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <SelectField id={id('category')} meta={meta('activity.category', mode)} value={activity.category ?? ''} choices={CATEGORY_CHOICES}
-          onChange={(v) => patch((n) => { if (n.activity) n.activity.category = (v || null) as typeof n.activity.category; })} />
+        <div><label htmlFor={id('category')} className="block text-sm font-medium">{meta('activity.category', mode).label}</label>
+          <input id={id('category')} list={id('category-options')} className={inputClass} data-field-path="activity.category" maxLength={120} placeholder="Pilih atau ketik jenis kegiatan" value={CATEGORY_CHOICES.find(([key]) => key === activity.category)?.[1] ?? activity.category ?? ''}
+            onChange={(event) => { const value = event.target.value; patch((n) => { if (n.activity) n.activity.category = CATEGORY_CHOICES.find(([, label]) => label === value)?.[0] ?? (value || null); }); }} />
+          <datalist id={id('category-options')}>{CATEGORY_CHOICES.map(([key, label]) => <option key={key} value={label} />)}</datalist>
+          <p className="mt-1 text-xs text-slate-600">Pilih pilihan umum atau tulis jenis kegiatan sendiri.</p>
+        </div>
         <NumberField id={id('duration')} meta={meta('activity.durationMinutes', mode)} value={activity.durationMinutes}
           onChange={(v) => patch((n) => { if (n.activity) n.activity.durationMinutes = v; })} />
         <SelectField id={id('difficulty')} meta={meta('activity.difficulty', mode)} value={activity.difficulty ?? ''} choices={DIFFICULTY_CHOICES}

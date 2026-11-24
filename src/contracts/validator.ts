@@ -5,6 +5,7 @@ import registry from '../../config/web/field-registry.json' with { type: 'json' 
 import type { ContractDiagnostic, ContractResult, Mode, WebItineraryContent } from './types.js';
 import { assertFieldRegistryCoverage } from './field-coverage.js';
 import { getLocaleCatalog } from './locale-catalogs.js';
+import { dayClock } from './clock.js';
 
 type SchemaValidator = ((value: unknown) => boolean) & { errors?: Array<{ instancePath: string; keyword: string; message?: string }> | null };
 const Ajv2020Constructor = Ajv2020 as unknown as new (options: Record<string, unknown>) => { compile(value: unknown): SchemaValidator };
@@ -54,6 +55,12 @@ function minutes(time: string): number {
   const [hours, mins] = time.split(':').map(Number);
   return hours * 60 + mins;
 }
+
+/**
+ * Absolute minutes for each timed activity of one day. A day may pass midnight once: a time that falls from 18:00 or later
+ * to before 12:00 is the next day's clock. A second fall, or any other fall, stays a real ordering problem.
+ */
+export { dayClock } from './clock.js';
 
 function modeApplies(field: RegistryField, mode: Mode): boolean {
   if (field.modes === 'all') return true;
@@ -220,10 +227,11 @@ function daySpanErrors(day: Rec, index: number, cap: number): ContractDiagnostic
     errors.push({ code: 'DURATION_CAP_EXCEEDED', path: `days[${index}]`, message: `Known activity durations add up to ${knownDuration} minutes, above the ${cap}-minute limit for this itinerary type.` });
     return errors;
   }
-  const timed = activities.filter((activity) => activity.time);
+  const clock = dayClock(activities);
+  const timed = activities.map((activity, position) => ({ activity, start: clock[position] })).filter((item): item is { activity: Rec; start: number } => item.start !== null);
   if (timed.length) {
-    const start = Math.min(...timed.map((activity) => minutes(activity.time)));
-    const end = Math.max(...timed.map((activity) => minutes(activity.time) + (activity.durationMinutes ?? 0)));
+    const start = Math.min(...timed.map((item) => item.start));
+    const end = Math.max(...timed.map((item) => item.start + (item.activity.durationMinutes ?? 0)));
     if (end - start > cap) errors.push({ code: 'DURATION_CAP_EXCEEDED', path: `days[${index}]`, message: `Timed activities span ${end - start} minutes, above the ${cap}-minute limit for this itinerary type.` });
   }
   return errors;
@@ -253,9 +261,10 @@ function structureDiagnostics(content: Rec): { errors: ContractDiagnostic[]; war
   days.forEach((day, index) => {
     if (!day.activities.length) errors.push({ code: 'EMPTY_DAY', path: `days[${index}].activities`, message: 'Every day needs at least one activity.' });
     let previous: number | null = null;
+    const clock = dayClock(day.activities);
     day.activities.forEach((activity: Rec, activityIndex: number) => {
-      if (!activity.time) return;
-      const current = minutes(activity.time);
+      const current = clock[activityIndex];
+      if (current === null) return;
       if (previous !== null && current < previous) {
         errors.push({ code: 'ACTIVITY_ORDER', path: `days[${index}].activities[${activityIndex}].time`, message: 'Activity times must not go backwards within a day.' });
       }

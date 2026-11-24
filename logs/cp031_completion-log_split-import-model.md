@@ -200,3 +200,109 @@ Further work makes undo's ledger and draft write transactional; an injected ledg
 - Added `verify:web-import-mutations`; all five planned safety mutants were killed: sentence qualifier/span guard, activity-source target context, day boundary, partial schedule overwrite, and replay fingerprint.
 - Linux gate remains unavailable: `wsl.exe --status` reported WSL is not installed. No dependency/environment installation was authorized. No live provider call.
 - This closes the recorded corpus/mutation gap for the active CP031/CP032 revision; does not claim cross-platform verification or universal parser accuracy.
+
+## Revision: 2026-11-20 - Usage Checkpointing, Retention Redaction, and Last-Success API
+
+### Revision Plan
+- `../plans/cp030-cp032-cp035_revision-plan_review-findings-gpt-luna.md`, owner-authorized phase 3.
+
+### Changes Made
+- Usage is reserved as unknown before each provider dispatch, then durably accumulated immediately after each response, including retries/batches. CAS/finalization failures preserve known totals. If post-dispatch usage persistence fails, the operation becomes `uncertain` with unknown values and cannot replay. Outer failure handling no longer overwrites an uncertain state.
+- Retention marks current/replay reports source-expired and redacts unknown label values/names, rejected proposal text, evidence quotes, dynamic activity-title paths and all unstructured source-derived prose notes. Safe path/reason/status/accounting data and canonical/replay draft contents remain. Newly generated repeated-margin diagnostics no longer inline copied text. UI displays expiry and disables source-based actions.
+- Latest import API still returns the most recent attempt and now additionally returns the newest completed, non-undone `lastSuccessfulOperation`; failed attempts expose `errorCode`, empty failed report is null, ties sort deterministically, and undone results are not offered as successful/actionable.
+
+### Verification Performed
+- `test:web-import`: 192/192; includes stale CAS usage preservation, multi-batch totals, null usage, injected checkpoint failure→uncertain/no replay, finalization rollback, retention current/replay redaction, and latest-success after failed/undone attempts.
+- `test:web-api`: 13/13; `test:web-ai`: 30/30; `test:web-store`: 12/12; `test:web-publication`: 12/12; editor 34/34; typechecks/schema/build gates pass.
+- No live/paid provider calls; all import accounting tests use deterministic doubles.
+
+### Acceptance Criteria Results
+- PASS for CP031 F02, F03 and F07 backend. F07 editor consumption remains CP032 phase 5, not claimed complete.
+
+### Remaining Limitations
+- CP032 editor still needs to present the last successful report alongside latest failed-attempt state. Linux unavailable; no live provider or push.
+
+## Revision: 2026-11-20 - Durable Import Usage, Retention Redaction, and Report Recovery
+
+### Revision Plan
+- `../plans/cp030-cp032-cp035_revision-plan_review-findings-gpt-luna.md` (owner-authorized phase 3; phase 1 reproduced the findings first).
+
+### Changes Made
+- Every provider attempt is checkpointed before dispatch as in-flight/unknown, then its returned usage is checkpointed immediately before response parsing/retry. This preserves cumulative batch usage across final draft CAS/validation/transaction failures. If the post-call usage write fails, the row is marked `uncertain`, `ai_used=1`, usage stays null, and replay is refused; pre-dispatch checkpoint failure does not dispatch the provider.
+- Retention redacts source-derived text from current/replay reports: unknown labels/values, rejected proposals, accepted evidence quotes, dynamic activity-title paths and parser/layout note prose. Reports are marked `sourceExpired`; UI clearly displays this state and suppresses source-based review actions. Canonical draft and replay draft snapshots are preserved.
+- New repeated-margin PDF diagnostics no longer inline source text.
+- The operations API keeps `operation` as the latest attempt and adds `lastSuccessfulOperation` (completed/non-undone, deterministic tie-break) so a failed newer overwrite does not erase access to the last successful report. Undone report is not exposed as actionable success.
+
+### Verification Performed
+| Verification | Result | Evidence |
+|---|---|---|
+| Phase 1 reproduction | PASS | F02 stale CAS/F07 report behavior reused isolated mocks; F03 unique markers verified in SQLite. |
+| Usage tests | PASS | Failed CAS keeps known token/cost; multi-batch cumulative totals; unknown retry usage remains null; injected post-provider checkpoint failure leaves `uncertain` and prevents replay; final completion failure retains checkpoint. |
+| Retention and source-expiry tests | PASS | Current and replay report secret markers removed; notes and dynamic labels redacted; safe references/status/sourceExpired retained; editor report renders explicit expired notice. |
+| Last-success API tests | PASS | Successful import then missing-source overwrite returns failed latest attempt plus prior success; undone result omitted as actionable `lastSuccessfulOperation`. |
+| `test:web-import` | PASS | 192/192 tests. |
+| API/AI/store/preview/publication/contracts/editor/render/places suites | PASS | 13/13, 30/30, 12/12, 12/12, 12/12, 52/52, 34/34, 15/15, 16/16. |
+| Types/schema/build/release | PASS | Server/app/contracts typechecks, `check:web-types`, `build:web-release`, `validate:web-release` valid. |
+
+### Acceptance Criteria Results
+- PASS for CP031 phase 3 F02/F03 and backend portion of F07. Import failures do not lose recorded usage after a provider response; uncertain checkpoint persistence fails closed. Report/source copies are retention-redacted, and a previous successful report remains retrievable separately from a newer failed attempt.
+- F07 frontend consumption is deliberately deferred to CP032 phase 5. This log does not claim the full seven-finding plan is complete.
+
+### Remaining Limitations
+- No live/paid AI call, push or deployment. Linux was not available/verified.
+- CP032 still needs to guard late A→B responses, avoid false conflicts from normalized transient inputs, and display the new last-success/latest-failure API shape. CP035's broader original follow-ups remain open.
+
+### Grouped-plan follow-up (2026-11-20)
+- The CP031-phase limitation above records the state at the end of phase 3. The owner subsequently authorized CP032 phase 5; those UI items are now closed and verified in `../logs/cp032_completion-log_import-review-hardening.md` and the grouped review log. CP031 phase 3 status remains complete.
+
+## Fase 3 — Review/Test addendum (2026-11-20)
+- Re-reviewed final attempt lifecycle: usage is checkpointed before every provider call and after every response, including retries, before parsing or further provider dispatch. Final record update is in the draft/result transaction; previously committed usage survives rollback. A failed post-response checkpoint writes `uncertain` using a fallback update and outer error handling cannot overwrite it as `failed`.
+- Retention passes current and replay reports, strips raw labels/values, proposal content, evidence quotes, dynamic activity-title paths and free-text notes; sets source-expired metadata on both copies. Editor displays clear expiry state and does not offer source-based decisions; canonical and replay itinerary content is retained by design.
+- Last-import API adds `lastSuccessfulOperation`; latest attempt remains separately visible via `operation` and exposes error code; undone result is not returned as actionable success. CP032 editor integration is not included in this CP031 phase.
+- Verified: import 192/192; API 13/13; AI 30/30; store 12/12; preview 12/12; publication 12/12; contracts 52/52; editor 34/34; render 15/15; places 16/16. App/server/contracts/schema typechecks pass. Release validates. Deterministic browser checks pass; no paid AI.
+- Disposition: CP031 phase 3 scope complete. CP032 F05/F06 and F07 editor display remain open for phase 5; no claim the entire grouped revision is complete.
+
+## Revision: 2026-11-23 - Hybrid Semantic Assignment and Coverage
+
+### Revision Plan
+- `../plans/cp031_revision-plan_hybrid-semantic-assignment-and-coverage.md`.
+
+### Changes Made
+- AI extraction now receives private source units with stable unit IDs, exact text, section, allowed paths, activity owner/day and structural-boundary metadata. The model is asked to return every supporting `sourceUnitIds` array; server validation independently checks scope, unique source match, complete quote, allowed path, exact activity target and one-to-one assignment.
+- Global summary, closing note and policy completions require a matching explicit source section. Local unheaded prose is not promoted to a global claim; it stays pending for review.
+- Same-line CP030 inline details bind only to their owning activity. Adjacent multi-line details may bind only in a contiguous schedule block ending at the next event. Blank-separated text and unowned end-of-trip prose remain unresolved. A structurally bounded complete unit may omit terminal punctuation without relaxing qualifier/negation checks.
+- Import reports now distinguish provider batch status from mapping status and include final post-merge source-unit coverage/dispositions, pending unit references, requested model, and provider-reported model/generation IDs. Source text/quotes are not placed in the new ledger fields.
+- Overwrite day/places protection now keys off owned unresolved source units and accepted mapping rather than treating every pre-AI unconsumed line as unresolved. Existing guards for structural day issues, omitted/layout-ambiguous units, overflow, transaction, revision, replay, usage, retention and undo remain.
+- OpenRouter extraction requests now request JSON Schema structured output; AJV and the evidence/ownership guards remain authoritative. Added import-specific model preflight endpoint and import model ID in capabilities.
+- CP032 remains separate. Owner's three-example format guidance and recommended collapsible placement under the text/PDF controls are recorded in the plan/TODO; no UI code was changed.
+
+### Verification Performed
+| Verification | Result | Evidence |
+|---|---|---|
+| H01–H07/focused extraction regressions | PASS | Mock tests verify local→global rejection, duplicate quote ID anchoring, no double assignment, ignored-unit coverage, same-line activity owner, no-period structural boundary, blank-line ambiguity, resolved overwrite, model-specific preflight and actual response identity. |
+| `test:web-import` | PASS | 204 tests, 0 failures; includes PDF/text intake and apply regressions. |
+| `test:web-ai` | PASS | 32 tests, 0 failures. |
+| `test:web-store` | PASS | 12 tests, 0 failures. |
+| `test:web-api` | PASS | 13 tests, 0 failures. |
+| `test:web-publication` | PASS | 12 tests, 0 failures. |
+| `typecheck:web-server` | PASS | 0 errors in server/contracts/API scope. |
+| `check:web-types` | PASS | Generated declarations match canonical schema. |
+| Correctly guarded live Haiku 5.5 smoke | PASS, text only | One extraction dispatch after import-specific preflight authenticated/listed `anthropic/claude-haiku-5.5`; JSON schema valid; filter/merge accepted Keraton description and tip to the same target; unheaded global sentence stayed unresolved. 1,929 prompt + 705 completion tokens; US$0.0005454. No retry. |
+
+### Acceptance Criteria Results
+| Criterion | Result | Evidence |
+|---|---|---|
+| H01: local quote cannot silently populate a global field | PASS | Unheaded local instruction remains pending; heading-authorized globals continue to pass. |
+| H02: ignored source units remain reviewable | PASS | Empty valid completion returns provider batch complete but mapping unmapped and all unused units in `review.pendingUnits`. |
+| H03: full structural unit can omit punctuation without truncating qualifiers | PASS | No-period activity detail is accepted only when bounded by the next event; existing wrapped-exception regression passes. |
+| H05: complete overwrite can replace safely; partial text preserves old collection | PASS | Fully resolved two-day overwrite replaces the old schedule; existing partial-overwrite test preserves it. |
+| H06: source line and activity ownership are enforced | PASS | Same-line suffix targets exact activity; blank-separated prose gets no target; duplicate title, source IDs and double assignment are guarded. |
+| H07: import model health/provenance is distinct from writing AI | PASS | Import-specific preflight resolves/authenticates Haiku separately; response model/generation identity is recorded. |
+| Existing persistence, privacy, usage/retry/replay/undo and API gates remain green | PASS | Full import/AI/store/API/publication suites and type/schema gates above. |
+
+### Remaining Limitations and Live-Test Accounting
+- Initial bounded text and PDF live smoke attempts using the pre-structured-output request failed schema validation after two attempts each; no AI values were applied and all source units stayed pending. Their costs were US$0.0009806 and US$0.0011951.
+- A later authorized smoke harness accidentally statically imported the provider before loading `.env.web`, so one dispatch used the writing model `openai/gpt-6-luna` instead of Haiku. It applied local details correctly in isolated temporary storage; cost US$0.0002445. This is not counted as Haiku verification. The harness-order mistake and result are disclosed.
+- After loading environment before dynamic provider import and adding JSON Schema response format, one correctly preflight-guarded Haiku 5.5 text dispatch passed. Total observed smoke cost, including failed attempts and the wrong-model call: approximately US$0.0029656. No further provider calls were made.
+- Post-fix live validation was text-only; PDF semantic equivalence is covered by deterministic import/API tests, not a post-fix paid PDF smoke. CP032 review UI/browser preview (including the three sample formats) is not part of CP031.
+- No migration, dependency change, user draft access, commit, push, or deployment. No Linux gate was run. CP033–CP036 remain deferred and unchanged.

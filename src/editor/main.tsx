@@ -39,6 +39,21 @@ function SuggestionPanel({ proposal, canApply, onText, onApply, onDiscard }: { p
   </section>;
 }
 
+function sameJson(left: unknown, right: unknown): boolean { return JSON.stringify(left) === JSON.stringify(right); }
+
+/** Overlay only server-side review deltas onto raw local editor state, keeping transient blank rows in unchanged arrays. */
+function overlayReviewDelta(local: any, before: any, after: any): any {
+  if (sameJson(before, after)) return structuredClone(local);
+  if (before && after && local && typeof before === 'object' && typeof after === 'object' && typeof local === 'object' && !Array.isArray(before) && !Array.isArray(after) && !Array.isArray(local)) {
+    const merged = structuredClone(local);
+    for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+      if (!sameJson(before[key], after[key])) merged[key] = overlayReviewDelta(local[key], before[key], after[key]);
+    }
+    return merged;
+  }
+  return structuredClone(after);
+}
+
 function App() {
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [view, setView] = useState<'editor' | 'settings' | 'setup'>('editor');
@@ -88,8 +103,10 @@ function App() {
   const [importing, setImporting] = useState<null | 'new' | 'overwrite'>(null);
   const [creating, setCreating] = useState(false);
   const [importOperation, setImportOperation] = useState<ImportOperationDto | null>(null);
+  const [latestImportAttempt, setLatestImportAttempt] = useState<ImportOperationDto | null>(null);
   const draftRef = useRef<WebItineraryContent | null>(null);
   const activeRecordRef = useRef(record); activeRecordRef.current = record;
+  const draftOpenGeneration = useRef(0);
   const saveInFlight = useRef(false);
   const latestLanguage = useRef(language); latestLanguage.current = language;
   const latestWriting = useRef(writing); latestWriting.current = writing;
@@ -185,8 +202,11 @@ function App() {
     setContent(next);
   }
 
-  function installRecord(loaded: RecordDto) {
+  function installRecord(loaded: RecordDto, openGeneration?: number) {
+    if (openGeneration === undefined) draftOpenGeneration.current++;
+    activeRecordRef.current = loaded;
     setImportOperation(null);
+    setLatestImportAttempt(null);
     setStepIndex(0); setAttempted({}); setListOpen(false); setTouched(new Set());
     editGeneration.current++;
     languageProposalGeneration.current = null;
@@ -206,7 +226,26 @@ function App() {
   async function open(id: string) {
     if (dirty && !saveProblem && !localeError) { setPendingSavedAction({ kind: 'open', id }); setStatus('Menunggu perubahan tersimpan sebelum membuka draft…'); return; }
     if (!canDiscard()) return;
-    setBusy(true); try { const loaded = await api.get(id); installRecord(loaded); const [published, history] = await Promise.all([api.publication(id), api.versions(id)]); setPublication(published); setVersions(history.items); setStatus(`Draft dibuka · revisi ${loaded.revision}`); api.latestImport(id).then(({ operation }) => setImportOperation(operation && operation.status === 'completed' && !importReportClosed(operation.operationId) ? operation : null)).catch(() => {}); } catch (e) { setStatus((e as Error).message); } finally { setBusy(false); }
+    const generation = ++draftOpenGeneration.current;
+    setBusy(true);
+    try {
+      const loaded = await api.get(id);
+      if (generation !== draftOpenGeneration.current) return;
+      installRecord(loaded, generation);
+      const [published, history] = await Promise.all([api.publication(id), api.versions(id)]);
+      if (generation !== draftOpenGeneration.current || activeRecordRef.current?.id !== id) return;
+      setPublication(published); setVersions(history.items); setStatus(`Draft dibuka · revisi ${loaded.revision}`);
+      void api.latestImport(id).then((latest) => {
+        if (generation !== draftOpenGeneration.current || activeRecordRef.current?.id !== id) return;
+        const success = latest.lastSuccessfulOperation ?? (latest.operation?.status === 'completed' && !latest.operation.undone ? latest.operation : null);
+        setImportOperation(success && !importReportClosed(success.operationId) ? success : null);
+        setLatestImportAttempt(latest.operation);
+      }).catch(() => {});
+    } catch (e) {
+      if (generation === draftOpenGeneration.current) setStatus((e as Error).message);
+    } finally {
+      if (generation === draftOpenGeneration.current) setBusy(false);
+    }
   }
   async function create(mode: ItineraryMode) {
     if (!canDiscard()) return;
@@ -215,10 +254,12 @@ function App() {
   }
   async function finishImport(result: ImportApplyDto & { target: 'new' | 'overwrite' }) {
     installRecord(result.itinerary); setImporting(null); setPublication(null); setVersions([]);
-    setImportOperation({ operationId: result.operationId, sourceId: result.sourceId, status: 'completed', target: result.target, report: result.report, usage: result.usage, undoAvailable: result.target === 'overwrite' });
+    const importedOperation: ImportOperationDto = { operationId: result.operationId, sourceId: result.sourceId, status: 'completed', target: result.target, report: result.report, usage: result.usage, undoAvailable: result.target === 'overwrite' };
+    setImportOperation(importedOperation); setLatestImportAttempt(importedOperation);
     await refresh().catch(() => {});
     setStatus(result.target === 'new' ? 'Draf baru dari import tersimpan' : 'Draf diganti dari import; batalkan tersedia selama belum diedit.');
-    api.publication(result.itinerary.id).then(setPublication).catch(() => {});
+    const generation = draftOpenGeneration.current; const itineraryId = result.itinerary.id;
+    api.publication(itineraryId).then(value => { if (generation === draftOpenGeneration.current && activeRecordRef.current?.id === itineraryId) setPublication(value); }).catch(() => {});
   }
   async function undoImport() {
     if (!record || !importOperation) return;
@@ -345,7 +386,9 @@ function App() {
     setSaveProblem(null); setBusy(true); setStatus('Menyimpan…');
     try {
       const saved = await api.save(record, submitted, language, writing); setRecord(saved); setConflict(null); setPublication(current => current ? { ...current, draftRevision: saved.revision, draftDiffers: Boolean(current.currentVersion && current.currentVersion.sourceRevision !== saved.revision) } : current);
-      if (editGeneration.current === generation) { draftRef.current = saved.draftContent; setContent(saved.draftContent); setLanguage(saved.languageContext); setWriting(saved.writingContext); setDirty(false); setProposals({}); setStatus(`Tersimpan · revisi ${saved.revision}`); }
+      // Keep transient editing rows (including empty new inputs) and native focus
+      // intact. Only the persisted snapshot is normalized; reload installs it.
+      if (editGeneration.current === generation) { setLanguage(saved.languageContext); setWriting(saved.writingContext); setDirty(false); setProposals({}); setStatus(`Tersimpan · revisi ${saved.revision}`); }
       else setStatus(`Revisi ${saved.revision} tersimpan; edit terbaru masih belum disimpan.`);
       await refresh().catch(() => {});
     } catch (caught) { const e = caught as ApiFailure;
@@ -611,12 +654,22 @@ function App() {
         {creating ? <CreateFlow aiActive={importLimits.aiConfigured} limits={importLimits} busy={busy} onCancel={() => setCreating(false)} onManual={(next) => { setCreating(false); void create(next); }} onImported={(result) => { setCreating(false); void finishImport(result); }} /> : importing ? <ImportScreen target={importing} draftMode={activeMode ?? null} draftId={record?.id ?? null} draftRevision={record?.revision ?? null} aiActive={importLimits.aiConfigured} limits={importLimits} onCancel={() => setImporting(null)} onDone={finishImport} /> : !content || !activeMode ? <div className="grid min-h-80 place-items-center gap-4 text-center text-slate-500"><p>Pilih atau buat draft untuk mulai.</p><button type="button" className={primaryClass} disabled={busy} onClick={() => { if (canDiscard()) setCreating(true); }}>{createCopy.start}</button></div> : <>
           {importOperation && record && <ImportReport operation={importOperation} record={record} dirty={dirty} busy={busy} onResolved={(updated, report) => {
             if (activeRecordRef.current?.id !== updated.id || activeRecordRef.current.revision !== record.revision) return;
-            if (draftRef.current && (JSON.stringify(draftRef.current) !== JSON.stringify(record.draftContent) || JSON.stringify(latestLanguage.current) !== JSON.stringify(record.languageContext) || JSON.stringify(latestWriting.current) !== JSON.stringify(record.writingContext))) {
-              setConflict({ latest: updated, local: structuredClone(draftRef.current), language: structuredClone(latestLanguage.current), writing: structuredClone(latestWriting.current) });
+            draftOpenGeneration.current++;
+            const localDraft = draftRef.current;
+            const normalizedLocal = localDraft ? normalizeBlanks(localDraft) : null;
+            if (localDraft && (!sameJson(normalizedLocal, record.draftContent) || !sameJson(latestLanguage.current, record.languageContext) || !sameJson(latestWriting.current, record.writingContext))) {
+              setConflict({ latest: updated, local: structuredClone(localDraft), language: structuredClone(latestLanguage.current), writing: structuredClone(latestWriting.current) });
               setStatus('Review tersimpan, tetapi draf lokal berubah selama proses; perubahan lokal tetap aman.');
+            } else if (localDraft) {
+              const mergedLocal = overlayReviewDelta(localDraft, record.draftContent, updated.draftContent);
+              draftRef.current = mergedLocal;
+              setContent(mergedLocal); setRecord(updated); activeRecordRef.current = updated;
+              setLanguage(updated.languageContext); setWriting(updated.writingContext); setDirty(false); setSaveProblem(null);
+              setStatus(`Review tersimpan · revisi ${updated.revision}`);
             } else { installRecord(updated); setStatus(`Review tersimpan · revisi ${updated.revision}`); }
             setImportOperation({ ...importOperation, report, undoAvailable: false });
-          }} labelFor={(path) => labelFor(path, activeMode ?? 'half_day')} onJump={(path) => focusDiagnostic({ path, targetId: draftRef.current ? targetIdFor(draftRef.current, path) : undefined })} onUndo={undoImport} onClose={() => { try { localStorage.setItem(`import-report-closed:${importOperation.operationId}`, '1'); } catch { /* storage unavailable: the panel just returns next time */ } setImportOperation(null); }} />}
+          }} latestAttempt={latestImportAttempt} labelFor={(path) => labelFor(path, activeMode ?? 'half_day')} onJump={(path) => focusDiagnostic({ path, targetId: draftRef.current ? targetIdFor(draftRef.current, path) : undefined })} onUndo={undoImport} onClose={() => { try { localStorage.setItem(`import-report-closed:${importOperation.operationId}`, '1'); } catch { /* storage unavailable: the panel just returns next time */ } setImportOperation(null); }} />}
+          {!importOperation && latestImportAttempt && (latestImportAttempt.undone || latestImportAttempt.status !== 'completed') && <section role="status" aria-label="Status import terakhir" className="mb-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">{latestImportAttempt.undone ? 'Import terakhir sudah dibatalkan; hasilnya tidak ditawarkan sebagai review aktif.' : latestImportAttempt.status === 'uncertain' ? 'Status import terakhir belum pasti. Demi keamanan, operasi tersebut tidak dijalankan ulang.' : latestImportAttempt.status === 'running' ? 'Import terakhir masih berjalan.' : 'Import terakhir gagal. Tidak ada hasil baru yang diterapkan.'}</section>}
           <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4"><div><p className="text-xs font-semibold uppercase tracking-wide text-teal-800">{createCopy.editorStep}</p><div className="flex flex-wrap items-center gap-2"><h2 className="text-xl font-semibold">{content.trip.title || 'Tanpa judul'}</h2><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${modeCopy[activeMode].badge}`}>{modeCopy[activeMode].title}</span></div><p className="mt-1 text-sm text-slate-600">{dirty ? saveInFlight.current ? 'Menyimpan…' : saveProblem ? 'Belum tersimpan · periksa pesan di atas' : 'Perubahan akan disimpan otomatis' : `Tersimpan · revisi ${record?.revision}`}{profileDirty ? ' · profil belum disimpan' : ''}</p></div><div className="flex gap-2"><button ref={previewTrigger} type="button" disabled={(busy && !saveInFlight.current) || !record || Boolean(localeError) || Boolean(saveProblem) || Boolean(pendingSavedAction)} onClick={() => { if (dirty) { setStatus('Menunggu perubahan tersimpan sebelum preview…'); setPendingSavedAction({ kind: 'preview' }); } else void previewSaved(); }} className={buttonClass}>Preview</button><button type="button" disabled={busy || !dirty || Boolean(localeError) || saveProblem === 'conflict'} onClick={save} className={primaryClass}>{saveProblem === 'failed' ? 'Coba lagi' : 'Simpan draft'}</button></div></div>
           <div className="lg:grid lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-6">
           <div className="sticky top-0 z-10 -mx-1 mb-4 bg-white px-1 py-2 lg:top-4 lg:z-0 lg:mx-0 lg:mb-0 lg:self-start lg:px-0"><Stepper steps={steps} mode={activeMode ?? 'half_day'} current={stepIndex} issueCounts={issueCounts} onSelect={goToStep} /><p className="mt-2 text-xs font-semibold text-slate-700 lg:hidden">Langkah {stepIndex + 1} dari {steps.length} · {stepTitle(current, activeMode ?? 'half_day')}</p></div>

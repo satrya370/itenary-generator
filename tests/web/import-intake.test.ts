@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -189,6 +190,9 @@ test('multi-page layout PDF keeps page geometry, repeated content, and source-pa
   assert.ok(sidecar.pages.every((page: { width: number; height: number; rotation: number; items: unknown[] }) => page.width > 0 && page.height > 0 && Number.isFinite(page.rotation) && page.items.length > 0));
   assert.ok(sidecar.blocks.every((block: { startUtf16: number; endUtf16: number; bounds: { width: number; height: number } | null }) => block.endUtf16 >= block.startUtf16 && block.bounds?.width > 0 && block.bounds.height >= 0));
   assert.ok(sidecar.diagnostics.some((item: { code: string }) => item.code === 'PDF_REPEATED_MARGIN_TEXT_REVIEW'));
+  assert.ok(sidecar.diagnostics.filter((item: { code: string }) => item.code === 'PDF_REPEATED_MARGIN_TEXT_REVIEW').every((item: { message: string }) => !item.message.includes('ITINERARY SAMPLE')), 'layout diagnostics must not duplicate source text into operation reports');
+  assert.ok(sidecar.diagnostics.filter((item: { code: string }) => item.code === 'PDF_REPEATED_MARGIN_TEXT_REVIEW').every((item: { message: string }) => !item.message.includes('ITINERARY SAMPLE')), 'repeated-margin diagnostics must not inline document text');
+  assert.ok(sidecar.diagnostics.filter((item: { code: string }) => item.code === 'PDF_REPEATED_MARGIN_TEXT_REVIEW').every((item: { message: string }) => !item.message.includes('ITINERARY SAMPLE')), 'layout diagnostic must not copy source text into reports');
   const source = await readFile(path.join(f.dataDir, 'imports', `${created.sourceId}.txt`), 'utf8');
   assert.match(source, /Day 1/);
   assert.match(source, /Day 2/);
@@ -306,6 +310,45 @@ test('legacy PDF sidecars are rebuilt against stored source; incompatible old co
   assert.equal(stale!.blocks.length, 0, 'invalid provenance must not be exposed');
   assert.ok(stale!.diagnostics.some((item) => item.code === 'PDF_SOURCE_LAYOUT_STALE'));
   assert.deepEqual([...layoutExcludedLines(stale, 'Old joined columns | not the same source')], [0]);
+});
+
+test('PDF parse fails closed if its required layout sidecar is missing or malformed', async (t) => {
+  const f = await fixture(t);
+  const intake = await f.app.inject(multipart('file', 'layout-case-08-independent-time-columns.pdf', await pdfOf('layout-case-08-independent-time-columns.pdf')));
+  assert.equal(intake.statusCode, 201, intake.body);
+  const sourceId = intake.json().sourceId as string;
+  const sidecar = path.join(f.dataDir, 'imports', `${sourceId}.layout.json`);
+  for (const corrupt of [false, true]) {
+    if (corrupt) await writeFile(sidecar, '{ invalid json');
+    else await rm(sidecar, { force: true });
+    const response = await f.app.inject({ method: 'POST', url: `/api/v1/imports/sources/${sourceId}/parse`, headers, payload: { mode: 'full_day' } });
+    assert.equal(response.statusCode, 409, response.body);
+    assert.equal(response.json().error.code, 'IMPORT_SOURCE_LAYOUT_UNAVAILABLE');
+    assert.equal((await f.app.inject({ url: '/api/v1/itineraries' })).json().items.length, 0);
+  }
+});
+
+test('a valid but stale PDF layout keeps every source line review-only during parse and apply', async (t) => {
+  const f = await fixture(t);
+  const intake = await f.app.inject(multipart('file', 'layout-case-08-independent-time-columns.pdf', await pdfOf('layout-case-08-independent-time-columns.pdf')));
+  assert.equal(intake.statusCode, 201, intake.body);
+  const sourceId = intake.json().sourceId as string;
+  const sourceFile = path.join(f.dataDir, 'imports', `${sourceId}.txt`);
+  const original = await readFile(sourceFile, 'utf8');
+  await writeFile(sourceFile, `${original}\nDestinasi: Forged after intake`);
+
+  const parsed = await f.app.inject({ method: 'POST', url: `/api/v1/imports/sources/${sourceId}/parse`, headers, payload: { mode: 'full_day' } });
+  assert.equal(parsed.statusCode, 200, parsed.body);
+  assert.ok(parsed.json().diagnostics.some((item: { code: string }) => item.code === 'PDF_SOURCE_LAYOUT_STALE'));
+  assert.ok(parsed.json().unconsumed.length > 0);
+  assert.ok(parsed.json().unconsumed.every((item: { section: string }) => item.section === 'layout-ambiguous'));
+
+  const applied = await f.app.inject({ method: 'POST', url: `/api/v1/imports/sources/${sourceId}/apply`, headers, payload: { operationId: randomUUID(), target: 'new', mode: 'full_day', outputLanguage: 'id' } });
+  assert.equal(applied.statusCode, 201, applied.body);
+  const draft = applied.json().itinerary.draftContent;
+  assert.equal(draft.trip.destination, '');
+  assert.ok(draft.days.flatMap((day: { activities: Array<{ title: string; time: string | null }> }) => day.activities).every((activity) => activity.title === '' && activity.time === null), 'only the empty editor seed may remain; no stale source fact is accepted');
+  assert.equal(applied.json().report.aiAttempts, 0);
 });
 
 test('PDF reconstruction reads prose columns top-to-bottom before moving to the next column', () => {

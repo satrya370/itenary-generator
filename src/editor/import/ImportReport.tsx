@@ -4,8 +4,8 @@ import { buttonClass } from '../fields.js';
 import { importCopy } from './copy.js';
 
 /** Panel shown at the top of an imported draft: what was filled, what is still missing, source text, undo. */
-export function ImportReport({ operation, record, dirty, labelFor, onJump, onUndo, onClose, onResolved, busy }: {
-  operation: ImportOperationDto; record: RecordDto; dirty: boolean; labelFor: (path: string) => string; onJump: (path: string) => void; onUndo: () => void; onClose: () => void; onResolved: (record: RecordDto, report: ImportReportDto) => void; busy: boolean;
+export function ImportReport({ operation, latestAttempt, record, dirty, labelFor, onJump, onUndo, onClose, onResolved, busy }: {
+  operation: ImportOperationDto; latestAttempt?: ImportOperationDto | null; record: RecordDto; dirty: boolean; labelFor: (path: string) => string; onJump: (path: string) => void; onUndo: () => void; onClose: () => void; onResolved: (record: RecordDto, report: ImportReportDto) => void; busy: boolean;
 }) {
   const [source, setSource] = useState<string | null>(null);
   const [sourceError, setSourceError] = useState<string | null>(null);
@@ -26,8 +26,11 @@ export function ImportReport({ operation, record, dirty, labelFor, onJump, onUnd
         <h3 className="font-semibold text-teal-950">{importCopy.reportTitle}</h3>
         <button type="button" className={buttonClass} onClick={onClose}>{importCopy.dismiss}</button>
       </div>
+      {latestAttempt && latestAttempt.operationId !== operation.operationId && (latestAttempt.status !== 'completed' || latestAttempt.undone) && <p role="status" className="rounded border border-amber-400 bg-amber-50 p-3 text-amber-950">{latestAttempt.undone ? 'Import terakhir sudah dibatalkan. Laporan berhasil sebelumnya tetap tersedia di bawah.' : latestAttempt.status === 'uncertain' ? 'Import terbaru berakhir dengan status yang belum pasti. Laporan berhasil sebelumnya tetap tersedia di bawah.' : latestAttempt.status === 'running' ? 'Import terbaru masih berjalan. Laporan berhasil sebelumnya tetap tersedia di bawah.' : 'Percobaan import terbaru gagal. Laporan berhasil sebelumnya tetap tersedia di bawah.'}</p>}
       <p className="text-teal-950">{importCopy.reportFilled(report.filled.length)}</p>
       <p className="text-slate-700">{usage.aiUsed ? `AI dipakai · ${usage.promptTokens === null || usage.completionTokens === null ? 'jumlah token tidak diketahui' : `${(usage.promptTokens + usage.completionTokens).toLocaleString('id-ID')} token`} · ${usage.actualUsd === null ? 'biaya tidak diketahui' : `US$${usage.actualUsd.toFixed(4)}`}${report.aiBatches === undefined ? '' : ` · ${report.aiBatches} batch, ${report.aiAttempts ?? 0} percobaan`}` : importCopy.reportUsageNone}</p>
+      {(report.sourceExpired || report.review?.sourceExpired) && <p role="status" className="rounded border border-amber-400 bg-amber-50 p-3 text-amber-950">{importCopy.sourceExpired}</p>}
+      {report.review?.unknownLabels?.length ? <UnknownLabels operation={operation} record={record} dirty={dirty} busy={busy} onResolved={onResolved} /> : null}
       {report.review ? <ReviewConflicts operation={operation} record={record} dirty={dirty} busy={busy} onResolved={onResolved} /> : <p className="text-slate-700">Laporan lama: bukti kandidat tidak tersedia; periksa teks sumber secara manual.</p>}
 
       <div>
@@ -67,6 +70,62 @@ export function ImportReport({ operation, record, dirty, labelFor, onJump, onUnd
   );
 }
 
+/** Labels the parser did not know. The guide sends each value to one field, or ignores it. The value is always the source copy. */
+function UnknownLabels({ operation, record, dirty, busy, onResolved }: { operation: ImportOperationDto; record: RecordDto; dirty: boolean; busy: boolean; onResolved: (record: RecordDto, report: ImportReportDto) => void }) {
+  const [choice, setChoice] = useState<Record<string, string>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const items = operation.report?.review?.unknownLabels ?? [];
+  const sourceExpired = operation.report?.sourceExpired === true || operation.report?.review?.sourceExpired === true || items.some((item) => !item.label || !item.value);
+
+  async function decide(candidateId: string, action: 'select' | 'ignore') {
+    if (dirty || busy || pending) return;
+    const target = choice[candidateId];
+    if (action === 'select' && !target) return;
+    setPending(true); setError(null);
+    try {
+      const result = await api.resolveImport(operation.operationId, { expectedRevision: record.revision, candidateId, action, ...(action === 'select' ? { target } : {}) });
+      onResolved(result.itinerary, result.report);
+    } catch (caught) { setError((caught as Error).message); }
+    finally { setPending(false); }
+  }
+
+  return (
+    <section aria-label={importCopy.unknownLabelsTitle} className="space-y-3 rounded border border-amber-300 bg-amber-50 p-3">
+      <h4 className="font-semibold">{importCopy.unknownLabelsTitle}</h4>
+      <p>{importCopy.unknownLabelsHint}</p>
+      {dirty && <p role="status">Simpan atau batalkan perubahan draf sebelum menyelesaikan review.</p>}
+      {error && <p role="alert" className="text-red-800">{error}</p>}
+      <ul className="space-y-2">
+        {items.map((item) => {
+          const open = item.status === 'pending' && !sourceExpired;
+          return (
+            <li key={item.id} className="space-y-2 rounded border border-amber-200 bg-white p-3">
+              <p className="break-words"><strong>{item.label ?? 'Label sumber'}</strong>{item.value ? <>: <q>{item.value}</q></> : <span> · teks privat sudah dihapus</span>}</p>
+              {!open && !sourceExpired && <p className="text-slate-700">{item.status === 'ignored' ? importCopy.unknownLabelDone('ignore') : `${importCopy.unknownLabelDone('select')} ke ${importCopy.targetLabels[item.decision?.target ?? ''] ?? 'field'}`}.</p>}
+              {!open && sourceExpired && <p className="text-slate-700">Data label sudah dihapus; keputusan sumber tidak dapat diterapkan.</p>}
+              {open && item.targets.length === 0 && <p>{importCopy.unknownLabelNoField}</p>}
+              {open && item.targets.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="flex items-center gap-2">
+                    <span>Field tujuan</span>
+                    <select className="min-h-[44px] rounded border border-slate-400 bg-white p-1" value={choice[item.id] ?? ''} onChange={(event) => setChoice((prior) => ({ ...prior, [item.id]: event.target.value }))}>
+                      <option value="">Pilih…</option>
+                      {item.targets.map((target) => <option key={target} value={target}>{importCopy.targetLabels[target] ?? target}</option>)}
+                    </select>
+                  </label>
+                  <button type="button" className={buttonClass} disabled={busy || dirty || pending || !choice[item.id]} onClick={() => void decide(item.id, 'select')}>{importCopy.unknownLabelSave}</button>
+                </div>
+              )}
+              {open && <button type="button" className={buttonClass} disabled={busy || dirty || pending} onClick={() => void decide(item.id, 'ignore')}>{importCopy.unknownLabelIgnore}</button>}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 function ReviewConflicts({ operation, record, dirty, busy, onResolved }: { operation: ImportOperationDto; record: RecordDto; dirty: boolean; busy: boolean; onResolved: (record: RecordDto, report: ImportReportDto) => void }) {
   const [preview, setPreview] = useState<ImportParseDto | null>(null);
   const [source, setSource] = useState<string | null>(null);
@@ -74,15 +133,16 @@ function ReviewConflicts({ operation, record, dirty, busy, onResolved }: { opera
   const [pending, setPending] = useState(false);
   const [manual, setManual] = useState<Record<string, string>>({});
   const candidates = operation.report?.review?.candidates ?? [];
+  const sourceExpired = operation.report?.sourceExpired === true || operation.report?.review?.sourceExpired === true;
   useEffect(() => {
     let alive = true;
-    if (candidates.some((item) => item.status === 'pending') || (operation.report?.evidence?.omittedLineIndexes?.length ?? 0) > 0) {
+    if (!sourceExpired && (candidates.some((item) => item.status === 'pending') || (operation.report?.evidence?.omittedLineIndexes?.length ?? 0) > 0)) {
       Promise.all([api.getImportSource(operation.sourceId), api.parseImport(operation.sourceId, record.draftContent.trip.mode)])
         .then(([detail, result]) => { if (alive) { setSource(detail.text); setPreview(result); } })
         .catch((caught) => { if (alive) setError((caught as Error).message); });
     }
     return () => { alive = false; };
-  }, [operation.sourceId, operation.operationId, record.draftContent.trip.mode]);
+  }, [operation.sourceId, operation.operationId, record.draftContent.trip.mode, sourceExpired]);
   async function resolve(candidateId: string, action: 'select' | 'edit' | 'ignore', line?: number) {
     if (dirty || busy || pending) return;
     setPending(true); setError(null);
@@ -109,15 +169,15 @@ function ReviewConflicts({ operation, record, dirty, busy, onResolved }: { opera
       const conflict = preview?.conflicts?.[sourceIndex];
       const valid = conflict?.path === candidate.path && JSON.stringify(conflict.occurrences.map((item) => item.line)) === JSON.stringify(candidate.lines);
       return <section key={candidate.id} className="space-y-2 rounded border border-amber-200 bg-white p-3" aria-label={`Konflik ${index + 1}`}>
-        <h5 className="font-semibold">{index + 1}. {({ destination: 'Destinasi', country: 'Negara', date: 'Tanggal', guide: 'Nama guide', phone: 'Nomor guide', 'meeting.place': 'Titik kumpul', 'meeting.mapsUrl': 'Link peta' } as Record<string, string>)[candidate.path] ?? candidate.path} — {candidate.status === 'pending' ? 'belum diselesaikan' : candidate.status === 'ignored' ? 'diabaikan' : 'diselesaikan'}</h5>
+        <h5 className="font-semibold">{index + 1}. {({ destination: 'Destinasi', country: 'Negara', date: 'Tanggal', guide: 'Nama guide', phone: 'Nomor guide', 'meeting.place': 'Titik kumpul', 'meeting.mapsUrl': 'Link peta' } as Record<string, string>)[candidate.path] ?? candidate.path} — {sourceExpired ? 'bukti sumber dihapus' : candidate.status === 'pending' ? 'belum diselesaikan' : candidate.status === 'ignored' ? 'diabaikan' : 'diselesaikan'}</h5>
         <p>Nilai draf saat ini: {fields[candidate.path] || '(kosong)'}</p>
-        {candidate.status === 'pending' && valid && conflict && <>
+        {candidate.status === 'pending' && !sourceExpired && valid && conflict && <>
           <p>{conflict.message}</p>
           <ul className="space-y-1">{conflict.occurrences.map((item) => <li key={item.line}>{item.pageNumber ? `Halaman ${item.pageNumber}, ` : ''}baris {item.line}: <q>{source?.split('\n')[item.line - 1] ?? item.value}</q> <button type="button" className={buttonClass} disabled={busy || dirty || pending} onClick={() => void resolve(candidate.id, 'select', item.line)}>Pilih {item.value}</button></li>)}</ul>
           <label className="block">Nilai manual <input className="ml-2 rounded border border-slate-400 p-1" value={manual[candidate.id] ?? ''} onChange={(event) => setManual((prior) => ({ ...prior, [candidate.id]: event.target.value }))} /></label>
           <div className="flex flex-wrap gap-2"><button type="button" className={buttonClass} disabled={busy || dirty || pending || !manual[candidate.id]?.trim()} onClick={() => void resolve(candidate.id, 'edit')}>Simpan nilai manual</button><button type="button" className={buttonClass} disabled={busy || dirty || pending} onClick={() => void resolve(candidate.id, 'ignore')}>Abaikan</button></div>
         </>}
-        {candidate.status === 'pending' && !valid && !error && <p>Memuat bukti sumber; jika tidak cocok, kandidat tidak dapat diterapkan.</p>}
+        {candidate.status === 'pending' && !sourceExpired && !valid && !error && <p>Memuat bukti sumber; jika tidak cocok, kandidat tidak dapat diterapkan.</p>}
       </section>;
     })}
   </div>;

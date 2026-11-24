@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Import completion (CP031): values the deterministic parser did not fill",
-  "description": "Every leaf is { value, quote }. value must be contained in quote, and quote must be contained in the unconsumed source segments. Anything else is dropped by the server guard.",
+  "description": "Every leaf is { sourceUnitIds?, value, quote }. Values and quotes must come from permitted contiguous unconsumed source units and pass server-side scope, target, boundary, and ownership checks.",
   "type": "object",
   "additionalProperties": false,
   "$defs": {
@@ -10,6 +10,7 @@
       "additionalProperties": false,
       "required": ["value", "quote"],
       "properties": {
+        "sourceUnitIds": { "type": "array", "minItems": 1, "maxItems": 20, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 100 } },
         "value": { "type": "string", "minLength": 1, "maxLength": 6000 },
         "quote": { "type": "string", "minLength": 1, "maxLength": 2000 }
       }

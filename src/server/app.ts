@@ -143,8 +143,13 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
 
   app.get('/api/v1/itinerary-engine/context', async () => ({
     workspace: store.workspace(), accessMode: 'loopback', limits: { jsonBytes: 2 * 1024 * 1024, imageBytes: 5 * 1024 * 1024, imagePixels: 16_000_000 },
-    capabilities: { locales: ['la', 'fr', 'en', 'id', 'ja', 'zh-Hans'], render: 'available', ai: ai.contextSummary(), import: { aiConfigured: importExtractor?.credentialState === 'configured', maxTextChars: MAX_TEXT_CHARS, maxPdfBytes: MAX_PDF_BYTES, maxPdfPages: MAX_PDF_PAGES, retentionDays: importRetention } }
+     capabilities: { locales: ['la', 'fr', 'en', 'id', 'ja', 'zh-Hans'], render: 'available', ai: ai.contextSummary(), import: { aiConfigured: importExtractor?.credentialState === 'configured', modelId: importExtractor?.modelId ?? null, maxTextChars: MAX_TEXT_CHARS, maxPdfBytes: MAX_PDF_BYTES, maxPdfPages: MAX_PDF_PAGES, retentionDays: importRetention } }
   }));
+  app.get('/api/v1/itinerary-engine/import/preflight', async () => {
+    if (!importExtractor) return { credentialState: 'missing', modelId: null, authenticated: false, modelState: 'extractor_unavailable' };
+    if (!importExtractor.preflightImport) return { credentialState: importExtractor.credentialState, modelId: importExtractor.modelId ?? null, authenticated: null, modelState: 'preflight_unavailable' };
+    return importExtractor.preflightImport();
+  });
   app.get('/api/v1/itinerary-engine/profile', async () => store.workspace());
   app.patch<{ Body: unknown }>('/api/v1/itinerary-engine/profile', async (request, reply) => {
     const body = request.body;

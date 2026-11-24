@@ -32,3 +32,27 @@ test('import defaults to writing and empty overrides retain the previous model',
   checkModels('openai/gpt-oss-120b', '', 'openai/gpt-oss-120b', 'openai/gpt-oss-120b');
   checkModels('', '', 'openai/gpt-6-luna', 'openai/gpt-6-luna');
 });
+
+test('import preflight checks the import model rather than the writing model', () => {
+  const script = `
+    import assert from 'node:assert/strict';
+    import { OpenRouterProvider } from './src/server/ai/provider.ts';
+    const provider = new OpenRouterProvider({ state: 'configured', source: 'environment', key: 'test-only' }, async (url) => {
+      if (String(url).endsWith('/models')) return Response.json({ data: [
+        { id: 'openai/gpt-oss-120b', pricing: { prompt: '0.1', completion: '0.2' } },
+        { id: 'anthropic/claude-haiku-5.5', pricing: { prompt: '0.01', completion: '0.02' } }
+      ] });
+      return new Response('', { status: 200 });
+    });
+    const result = await provider.preflightImport();
+    assert.equal(result.modelId, 'anthropic/claude-haiku-5.5');
+    assert.equal(result.modelState, 'listed');
+    assert.equal(result.authenticated, true);
+    assert.deepEqual(result.pricing, { prompt: 0.01, completion: 0.02, webSearch: 0 });
+  `;
+  const result = spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', script], {
+    encoding: 'utf8', timeout: 30000,
+    env: { ...process.env, OPENROUTER_MODEL: 'openai/gpt-oss-120b', OPENROUTER_IMPORT_MODEL: 'anthropic/claude-haiku-5.5' }
+  });
+  assert.equal(result.status, 0, result.stderr || result.error?.message);
+});

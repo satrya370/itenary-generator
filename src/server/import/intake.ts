@@ -123,10 +123,13 @@ export function pageToBlocks(items: PdfItem[]): Array<{ text: string; ambiguous?
       return { text, x, bounds: { x, y, width: right - x, height: Math.max(top - y, ...fragment.map((item) => item.height ?? 0), 0) } };
     });
   });
+  // Copied table rows are one block each; their cells must not make the rest of the page look like two columns.
+  const tables = tableRows(rows);
   const columnStarts: number[] = [];
-  for (const row of orderedRows) for (const fragment of row) {
-    if (!columnStarts.some((x) => Math.abs(x - fragment.x) <= 40)) columnStarts.push(fragment.x);
-  }
+  orderedRows.forEach((row, index) => {
+    if (tables.has(index)) return;
+    for (const fragment of row) if (!columnStarts.some((x) => Math.abs(x - fragment.x) <= 40)) columnStarts.push(fragment.x);
+  });
   columnStarts.sort((a, b) => a - b);
   const multiColumn = columnStarts.length > 1;
   // A clock alone cannot prove that adjacent prose belongs to that activity.
@@ -144,7 +147,12 @@ export function pageToBlocks(items: PdfItem[]): Array<{ text: string; ambiguous?
     }
     return output.map(({ text, bounds }) => ({ text, bounds, ambiguous: true }));
   }
-  if (!tabular) return orderedRows.flatMap((row) => row.map(({ text, bounds }) => ({ text, bounds })));
+  if (!tabular) {
+    // Copied tables: consecutive rows with three or more cells, starting at the same x, are joined with tabs.
+    return orderedRows.flatMap((row, index) => tables.has(index)
+      ? [tables.get(index)!]
+      : row.map(({ text, bounds }) => ({ text, bounds })));
+  }
   return orderedRows.map((row) => {
     const x = Math.min(...row.map((fragment) => fragment.bounds.x));
     const y = Math.min(...row.map((fragment) => fragment.bounds.y));
@@ -155,6 +163,59 @@ export function pageToBlocks(items: PdfItem[]): Array<{ text: string; ambiguous?
 }
 
 export function pageToLines(items: PdfItem[]): string[] { return pageToBlocks(items).map((block) => block.text); }
+
+/** Cells of one visual row. A gap above 9 units starts a new cell; words in a cell are 2–7 units apart. */
+function cellsOf(items: PdfItem[]): Array<{ text: string; x: number; bounds: { x: number; y: number; width: number; height: number } }> {
+  const sorted = [...items].filter((item) => item.str.trim()).sort((a, b) => a.x - b.x);
+  const cells: PdfItem[][] = [];
+  let previousEnd: number | null = null;
+  for (const item of sorted) {
+    if (!cells.length || (previousEnd !== null && item.x - previousEnd > 9)) cells.push([]);
+    cells.at(-1)!.push(item);
+    previousEnd = item.x + item.width;
+  }
+  return cells.map((cell) => {
+    const x = Math.min(...cell.map((item) => item.x));
+    const right = Math.max(...cell.map((item) => item.x + item.width));
+    const y = Math.min(...cell.map((item) => item.y));
+    const top = Math.max(...cell.map((item) => item.y + (item.height ?? 0)));
+    let text = '';
+    let end: number | null = null;
+    for (const item of cell) {
+      if (end !== null && item.x - end > 2) text += ' ';
+      text += item.str.trim();
+      end = item.x + item.width;
+    }
+    return { text, x, bounds: { x, y, width: right - x, height: top - y } };
+  }).filter((cell) => cell.text);
+}
+
+/** Map from row index to one tab-joined block for every table row. Rows must already be sorted top to bottom. */
+function tableRows(rows: Array<{ items: PdfItem[] }>): Map<number, { text: string; bounds: { x: number; y: number; width: number; height: number } }> {
+  const cellsByRow = rows.map((row) => cellsOf(row.items));
+  const result = new Map<number, { text: string; bounds: { x: number; y: number; width: number; height: number } }>();
+  let group: number[] = [];
+  const flush = () => {
+    if (group.length >= 2) {
+      for (const index of group) {
+        const cells = cellsByRow[index];
+        const x = Math.min(...cells.map((cell) => cell.bounds.x));
+        const y = Math.min(...cells.map((cell) => cell.bounds.y));
+        const right = Math.max(...cells.map((cell) => cell.bounds.x + cell.bounds.width));
+        const top = Math.max(...cells.map((cell) => cell.bounds.y + cell.bounds.height));
+        result.set(index, { text: cells.map((cell) => cell.text).join('\t'), bounds: { x, y, width: right - x, height: top - y } });
+      }
+    }
+    group = [];
+  };
+  cellsByRow.forEach((cells, index) => {
+    if (cells.length < 3) { flush(); return; }
+    if (group.length && Math.abs(cells[0].x - cellsByRow[group[0]][0].x) <= 6) group.push(index);
+    else { flush(); group = [index]; }
+  });
+  flush();
+  return result;
+}
 
 /** Backward-compatible projection for callers/tests that need text items only. */
 export async function readPdfPages(bytes: Uint8Array, deadlineMs = PDF_DEADLINE_MS): Promise<PdfPages> {
@@ -210,8 +271,8 @@ export async function intakePdf(bytes: Uint8Array): Promise<IntakeResult> {
       repeatedMargins.set(key, pageSet);
     }
   }
-  for (const [text, pageSet] of repeatedMargins) if (pageSet.size > 1) {
-    layout.diagnostics.push({ code: 'PDF_REPEATED_MARGIN_TEXT_REVIEW', message: `Teks margin berulang terdeteksi pada halaman ${[...pageSet].sort((a, b) => a - b).join(', ')}; dipertahankan dan perlu dibedakan dari isi itinerary: "${text.slice(0, 80)}".` });
+  for (const pageSet of repeatedMargins.values()) if (pageSet.size > 1) {
+    layout.diagnostics.push({ code: 'PDF_REPEATED_MARGIN_TEXT_REVIEW', message: `Teks margin berulang terdeteksi pada halaman ${[...pageSet].sort((a, b) => a - b).join(', ')}; dipertahankan dan perlu dibedakan dari isi itinerary.` });
   }
   const normalized = buildPdfSource(layout);
   return {
@@ -299,3 +360,5 @@ export async function readSourceTextOrNull(dataDir: string, id: string): Promise
 
 export const SOURCE_TEXT_REMOVED_MESSAGE = 'Teks sumber sudah dihapus otomatis sesuai batas simpan. Tempel ulang atau upload ulang dokumennya untuk membuat import baru.';
 export const SOURCE_TEXT_REMOVED_CODE = 'IMPORT_SOURCE_TEXT_REMOVED';
+export const SOURCE_LAYOUT_UNAVAILABLE_MESSAGE = 'Bukti tata letak PDF tidak tersedia atau rusak. Upload ulang PDF sebelum membaca atau menerapkan hasil import.';
+export const SOURCE_LAYOUT_UNAVAILABLE_CODE = 'IMPORT_SOURCE_LAYOUT_UNAVAILABLE';

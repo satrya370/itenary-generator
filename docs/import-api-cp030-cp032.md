@@ -8,6 +8,7 @@ Local, same-origin writes only (the usual `origin` and `x-engine-request: 1` hea
   - Rejections: `IMPORT_EMPTY`, `IMPORT_TEXT_TOO_LONG`, `IMPORT_UNSUPPORTED_TYPE` (magic bytes, not the file name), `IMPORT_FILE_TOO_LARGE`, `IMPORT_TOO_MANY_PAGES`, `IMPORT_ENCRYPTED`, `IMPORT_NO_TEXT_LAYER` (scan), `IMPORT_CORRUPT`, `IMPORT_TIMEOUT` (20 s worker deadline).
 - `GET /api/v1/imports/sources/:id` returns metadata and the extracted text (private to the workspace).
 - `POST /api/v1/imports/sources/:id/parse` with `{ "mode" }` returns the deterministic dry run: `fields`, `unconsumed`, `notes`, line counts. Writes nothing.
+  - For a PDF source whose private layout sidecar is missing, corrupt or incompatible, parse fails closed with `409 IMPORT_SOURCE_LAYOUT_UNAVAILABLE`; it never reparses the extracted text as ordinary text. A structurally valid but stale sidecar is retained as a review-only diagnostic and excludes all affected source lines from automatic parsing.
 
 ## Apply, undo, latest (CP031)
 
@@ -15,16 +16,19 @@ Local, same-origin writes only (the usual `origin` and `x-engine-request: 1` hea
   `{ operationId (UUID v4), target: "new" | "overwrite", mode (new only), itineraryId + expectedRevision (overwrite only), outputLanguage? }`.
   - `new` returns `201`; `overwrite` returns `200`. Both return `{ itinerary, report, usage, operationId, sourceId }`.
   - `report`: `filled`, `missingRequired` (publish-check paths still empty), `skipped` (AI values dropped by the quote guard, with reasons), `notes`, `sourceCount`.
-  - `usage`: `aiUsed`, `promptTokens`, `completionTokens`, `actualUsd` (null when the provider gives no cost). No ceiling (D30-3). The writing-AI quota and live budget are never touched.
+  - `usage`: `aiUsed`, `promptTokens`, `completionTokens`, `actualUsd` (null when the provider gives no cost). Usage is checkpointed before each provider attempt and after every result, so later CAS/validation/finalization rollback does not erase known charges. If post-call checkpointing fails, operation status becomes `uncertain`, usage stays unknown and replay is refused. No ceiling (D30-3). The writing-AI quota and live budget are never touched.
   - Same `operationId`: the stored result is returned, no second model call, no second draft.
   - `409 IMPORT_BUSY` while another import runs; `409 REVISION_CONFLICT` for a stale overwrite (nothing written); `409 IMPORT_NOT_REPEATABLE` for a reused id of a failed or interrupted run.
+  - PDF apply also fails with `409 IMPORT_SOURCE_LAYOUT_UNAVAILABLE` before provider dispatch or draft write when its private layout evidence is absent, corrupt or incompatible. Stale-but-readable layouts remain fully unresolved.
   - `422 IMPORT_DRAFT_INVALID` when the merged draft fails validation (nothing written).
 - `POST /api/v1/imports/operations/:id/undo` with `{ expectedRevision }`. Overwrite only, and only while the draft is still at the import's result revision. Writes the saved content back as a new revision. Otherwise `409 IMPORT_UNDO_UNAVAILABLE`.
-- `GET /api/v1/imports/operations?itineraryId=` returns `{ operation }` for the latest run (`report`, `usage`, `undoAvailable`, `sourceId`), or `null`.
+- `GET /api/v1/imports/operations?itineraryId=` returns `{ operation, lastSuccessfulOperation }`. `operation` describes the latest attempt (including failure status/error code); `lastSuccessfulOperation` preserves the most recent completed, non-undone report separately. An undone result is not returned as an actionable successful report.
+- When reopening a draft the editor shows the latest successful non-undone report and separately notes a newer failed, uncertain, running or undone attempt.
 - `POST /api/v1/imports/operations/:id/resolve` accepts `{ expectedRevision, candidateId, action: "select" | "edit" | "ignore", line? , value? }`. Select uses an original source line; edit uses a manual value; ignore retains the existing field. The server re-reads and hashes the private source, re-parses the conflict and verifies its line/target, validates the draft and commits the decision and draft revision together. Stale revisions or altered sources return 409; removed sources return 404. Existing reports without review metadata cannot resolve candidates.
+- PDF-backed resolution fails with `409 IMPORT_SOURCE_LAYOUT_UNAVAILABLE` if layout evidence has since disappeared. It does not treat previously parsed PDF text as sufficient provenance.
 - Newly created operation IDs are bound to their request and source hash. A matching completed replay returns its original result revision without running the extractor again; a mismatched request or an older operation without replay metadata fails closed with 409. The original replay snapshot is private and is not part of the ordinary report response.
 - Selectable review currently covers recognized scalar conflicts only; AI-rejected and ambiguous layout material remains non-actionable and must be reviewed/edited manually. Existing report data remains private; source text follows its retention policy.
-- Some rejected text proposals are retained as explicitly unverified private diagnostics (bounded to 100 items and 2,000 characters per value/quote), not source-backed facts or actionable choices. Source retention removes these proposal texts and older accepted-evidence quotes from the report and replay report. Existing canonical draft contents are not erased by source retention.
+- Some rejected text proposals are retained as explicitly unverified private diagnostics (bounded to 100 items and 2,000 characters per value/quote), not source-backed facts or actionable choices. Source retention removes unknown-label values, rejected proposal text, accepted evidence quotes, dynamic source-title paths and source-derived parser/layout notes from reports/replay reports, and marks them `sourceExpired`. Existing canonical draft contents are not erased by source retention.
 
 ## Model contract (CP031)
 
@@ -42,7 +46,9 @@ The model receives only the unread lines of the document, as data, and returns J
 
 - `IMPORT_SOURCE_TEXT_REMOVED` (404) is returned by `GET /imports/sources/:id`, `POST .../parse` and `POST .../apply` when the stored text is gone. Apply closes the run as failed, so a new operationId works.
 - Text older than `IMPORT_RETENTION_DAYS` (default 30; 0 keeps everything) is removed at server start. Source rows and the import ledger stay, so the report of a finished import still shows.
-- `GET /api/v1/itinerary-engine/context` reports `capabilities.import`: `aiConfigured` (from the import extractor, not the writing AI), `maxTextChars`, `maxPdfBytes`, `maxPdfPages`, `retentionDays`.
+- `GET /api/v1/itinerary-engine/context` reports `capabilities.import`: `aiConfigured` (credential state from the import extractor, not proof the model is reachable), requested `modelId`, `maxTextChars`, `maxPdfBytes`, `maxPdfPages`, `retentionDays`.
+- `GET /api/v1/itinerary-engine/import/preflight` checks the import model's own OpenRouter catalog entry and credential authentication. Its `modelId`, `modelState`, `authenticated`, pricing and supported parameters are distinct from writing-AI preflight; no key value is returned.
+- Apply reports keep provider batch status separate from extraction mapping status. `report.review.pendingUnits` and `report.coverage` list source-unit IDs, line references and dispositions; use the private source route to retrieve text when a review UI needs to show a source excerpt. `report.model` distinguishes the requested import model from response model/generation IDs reported by the provider.
 
 ## Live check (opt-in)
 

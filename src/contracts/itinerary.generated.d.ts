@@ -141,7 +141,7 @@ export interface EmergencyContact {
   value: string;
 }
 export interface ActivityMode {
-  category: "adventure" | "water" | "culture" | "wellness" | "nature" | "family" | null;
+  category: string | null;
   durationMinutes: number | null;
   /**
    * @maxItems 8

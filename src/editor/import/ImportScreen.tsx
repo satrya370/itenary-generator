@@ -4,7 +4,11 @@ import type { ItineraryMode } from '../../contracts/types.js';
 import { buttonClass, contentLanguages, inputClass, primaryClass } from '../fields.js';
 import { modeCopy } from '../labels.js';
 import { importCopy } from './copy.js';
+import { ImportFormats } from './ImportFormats.js';
 import { DEFAULT_IMPORT_LIMITS, type ImportLimits, type ImportStage } from './limits.js';
+
+/** Below this share of lines read by code, the guide is told to use a supported format. Never blocks the import. */
+const LOW_COVERAGE = 0.6;
 
 const MODES: ItineraryMode[] = ['half_day', 'full_day', 'multi_day', 'destination_guide', 'activity'];
 const MB = 1024 * 1024;
@@ -47,6 +51,8 @@ export function ImportScreen({ target, draftMode, draftId, draftRevision, aiActi
   useEffect(() => { const el = areaRef.current; if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px`; } }, [text]);
 
   const newMode = presetMode ?? mode;
+  // One id per tab: the create flow mounts a paste screen and a PDF screen, and each keeps its own panel.
+  const formatsId = `import-formats-${tab}`;
   const effectiveMode = target === 'overwrite' ? (draftMode ?? 'half_day') : newMode;
   useEffect(() => { setPreview(null); }, [newMode]);
   const detected = intake?.languageProposal.status === 'resolved' ? intake.languageProposal.locale : null;
@@ -167,6 +173,8 @@ export function ImportScreen({ target, draftMode, draftId, draftRevision, aiActi
         </div>
       )}
 
+      <ImportFormats id={formatsId} mode={effectiveMode} pdf={tab === 'pdf'} />
+
       {error && <p role="alert" className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900">{error}</p>}
 
       {intake && (
@@ -204,6 +212,12 @@ export function ImportScreen({ target, draftMode, draftId, draftRevision, aiActi
           {preview.diagnostics?.filter((item) => item.code.startsWith('PDF_')).map((item, index) => <p key={`${item.code}-${index}`} className="text-amber-900">{item.message}</p>)}
           {!!preview.conflicts?.length && <p className="text-amber-900">{preview.conflicts.length} konflik perlu dipilih atau diedit setelah import; nilai ambigu tidak dipilih otomatis.</p>}
           {preview.unconsumed.length > 0 && <p className="text-slate-600">{preview.unconsumed.length} baris belum dipetakan; sebagian mungkin dibaca AI, bagian ambigu atau tidak didukung tetap perlu diperiksa manual.</p>}
+          {!!preview.unknownLabels?.length && <p className="text-amber-900">{importCopy.unknownLabelsPreview(preview.unknownLabels.length)}</p>}
+          {preview.coverage && preview.coverage.ratio < LOW_COVERAGE && (
+            <p role="status" className="rounded-md border border-amber-400 bg-amber-50 p-3 text-amber-950">
+              {importCopy.lowCoverage} <a href={`#${formatsId}`} className="font-semibold underline underline-offset-2">{importCopy.lowCoverageLink}</a>
+            </p>
+          )}
         </section>
       )}
 

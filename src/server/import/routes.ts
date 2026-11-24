@@ -3,7 +3,7 @@ import { rm } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import type { openStore } from '../store.js';
 import type { ItineraryMode } from '../../contracts/types.js';
-import { ImportError, MAX_PDF_BYTES, SOURCE_TEXT_REMOVED_CODE, SOURCE_TEXT_REMOVED_MESSAGE, importError, intakePdf, intakeText, layoutExcludedLines, readSourceLayoutOrNull, readSourceTextOrNull, storeSourceLayout, storeSourceText } from './intake.js';
+import { ImportError, MAX_PDF_BYTES, SOURCE_LAYOUT_UNAVAILABLE_CODE, SOURCE_LAYOUT_UNAVAILABLE_MESSAGE, SOURCE_TEXT_REMOVED_CODE, SOURCE_TEXT_REMOVED_MESSAGE, importError, intakePdf, intakeText, layoutExcludedLines, readSourceLayoutOrNull, readSourceTextOrNull, storeSourceLayout, storeSourceText } from './intake.js';
 import { parseDocument } from './parse/extract.js';
 import type { ImportService } from './service.js';
 
@@ -69,6 +69,7 @@ export function registerImportRoutes(app: FastifyInstance, { store, dataDir, ser
     const text = await readSourceTextOrNull(dataDir, row.id);
     if (text === null) return reply.code(404).send(errorBody(SOURCE_TEXT_REMOVED_CODE, SOURCE_TEXT_REMOVED_MESSAGE, request.id));
     const layout = row.kind === 'pdf' ? await readSourceLayoutOrNull(dataDir, row.id) : null;
+    if (row.kind === 'pdf' && !layout) return reply.code(409).send(errorBody(SOURCE_LAYOUT_UNAVAILABLE_CODE, SOURCE_LAYOUT_UNAVAILABLE_MESSAGE, request.id));
     const parsed = parseDocument(text, body.mode as ItineraryMode, layoutExcludedLines(layout, text));
     const pageForTextLine = layout ? buildPageLineMap(layout, text) : [];
     const unconsumed = parsed.unconsumed.map((line) => ({ ...line, pageNumber: pageForTextLine[line.index] ?? null }));
@@ -82,7 +83,7 @@ export function registerImportRoutes(app: FastifyInstance, { store, dataDir, ser
           : 'usable';
       return { pageNumber: page.pageNumber, status, width: page.width, height: page.height, rotation: page.rotation, textItems: page.items.length };
     }) ?? [];
-    return { sourceId: row.id, kind: row.kind, pageCount: row.page_count, mode: parsed.mode, fields: parsed.fields, unconsumed, notes: parsed.notes, diagnostics: [...diagnostics, ...pageDiagnostics], conflicts, sourceBlocks: layout?.blocks ?? [], coverage: { ...parsed.coverage, pages: pageCoverage }, totalLines: parsed.totalLines, consumedLines: parsed.consumedLines };
+    return { sourceId: row.id, kind: row.kind, pageCount: row.page_count, mode: parsed.mode, fields: parsed.fields, unconsumed, notes: parsed.notes, diagnostics: [...diagnostics, ...pageDiagnostics], conflicts, sourceBlocks: layout?.blocks ?? [], unknownLabels: parsed.unknownLabels, coverage: { ...parsed.coverage, pages: pageCoverage }, totalLines: parsed.totalLines, consumedLines: parsed.consumedLines };
   });
 
   app.post<{ Params: { id: string }; Body: unknown }>('/api/v1/imports/sources/:id/apply', async (request, reply) => {

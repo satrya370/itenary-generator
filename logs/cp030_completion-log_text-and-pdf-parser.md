@@ -71,6 +71,41 @@ PDF fixtures generated locally under the gitignored `tests/fixtures/web/import/`
 - The three API-level issues from the audit—quote negation/evidence scope, internal AI marker validation, and activity-description target attribution—belong to CP031 and remain unresolved by this CP030 change.
 - Earlier missing historical CP030/CP031 logs and pending dependency acceptance are recorded, not silently treated as resolved.
 
+## Revision: 2026-11-20 - Fail Closed on Missing PDF Layout Evidence
+
+### Revision Plan
+- `../plans/cp030-cp032-cp035_revision-plan_review-findings-gpt-luna.md` — owner-authorized phases 1–2 only.
+
+### Changes Made
+- Missing, corrupt or incompatible PDF layout sidecars now fail dry-run parse with HTTP 409 `IMPORT_SOURCE_LAYOUT_UNAVAILABLE`.
+- Apply marks the operation failed and returns the same stable error before AI dispatch or draft write. PDF evidence resolution also refuses to proceed if its layout sidecar was lost.
+- A structurally valid stale sidecar remains diagnostic-only and excludes all source lines; valid and reconstructable legacy sidecars continue to work.
+- Added isolated regressions for parse, apply, resolve, and stale-layout behavior. No migration, schema or canonical draft changes.
+
+### Verification Performed
+| Verification | Result | Evidence |
+|---|---|---|
+| Phase 1 F01 reproduction | PASS | Generated two-column PDF: 0 activities/4 ambiguous lines with sidecar versus 4 accepted activities after sidecar removal. |
+| Phase 1 F05–F07 reproduction | PASS | Temporary browser/SQLite harness reproduced stale report A on draft B, false conflict after normalized empty row, and failed latest import hiding prior success. No owner data used. |
+| Regression-before-fix | PASS | Three focused PDF missing-layout tests failed against old behavior. |
+| Focused PDF missing/corrupt/stale/legacy tests | PASS | Five targeted tests passed after fix. |
+| `test:web-import` | PASS | 188 tests, 0 failed. |
+| `typecheck:web-server` | PASS | 0 errors in server/contracts/API scope. |
+| `verify:web-import` | PASS | Five modes, text/PDF, review, scan rejection, privacy; zero external requests/errors. Harness title assertion updated to match the pre-existing emoji-edge normalization change. |
+| `git diff --check` | PASS | No whitespace errors; line-ending warnings only. |
+
+### Acceptance Criteria Results
+| Criterion | Result | Evidence |
+|---|---|---|
+| PDF sidecar missing/corrupt cannot promote extracted text to accepted facts | PASS | Parse/apply return stable 409; apply calls provider zero times and creates no draft. |
+| PDF review revalidates layout evidence | PASS | Resolve refuses when layout sidecar is missing. |
+| Stale but readable sidecar remains fully unresolved | PASS | Real PDF test shows diagnostic and no accepted source facts during parse/apply. |
+| Valid/legacy layout and text intake regressions preserved | PASS | Legacy reconstruction and complete import suite. |
+
+### Remaining Limitations
+- F05, F06 and F07 were reproduced as requested in phase 1 but not fixed in this owner-authorized phases 1–2 slice. F02, F03 and F04 remain unworked. Do not infer completion of the seven-finding plan.
+- No paid/live AI, commit, push or deployment.
+
 ## Revision: 2026-11-13 - Layout-Aware PDF and Source Coverage
 
 ### Revision Plan
@@ -120,3 +155,38 @@ PDF fixtures generated locally under the gitignored `tests/fixtures/web/import/`
 - Combined correction verification: 81 import tests pass, including API apply proving ambiguous page content never reaches AI/draft facts and legacy sidecar reconstruction/stale-source exclusion. PDF fixtures are regenerated in PDF-only mode by the import pretest hook, not committed as ignored artifacts.
 - Regression evidence includes real PDF worker extraction after a blank page, Unicode/invisible cleanup, independent time-led columns, explicit bounded table, and mixed-page API diagnostics.
 - Conservative limitation: unsupported tables/wrapped/independent columns are review-only, not claimed as reconstructed. No OCR, live AI, migration or dependency change. Owner authorized commit/push after gates; no deployment. Existing dependency exception and other CP statuses unchanged.
+
+## Revision: 2026-11-23 - Inline Activity Detail Preservation
+
+### Revision Plan
+- `../plans/cp030_revision-plan_source-spans-and-inline-activity-details.md`
+
+### Changes Made
+- A timed schedule line with an unambiguous sentence boundary now keeps the event title and records the exact following detail text as unresolved evidence at the original zero-based source line. The line is no longer reported as fully consumed.
+- Common abbreviations and initials are protected from sentence splitting. Lowercase sentence boundaries and long prose-like tails without a safe split remain unresolved; short punctuation-free text stays intact as the title rather than being heuristically split.
+- Added a reproducible synthetic text fixture and equivalent text-layer PDF. Coverage includes a time range, multiple detail sentences, abbreviations, a bullet, and a subsequent activity.
+- This is CP030 parser-only behavior. The same-line detail is not yet bound to its activity target or written into that activity's description; that is CP031 work. No live AI, migration, credential change, deploy, commit, or push.
+- Owner authorized this bounded CP030 revision while CP033–CP036 remained marked `in_progress`; those statuses were left unchanged.
+
+### Verification Performed
+| Verification | Result | Evidence |
+|---|---|---|
+| Review before final test | PASS | Re-read final parser/test/generator changes against CP030 plan and SPEC import guarantees; scope kept out of CP031/CP032. |
+| Focused parser tests | PASS | Node v24.22.3, `node --import tsx --test tests/web/import-parser.test.ts`: 66 passed, 0 failed. |
+| `test:web-import` | PASS | Node v24.22.3, `npm.cmd run test:web-import`: 196 passed, 0 failed; fixture pretest regenerated PDFs. |
+| `typecheck:web-server` | PASS | `npm.cmd run typecheck:web-server`: 0 errors in server/contracts/API scope. |
+| `git diff --check` | PASS | No whitespace errors in parser/generator/test changes. |
+
+### Acceptance Criteria Results
+| Criterion | Result | Evidence |
+|---|---|---|
+| Clear inline explanation is not merged into title and is not lost to consumed-line accounting | PASS | Parser fixture asserts title, exact unresolved detail, source line and consumed count. |
+| Original schedule time/range, duration, title, kind, order are preserved | PASS | Assertions cover 09:00/90 minutes, later events, and bullet event. |
+| Ambiguous prose and abbreviations are not split by guesswork | PASS, bounded | Abbreviation/initial, lowercase-boundary, long prose and punctuation-free tests. |
+| Equivalent text and text-layer PDF produce equal parser semantics | PASS | Generated PDF parse compared with text parse, including unresolved detail. |
+| Existing import parser and intake behavior remains green | PASS | Full 196-test import gate. |
+
+### Remaining Limitations
+- The parser still uses line-level source references, not new character-offset spans. The detail remains unresolved; target ownership and activity-description application are deferred to CP031.
+- Long-tail detection deliberately favors review over false assignment; a short punctuation-free description cannot reliably be distinguished from a long activity title by CP030 alone.
+- No live-provider semantic accuracy, visual, Linux, or cross-platform gate is claimed.

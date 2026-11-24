@@ -4,6 +4,5 @@ export type OptionGroup = 'included' | 'notIncluded' | 'whatToBring' | 'notSuita
 const locales = (optionsFile as { locales: Record<string, Partial<Record<OptionGroup, string[]>>> }).locales;
 
 export function presetsFor(language: string | null | undefined, group: OptionGroup): string[] {
-  if (!language) return [];
-  return locales[language]?.[group] ?? [];
+  return locales[language || 'id']?.[group] ?? [];
 }

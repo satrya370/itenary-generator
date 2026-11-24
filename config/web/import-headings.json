@@ -41,7 +41,9 @@
     "weightMax": ["Berat maksimal", "Berat badan maksimal", "Maximum weight", "Max weight"],
     "guideLanguages": ["Bahasa pemandu", "Guide languages", "Guide language"],
     "operator": ["Operator", "Operator mitra", "Mitra", "Partner operator"],
-    "bestTime": ["Waktu terbaik", "Best time", "Best time to go"]
+    "bestTime": ["Waktu terbaik", "Best time", "Best time to go"],
+    "emergency": ["Kontak darurat", "Emergency contact", "Emergency contacts", "Nomor darurat"],
+    "policy": ["Kebijakan", "Refund", "Pembatalan", "Reschedule", "Pembayaran", "DP", "Cancellation", "Policy", "Payment"]
   },
   "dayMarkers": {
     "patterns": ["^(?:hari|day)\\s*(?:ke-?\\s*)?(\\d{1,2})\\b", "^(?:h|d)(\\d{1,2})\\b"],
@@ -49,7 +51,7 @@
   },
   "kinds": {
     "food": ["makan", "sarapan", "makan siang", "makan malam", "kuliner", "lunch", "dinner", "breakfast", "cafe", "restoran", "restaurant"],
-    "transport": ["jemput", "antar", "transfer", "perjalanan ke", "drive to", "pickup", "pick up", "bandara", "airport", "kereta", "train", "ferry", "kapal", "boat"],
+    "transport": ["jemput", "antar", "transfer", "perjalanan ke", "drive to", "pickup", "pick up", "bandara", "airport", "kereta", "train", "ferry", "kapal", "boat", "berangkat", "jeep", "speedboat", "drop off", "tiba", "check in", "check-in", "check out", "naik"],
     "free": ["waktu bebas", "acara bebas", "free time", "istirahat", "rest"],
     "activity": ["snorkeling", "snorkelling", "trekking", "hiking", "rafting", "kelas", "class", "workshop", "spa", "diving", "menyelam"]
   },

@@ -17,18 +17,7 @@ export async function sweepImportSources(store: ReturnType<typeof openStore>, da
       let report: any;
       try { report = JSON.parse(item.report_json); } catch { continue; }
       let changed = false;
-      for (const part of [report, report?._replay?.report]) {
-        if (Array.isArray(part?.review?.rejectedProposals)) {
-          for (const candidate of part.review.rejectedProposals) {
-            if (candidate && typeof candidate === 'object') {
-              if ('value' in candidate) { delete candidate.value; changed = true; }
-              if ('quote' in candidate) { delete candidate.quote; changed = true; }
-            }
-          }
-        }
-        if (!Array.isArray(part?.evidence?.accepted)) continue;
-        for (const reference of part.evidence.accepted) if (reference && typeof reference === 'object' && 'quote' in reference) { delete reference.quote; changed = true; }
-      }
+      for (const part of [report, report?._replay?.report]) changed = redactExpiredEvidence(part) || changed;
       if (changed) store.db.prepare('UPDATE import_operations SET report_json=? WHERE operation_id=? AND workspace_id=?').run(JSON.stringify(report), item.operation_id, store.workspaceId);
     }
     await Promise.all([
@@ -37,6 +26,56 @@ export async function sweepImportSources(store: ReturnType<typeof openStore>, da
     ]);
   }
   return rows.length;
+}
+
+/** Strip source-derived text from every persisted report copy while retaining safe paths, IDs, decisions and accounting. */
+function redactExpiredEvidence(part: any): boolean {
+  if (!part || typeof part !== 'object') return false;
+  let changed = false;
+  if (part.sourceExpired !== true) { part.sourceExpired = true; changed = true; }
+  if (part.review && typeof part.review === 'object') {
+    if (part.review.sourceExpired !== true) { part.review.sourceExpired = true; changed = true; }
+    if (Array.isArray(part.review.unknownLabels)) for (const label of part.review.unknownLabels) {
+      if (!label || typeof label !== 'object') continue;
+      if ('label' in label) { delete label.label; changed = true; }
+      if ('value' in label) { delete label.value; changed = true; }
+    }
+    if (Array.isArray(part.review.rejectedProposals)) for (const candidate of part.review.rejectedProposals) {
+      if (!candidate || typeof candidate !== 'object') continue;
+      if ('value' in candidate) { delete candidate.value; changed = true; }
+      if ('quote' in candidate) { delete candidate.quote; changed = true; }
+      changed = redactDynamicPath(candidate) || changed;
+    }
+  }
+  for (const reference of part.evidence?.accepted ?? []) {
+    if (reference && typeof reference === 'object' && 'quote' in reference) { delete reference.quote; changed = true; }
+    changed = redactDynamicPath(reference) || changed;
+  }
+  for (const reference of part.evidence?.rejected ?? []) changed = redactDynamicPath(reference) || changed;
+  for (const skipped of part.skipped ?? []) changed = redactDynamicPath(skipped, true) || changed;
+  // Human-readable parser/layout notes can include values both quoted and unquoted.
+  // Keep safe structured reason codes above, but drop prose that cannot be reliably scrubbed.
+  if (Array.isArray(part.notes) && part.notes.length) { part.notes = []; changed = true; }
+  return changed;
+}
+
+function redactDynamicPath(entry: any, includeLabel = false): boolean {
+  if (!entry || typeof entry !== 'object') return false;
+  let changed = false;
+  let dynamicTarget = false;
+  for (const key of ['path']) {
+    const value = entry[key];
+    if (typeof value === 'string' && /^(?:activities|activityDetails)\[[^\]]+\]/.test(value)) {
+      entry[key] = value.replace(/^(?:activities|activityDetails)\[[^\]]+\]/, 'activities[source-text-removed]');
+      changed = true;
+      dynamicTarget = true;
+    }
+  }
+  if (includeLabel && typeof entry.label === 'string' && (dynamicTarget || /Aktivitas\s+"[^"\r\n]+"/.test(entry.label))) {
+    entry.label = 'Aktivitas dari sumber (teks dihapus sesuai retensi)';
+    changed = true;
+  }
+  return changed;
 }
 
 export function importRetentionDays(raw: string | undefined): number {

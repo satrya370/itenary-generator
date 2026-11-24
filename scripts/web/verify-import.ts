@@ -163,7 +163,7 @@ async function main() {
     await waitText('Hasil baca otomatis');
     await clickText('Proses');
     await waitStatus('Draf baru dari import tersimpan');
-    assert.equal(await title(), 'Half day Kyoto walk 🌸', 'half-day title from the paste');
+    assert.equal(await title(), 'Half day Kyoto walk', 'normalization removes decorative emoji at title edges');
     await waitText('Hasil import');
     assert.ok((await bodyText()).includes('Masih kosong dan wajib diisi'), 'missing required fields are listed in the report');
     await page.evaluate(() => document.querySelector('section[aria-label="Hasil import"]')?.scrollIntoView());

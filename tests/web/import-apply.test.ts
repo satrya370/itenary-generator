@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { test, type TestContext } from 'node:test';
 import { createApp } from '../../src/server/app.js';
 import { OpenRouterProvider, ProviderFailure, type ImportExtractRequest, type ImportExtractor } from '../../src/server/ai/provider.js';
+import { filterCompletion, segmentsOf, targetsForBatch } from '../../src/server/import/complete.js';
+import { parseDocument } from '../../src/server/import/parse/extract.js';
 import type { WebItineraryContent } from '../../src/contracts/types.js';
 
 const FIXTURES = path.resolve('tests/fixtures/web/import');
@@ -50,16 +52,21 @@ const apply = (app: Awaited<ReturnType<typeof createApp>>, sourceId: string, pay
 const op = () => randomUUID();
 
 test('the extraction prompt names the exact reply keys, so the model cannot invent its own shape', async () => {
-  const bodies: Array<{ messages: Array<{ role: string; content: string }> }> = [];
+  const bodies: Array<{ messages: Array<{ role: string; content: string }>; response_format?: { type: string; json_schema?: { name: string } } }> = [];
   const fakeFetch = (async (_url: string | URL | Request, init?: RequestInit) => {
     bodies.push(JSON.parse(String(init?.body)));
     return new Response(JSON.stringify({ choices: [{ message: { content: '{}' } }], usage: {} }), { status: 200, headers: { 'content-type': 'application/json' } });
   }) as typeof fetch;
   const provider = new OpenRouterProvider({ state: 'configured', source: 'environment', key: 'sk-or-test-key' }, fakeFetch);
-  await provider.extract({ mode: 'destination_guide', locale: 'id', segments: ['- Candi Prambanan'], maxTokens: 100 }, 5000);
+  await provider.extract({ mode: 'destination_guide', locale: 'id', segments: ['- Candi Prambanan'], sourceUnits: [{ unitId: 'source-1-0', lineIndex: 1, text: '- Candi Prambanan', section: 'places', ownerTargetId: null, dayNumber: null, allowedPaths: ['places'], structuralEnd: false }], targets: [], maxTokens: 100 }, 5000);
   const system = bodies[0].messages[0].content;
+  assert.equal(bodies[0].response_format?.type, 'json_schema');
+  assert.equal(bodies[0].response_format?.json_schema?.name, 'itinerary_import_completion');
   for (const key of ['places', 'activityDetails', 'summary', 'closingNote', 'policies', 'highlights', 'steps']) assert.ok(system.includes(`"${key}"`), `prompt names ${key}`);
   assert.ok(system.includes('Do not use any other key names'));
+  const input = JSON.parse(bodies[0].messages[1].content);
+  assert.equal(input.sourceUnits[0].unitId, 'source-1-0');
+  assert.deepEqual(input.sourceUnits[0].allowedPaths, ['places']);
 });
 
 test('a fully structured document never calls the model; the new draft has the parsed fields and the chosen language', async (t) => {
@@ -72,7 +79,7 @@ test('a fully structured document never calls the model; the new draft has the p
   assert.equal(d.calls.length, 0, 'zero model calls when code read everything');
   assert.equal(body.usage.aiUsed, 0);
   const draft = body.itinerary.draftContent as WebItineraryContent;
-  assert.equal(draft.trip.title, 'Half day Kyoto walk 🌸');
+  assert.equal(draft.trip.title, 'Half day Kyoto walk'); // emoji edges are removed from values (revision real-world-text-coverage)
   assert.equal(draft.trip.language, 'en');
   assert.equal(body.itinerary.languageContext.outputLanguage, 'en');
   assert.deepEqual(draft.days[0].activities.map((a) => a.time), ['08:00', '10:00', '12:00', '14:00']);
@@ -121,7 +128,9 @@ test('an injected place in the document is never accepted without a quote from t
   const sourceId = await source(app, await fixtureText('id-destination-guide.txt'));
   const response = await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'destination_guide', outputLanguage: 'id' });
   const body = response.json();
-  assert.equal(body.itinerary.draftContent.places.length, 0, 'the place has no quote in the text');
+  const names = body.itinerary.draftContent.places.map((place: { name: string }) => place.name);
+  assert.equal(names.includes('Raja Ampat'), false, 'the place has no quote in the text');
+  assert.deepEqual(names, ['Candi Prambanan (Sleman)', 'Malioboro (Kota Yogyakarta)'], 'places come only from the document bullets when the AI place is rejected');
   assert.ok(body.report.skipped.some((item: { path: string }) => item.path === 'places[].name'));
 });
 
@@ -284,7 +293,7 @@ test('wrapped exception cannot be cut from summary even when the first line ends
     const whole = `${first}\nkecuali pada hari libur.`;
     const d = double([JSON.stringify({ summary: { value: first, quote: first } }), JSON.stringify({ summary: { value: whole, quote: whole } })]);
     const app = await fixture(t, d.extractor);
-    const sourceId = await source(app, `Trip Bali\nHari 1\n09:00 Museum\n${whole}`);
+    const sourceId = await source(app, `Trip Bali\nHari 1\n09:00 Museum\nRingkasan\n${whole}`);
     const cut = (await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'full_day', outputLanguage: 'id' })).json();
     assert.equal(cut.itinerary.draftContent.summary, '');
     assert.ok(cut.report.evidence.rejected.some((item: { reasonCode: string }) => item.reasonCode === 'IMPORT_SOURCE_UNIT_INCOMPLETE'));
@@ -415,6 +424,42 @@ test('apply fails closed before provider dispatch when retained text differs fro
   assert.equal((await app.inject({ url: '/api/v1/itineraries' })).json().items.length, 0);
 });
 
+test('PDF apply does not dispatch or save facts when its layout evidence is missing', async (t) => {
+  const d = double([JSON.stringify({ summary: { value: 'Made up', quote: 'Made up' } })]);
+  const app = await fixture(t, d.extractor);
+  const boundary = 'ImportTestBoundaryPDFLayout';
+  const bytes = await readFile(path.join(FIXTURES, 'layout-case-08-independent-time-columns.pdf'));
+  const payload = Buffer.concat([Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="columns.pdf"\r\nContent-Type: application/pdf\r\n\r\n`), bytes, Buffer.from(`\r\n--${boundary}--\r\n`)]);
+  const dataDir = (app as unknown as { store: { dataDir: string } }).store.dataDir;
+  for (const malformed of [false, true]) {
+    const intake = await app.inject({ method: 'POST', url: '/api/v1/imports/sources', headers: { origin, 'x-engine-request': '1', 'content-type': `multipart/form-data; boundary=${boundary}` }, payload });
+    assert.equal(intake.statusCode, 201, intake.body);
+    const sourceId = intake.json().sourceId as string;
+    const sidecar = path.join(dataDir, 'imports', `${sourceId}.layout.json`);
+    if (malformed) await writeFile(sidecar, '{ malformed');
+    else await rm(sidecar, { force: true });
+    const response = await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'full_day', outputLanguage: 'en' });
+    assert.equal(response.statusCode, 409, response.body);
+    assert.equal(response.json().error.code, 'IMPORT_SOURCE_LAYOUT_UNAVAILABLE');
+  }
+  assert.equal(d.calls.length, 0);
+  assert.equal((await app.inject({ url: '/api/v1/itineraries' })).json().items.length, 0);
+});
+
+test('PDF review resolution refuses source evidence after its layout sidecar is lost', async (t) => {
+  const app = await fixture(t, double([]).extractor);
+  const sourceId = await source(app, 'Trip\nDestinasi: Bali\nDestinasi: Lombok');
+  const applied = (await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'full_day', outputLanguage: 'id' })).json();
+  const store = (app as unknown as { store: { db: { prepare(sql: string): { run(...args: unknown[]): unknown } }; dataDir: string } }).store;
+  store.db.prepare('UPDATE import_sources SET kind=? WHERE id=?').run('pdf', sourceId);
+  await rm(path.join(store.dataDir, 'imports', `${sourceId}.layout.json`), { force: true });
+  const candidate = applied.report.review.candidates[0];
+  const response = await app.inject({ method: 'POST', url: `/api/v1/imports/operations/${applied.operationId}/resolve`, headers, payload: { expectedRevision: applied.itinerary.revision, candidateId: candidate.id, action: 'select', line: candidate.lines[0] } });
+  assert.equal(response.statusCode, 409, response.body);
+  assert.equal(response.json().error.code, 'IMPORT_SOURCE_LAYOUT_UNAVAILABLE');
+  assert.equal((await app.inject({ url: `/api/v1/itineraries/${applied.itinerary.id}` })).json().draftContent.trip.destination, '');
+});
+
 test('private conflict review cannot resolve an operation owned by a different workspace', async (t) => {
   const app = await fixture(t, double([]).extractor);
   const sourceId = await source(app, 'Trip\nDestinasi: Bali\nDestinasi: Lombok\nHari 1\n09:00 Museum');
@@ -430,11 +475,18 @@ test('batching preserves later source lines after the first 20,000 characters', 
   const app = await fixture(t, d.extractor);
   const long = Array.from({ length: 400 }, (_, i) => `Catatan panjang nomor ${i} yang tidak terbaca kode ${'x'.repeat(60)}`);
   const sourceId = await source(app, ['Judul trip', 'Hari 1', '09:00 Ubud', ...long].join('\n'));
-  const body = (await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'multi_day', outputLanguage: 'id' })).json();
+  const operationId = op();
+  const body = (await apply(app, sourceId, { operationId, target: 'new', mode: 'multi_day', outputLanguage: 'id' })).json();
   assert.ok(d.calls.length > 1 && d.calls.length <= 8);
   assert.ok(d.calls.every((call) => call.segments.join('\n').length < 20_000));
   assert.ok(d.calls.at(-1)!.segments.join('\n').includes('Catatan panjang nomor 399'), 'later lines are included in a subsequent batch');
   assert.equal(body.report.evidence.omittedLineIndexes.length, 0);
+  const store = (app as unknown as { store: { db: { prepare(sql: string): { get(...args: unknown[]): Record<string, unknown> } } } }).store;
+  const ledger = store.db.prepare('SELECT ai_used, prompt_tokens, completion_tokens, actual_usd FROM import_operations WHERE operation_id=?').get(operationId);
+  assert.equal(ledger.ai_used, 1);
+  assert.equal(ledger.prompt_tokens, d.calls.length * 100);
+  assert.equal(ledger.completion_tokens, d.calls.length * 50);
+  assert.ok(Math.abs(Number(ledger.actual_usd) - d.calls.length * 0.001) < 1e-9);
 });
 
 test('one over-sized source line is reported without blocking a later short line', async (t) => {
@@ -442,11 +494,11 @@ test('one over-sized source line is reported without blocking a later short line
   const app = await fixture(t, d.extractor);
   const tooLong = `Catatan ${'x'.repeat(20_100)}`;
   const later = 'Ringkasan valid dari sumber.';
-  const sourceId = await source(app, `Trip\nHari 1\n09:00 Ubud\n${tooLong}\n\n${later}`);
+  const sourceId = await source(app, `Trip\nHari 1\n09:00 Ubud\n${tooLong}\n\nRingkasan\n${later}`);
   const body = (await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'full_day', outputLanguage: 'id' })).json();
   assert.equal(d.calls.length, 1);
   assert.ok(d.calls[0].segments.includes(later));
-  assert.equal(body.itinerary.draftContent.summary, later);
+  assert.equal(body.itinerary.draftContent.summary, later, JSON.stringify(body.report));
   assert.ok(body.report.evidence.omittedLineIndexes.length > 0);
 });
 
@@ -455,12 +507,71 @@ test('batch retry cap is two attempts and token/cost usage includes both attempt
   const d = double([new ProviderFailure('retryable', 503, 1), JSON.stringify({ summary: { value: summary, quote: summary } })]);
   const app = await fixture(t, d.extractor);
   const sourceId = await source(app, `Trip Ubud\nHari 1\n09:00 Palace\n${summary}`);
-  const body = (await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'full_day', outputLanguage: 'id' })).json();
+  const operationId = op();
+  const body = (await apply(app, sourceId, { operationId, target: 'new', mode: 'full_day', outputLanguage: 'id' })).json();
   assert.equal(d.calls.length, 2);
   assert.equal(body.report.aiBatches, 1);
   assert.equal(body.report.aiAttempts, 2);
   assert.equal(body.usage.promptTokens, null, 'failed provider call had no usage metadata');
   assert.equal(body.usage.actualUsd, null, 'the failed call may have incurred unknown cost');
+  const store = (app as unknown as { store: { db: { prepare(sql: string): { get(...args: unknown[]): Record<string, unknown> } } } }).store;
+  const ledger = store.db.prepare('SELECT ai_used, prompt_tokens, completion_tokens, actual_usd FROM import_operations WHERE operation_id=?').get(operationId);
+  assert.equal(ledger.ai_used, 1);
+  assert.equal(ledger.prompt_tokens, null);
+  assert.equal(ledger.completion_tokens, null);
+  assert.equal(ledger.actual_usd, null);
+});
+
+test('provider usage remains in the ledger when final draft revision CAS fails', async (t) => {
+  const summary = 'Narasi wisata yang jelas untuk ringkasan.';
+  const d = double([JSON.stringify({ summary: { value: summary, quote: summary } })]);
+  d.hold();
+  const app = await fixture(t, d.extractor);
+  const existing = (await app.inject({ method: 'POST', url: '/api/v1/itineraries', headers, payload: { mode: 'full_day' } })).json();
+  const sourceId = await source(app, `Trip\nHari 1\n09:00 Museum\n${summary}`);
+  const operationId = op();
+  const pending = apply(app, sourceId, { operationId, target: 'overwrite', itineraryId: existing.id, expectedRevision: existing.revision, outputLanguage: 'id' });
+  for (let attempt = 0; attempt < 100 && d.calls.length === 0; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(d.calls.length, 1, 'provider mock dispatched before stale revision is introduced');
+  const changed = structuredClone(existing.draftContent as WebItineraryContent);
+  changed.trip.title = 'Edited concurrently';
+  const saved = await app.inject({ method: 'PATCH', url: `/api/v1/itineraries/${existing.id}`, headers, payload: { expectedRevision: existing.revision, draftContent: changed, languageContext: existing.languageContext, writingContext: existing.writingContext } });
+  assert.equal(saved.statusCode, 200, saved.body);
+  d.let();
+  const response = await pending;
+  assert.equal(response.statusCode, 409, response.body);
+  const store = (app as unknown as { store: { db: { prepare(sql: string): { get(...args: unknown[]): Record<string, unknown> } } } }).store;
+  const ledger = store.db.prepare('SELECT status, ai_used, prompt_tokens, completion_tokens, actual_usd FROM import_operations WHERE operation_id=?').get(operationId);
+  assert.equal(ledger.status, 'failed');
+  assert.equal(ledger.ai_used, 1);
+  assert.equal(ledger.prompt_tokens, 100);
+  assert.equal(ledger.completion_tokens, 50);
+  assert.equal(ledger.actual_usd, 0.001);
+  assert.equal((await app.inject({ url: `/api/v1/itineraries/${existing.id}` })).json().draftContent.trip.title, 'Edited concurrently');
+});
+
+test('a usage checkpoint database failure marks the billed operation uncertain and blocks replay', async (t) => {
+  const d = double([JSON.stringify({})]);
+  const app = await fixture(t, d.extractor);
+  const sourceId = await source(app, 'Trip\nHari 1\n09:00 Museum\nNarrative remains for AI review.');
+  const operationId = op();
+  const store = (app as unknown as { store: { db: { exec(sql: string): void; prepare(sql: string): { get(...args: unknown[]): Record<string, unknown> } } } }).store;
+  store.db.exec("CREATE TRIGGER fail_usage_checkpoint BEFORE UPDATE OF prompt_tokens ON import_operations WHEN NEW.prompt_tokens IS NOT NULL BEGIN SELECT RAISE(ABORT, 'test usage checkpoint failure'); END");
+  const response = await apply(app, sourceId, { operationId, target: 'new', mode: 'full_day', outputLanguage: 'id' });
+  assert.equal(response.statusCode, 500);
+  assert.equal(d.calls.length, 1);
+  const ledger = store.db.prepare('SELECT status, ai_used, prompt_tokens, completion_tokens, actual_usd, error_code FROM import_operations WHERE operation_id=?').get(operationId);
+  assert.equal(ledger.status, 'uncertain');
+  assert.equal(ledger.ai_used, 1);
+  assert.equal(ledger.prompt_tokens, null);
+  assert.equal(ledger.completion_tokens, null);
+  assert.equal(ledger.actual_usd, null);
+  assert.equal(ledger.error_code, 'IMPORT_USAGE_UNCERTAIN');
+  assert.equal((await app.inject({ url: '/api/v1/itineraries' })).json().items.length, 0);
+  const replay = await apply(app, sourceId, { operationId, target: 'new', mode: 'full_day', outputLanguage: 'id' });
+  assert.equal(replay.statusCode, 409);
+  assert.equal(replay.json().error.code, 'IMPORT_NOT_REPEATABLE');
+  assert.equal(d.calls.length, 1, 'uncertain billed operation is never redispatched');
 });
 
 test('the same operationId replays the stored result without a second model call; a running one is busy', async (t) => {
@@ -502,14 +613,23 @@ test('one import in flight: a second import while the first waits on the model a
 });
 
 test('operation completion failure rolls back the draft write', async (t) => {
-  const app = await fixture(t, double([]).extractor);
-  const sourceId = await source(app, 'Trip\nDestinasi: Bali\nHari 1\n09:00 Museum');
+  const summary = 'Fakta narasi yang diminta untuk ringkasan.';
+  const provider = double([JSON.stringify({ summary: { value: summary, quote: summary } })]);
+  const app = await fixture(t, provider.extractor);
+  const sourceId = await source(app, `Trip\nDestinasi: Bali\nHari 1\n09:00 Museum\n${summary}`);
   const store = (app as unknown as { store: { db: { exec(sql: string): void } } }).store;
   store.db.exec("CREATE TRIGGER fail_import_completion BEFORE UPDATE OF status ON import_operations WHEN NEW.status='completed' BEGIN SELECT RAISE(ABORT, 'test completion failure'); END");
   const before = (await app.inject({ url: '/api/v1/itineraries' })).json().items.length;
   const result = await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'full_day', outputLanguage: 'id' });
   assert.equal(result.statusCode, 500);
   assert.equal((await app.inject({ url: '/api/v1/itineraries' })).json().items.length, before);
+  assert.equal(provider.calls.length, 1);
+  const storeWithLedger = (app as unknown as { store: { db: { prepare(sql: string): { get(): Record<string, unknown> } } } }).store;
+  const ledger = storeWithLedger.db.prepare("SELECT status, ai_used, prompt_tokens, completion_tokens, actual_usd FROM import_operations WHERE status='failed'").get();
+  assert.equal(ledger.ai_used, 1);
+  assert.equal(ledger.prompt_tokens, 100);
+  assert.equal(ledger.completion_tokens, 50);
+  assert.equal(ledger.actual_usd, 0.001);
 });
 
 test('undo ledger failure rolls back the restored draft', async (t) => {
@@ -653,6 +773,106 @@ test('activity import: a missing category or duration is reported as required, n
   assert.equal(content.activity!.ageMin, 10);
   assert.ok(body.report.missingRequired.includes('activity.category'));
   assert.ok(body.report.missingRequired.includes('activity.durationMinutes'));
+});
+
+test('an unheaded local instruction cannot be assigned to a global summary', async (t) => {
+  const local = 'Kenakan pakaian sopan selama berada di dalam keraton.';
+  const d = double([JSON.stringify({ summary: { value: local, quote: local } })]);
+  const app = await fixture(t, d.extractor);
+  const sourceId = await source(app, `Trip Yogyakarta\nHari 1\n09:00 Keraton\n${local}`);
+  const body = (await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'full_day', outputLanguage: 'id' })).json();
+  assert.equal(body.itinerary.draftContent.summary, '', 'a correct quote without global ownership stays out of summary');
+  assert.ok(body.report.review.pendingUnits.some((unit: { text?: string; lineIndex: number }) => unit.lineIndex === 3));
+  assert.ok(body.report.skipped.some((item: { path: string }) => item.path === 'summary'));
+});
+
+test('duplicate quotes require an exact source-unit ID and cannot be assigned twice', () => {
+  const text = 'Trip Bali\nRingkasan\nPerjalanan santai di Bali.\nPerjalanan santai di Bali.';
+  const parse = parseDocument(text, 'full_day');
+  const units = segmentsOf(parse).units;
+  assert.equal(units.length, 2);
+  const unanchored = filterCompletion({ summary: { value: 'Perjalanan santai di Bali.', quote: 'Perjalanan santai di Bali.' } }, parse, 'full_day', units);
+  assert.equal(unanchored.accepted.summary, undefined, 'the identical quote occurs in two source units');
+  const anchored = filterCompletion({ summary: { sourceUnitIds: [units[1].id], value: 'Perjalanan santai di Bali.', quote: 'Perjalanan santai di Bali.' } }, parse, 'full_day', units);
+  assert.equal(anchored.accepted.summary?.value, 'Perjalanan santai di Bali.');
+  assert.deepEqual(anchored.evidence[0].sourceUnitIds, [units[1].id]);
+  const multiParse = parseDocument('Trip Bali\nRingkasan\nPerjalanan wisata berlangsung dengan santai\nbersama pemandu lokal.', 'full_day');
+  const multiUnits = segmentsOf(multiParse).units;
+  const wholeParagraph = 'Perjalanan wisata berlangsung dengan santai\nbersama pemandu lokal.';
+  const multi = filterCompletion({ summary: { sourceUnitIds: multiUnits.map((unit) => unit.id), value: wholeParagraph, quote: wholeParagraph } }, multiParse, 'full_day', multiUnits);
+  assert.equal(multi.accepted.summary?.value, wholeParagraph);
+  assert.deepEqual(multi.evidence[0].sourceUnitIds, multiUnits.map((unit) => unit.id));
+  const activityParse = parseDocument('Trip Bali\nHari 1\n09:00 Museum\nKoleksi ini menceritakan sejarah lokal.\n10:00 Taman', 'full_day');
+  const activityUnits = segmentsOf(activityParse).units;
+  const targetId = 'activity-1-3';
+  const activityValue = { sourceUnitIds: [activityUnits[0].id], value: 'Koleksi ini menceritakan sejarah lokal.', quote: 'Koleksi ini menceritakan sejarah lokal.' };
+  const duplicateAssignment = filterCompletion({ activityDetails: [
+    { targetId, title: 'Museum', description: activityValue },
+    { targetId, title: 'Museum', tip: activityValue }
+  ] }, activityParse, 'full_day', activityUnits);
+  assert.equal(duplicateAssignment.accepted.activityDetails?.[0].description?.value, activityValue.value);
+  assert.equal(duplicateAssignment.accepted.activityDetails?.[1].tip, null, 'one source unit cannot fill both description and tip');
+});
+
+test('an unheaded paragraph separated from an activity by a blank line has no inferred owner', () => {
+  const parse = parseDocument('Trip Bali\nHari 1\n09:00 Museum\n\nMuseum ini terkenal bagi warga setempat.\n10:00 Taman', 'full_day');
+  const units = segmentsOf(parse).units;
+  assert.equal(units[0].ownerTargetId, undefined);
+  assert.deepEqual(targetsForBatch(parse, units), []);
+});
+
+test('valid completion JSON does not hide source units the model ignored', async (t) => {
+  const d = double(['{}']);
+  const app = await fixture(t, d.extractor);
+  const sourceId = await source(app, 'Trip Bali\nHari 1\n09:00 Museum\nPeserta berjalan mengelilingi museum bersama pemandu lokal.');
+  const body = (await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'full_day', outputLanguage: 'id' })).json();
+  assert.equal(body.report.batches[0].status, 'completed', 'provider completion is reported separately');
+  assert.equal(body.report.batches[0].mappingStatus, 'unmapped');
+  assert.ok(body.report.review.pendingUnits.length > 0);
+  assert.ok(body.report.review.unsupported > 0);
+});
+
+test('same-line inline detail is supplied to its exact activity target and accepted without punctuation', async (t) => {
+  const detail = 'Peserta mengenal budaya bersama pemandu lokal';
+  const d = double([JSON.stringify({ activityDetails: [{ targetId: 'activity-1-3', title: 'Tur Keraton.', description: { value: detail, quote: detail }, place: null, tip: null }] })]);
+  const app = await fixture(t, d.extractor);
+  const sourceId = await source(app, `Trip Yogyakarta\nHari 1\n09:00 Tur Keraton. ${detail}\n12:00 Makan siang`);
+  const body = (await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'full_day', outputLanguage: 'id' })).json();
+  assert.ok(d.calls[0].targets?.some((target) => target.targetId === 'activity-1-3' && target.title === 'Tur Keraton.'));
+  assert.equal(body.itinerary.draftContent.days[0].activities[0].description, detail);
+  assert.ok(body.report.evidence.accepted.some((item: { targetId?: string; path: string }) => item.targetId === 'activity-1-3' && item.path.endsWith('.description')));
+});
+
+test('activity description without terminal punctuation is complete at the next structural event boundary', async (t) => {
+  const detail = 'Peserta mengenal budaya bersama pemandu lokal';
+  const d = double([JSON.stringify({ activityDetails: [{ targetId: 'activity-1-3', title: 'Tur Keraton', description: { value: detail, quote: detail }, place: null, tip: null }] })]);
+  const app = await fixture(t, d.extractor);
+  const sourceId = await source(app, `Trip Yogyakarta\nHari 1\n09:00 Tur Keraton\n${detail}\n12:00 Makan siang`);
+  const body = (await apply(app, sourceId, { operationId: op(), target: 'new', mode: 'full_day', outputLanguage: 'id' })).json();
+  assert.equal(body.itinerary.draftContent.days[0].activities[0].description, detail);
+  assert.ok(!body.report.skipped.some((item: { path: string }) => item.includes('description')));
+});
+
+test('fully resolved activity detail allows overwrite; only unresolved source retains the old schedule', async (t) => {
+  const first = 'Museum ini menyimpan koleksi sejarah lokal.';
+  const second = 'Kebun ini memiliki jalur yang teduh.';
+  const d = double([JSON.stringify({ activityDetails: [
+    { targetId: 'activity-1-3', title: 'Museum', description: { value: first, quote: first } },
+    { targetId: 'activity-2-6', title: 'Kebun', description: { value: second, quote: second } }
+  ] })]);
+  const app = await fixture(t, d.extractor);
+  const old = (await app.inject({ method: 'POST', url: '/api/v1/itineraries', headers, payload: { mode: 'multi_day' } })).json();
+  const edited = structuredClone(old.draftContent as WebItineraryContent);
+  edited.days[0].title = 'Hari lama';
+  const saved = (await app.inject({ method: 'PATCH', url: `/api/v1/itineraries/${old.id}`, headers, payload: { expectedRevision: old.revision, draftContent: edited, languageContext: old.languageContext, writingContext: old.writingContext } })).json();
+  const text = `Tur Baru\nHari 1\n09:00 Museum\n${first}\nHari 2\n10:00 Kebun\n${second}\n12:00 Kembali ke hotel`;
+  const result = await apply(app, await source(app, text), { operationId: op(), target: 'overwrite', itineraryId: old.id, expectedRevision: saved.revision, outputLanguage: 'id' });
+  assert.equal(result.statusCode, 200, result.body);
+  const body = result.json();
+  assert.equal(body.itinerary.draftContent.days[0].title, '', 'day markers do not become day titles');
+  assert.equal(body.itinerary.draftContent.days[0].activities[0].description, first);
+  assert.equal(body.itinerary.draftContent.days[1].activities[0].description, second);
+  assert.ok(!body.report.retainedCollections.includes('days'));
 });
 
 test('activity import: model highlights must be whole lines and never replace a list the code read', async (t) => {

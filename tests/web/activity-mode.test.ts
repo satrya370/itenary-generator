@@ -43,6 +43,16 @@ test('an activity with category and duration publishes; a missing category or du
   assert.ok(codes(validateForPublish(noDuration)).includes('PUBLISH_FIELD_REQUIRED:activity.durationMinutes'));
 });
 
+test('activity category accepts bounded custom text as well as legacy categories', () => {
+  for (const category of ['water', 'Wisata astronomi', 'Seni & kerajinan']) {
+    const content = activityDraft(); content.activity!.category = category;
+    assert.equal(validateDraft(content).ok, true, category);
+    assert.equal(validateForPublish(content).ok, true, category);
+  }
+  const long = activityDraft(); long.activity!.category = 'x'.repeat(121);
+  assert.equal(validateDraft(long).ok, false);
+});
+
 test('an activity cannot carry days or places, and other modes cannot carry an activity block', () => {
   const withDay = activityDraft();
   withDay.days = createBlankDraft('full_day', {}).days;
@@ -125,4 +135,10 @@ test('an activity renders its facts, highlights and steps, with no day schedule,
   assert.deepEqual(id.errors, [], JSON.stringify(id.errors));
   assert.match(id.html, /Air/);
   assert.match(id.html, /Sedang/);
+
+  const customCategory = '<script>alert(1)</script>';
+  const customRendered = renderItineraryHtml({ ...content, activity: { ...content.activity!, category: customCategory } }, options('en'));
+  assert.deepEqual(customRendered.errors, []);
+  assert.ok(customRendered.html.includes('&lt;script&gt;alert(1)&lt;/script&gt;'));
+  assert.ok(!customRendered.html.includes(customCategory), 'custom category is escaped in published HTML');
 });

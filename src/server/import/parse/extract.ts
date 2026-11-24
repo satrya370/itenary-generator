@@ -2,7 +2,10 @@ import type { ItineraryMode } from '../../../contracts/types.js';
 import { kindFromText, dateFromText, type ActivityKind } from '../normalize.js';
 import { classifyLines, keyFor, type HeadingTarget, type SourceLine } from './lines.js';
 import { dayMarkerFor } from './days.js';
-import { readTimeLine } from './time.js';
+import { timePartOf } from './clean.js';
+import { durationIn, readTimeLine } from './time.js';
+import { paragraphClauses, phonesIn, splitInlineList } from './clean.js';
+import { fold } from './text.js';
 import { ageRangeFrom, categoryFrom, difficultyFrom, durationFrom, languagesFrom, sessionsFrom, stepFrom, wholeNumberFrom, type ActivityCategory, type ActivityDifficulty } from './activity.js';
 import { dict } from './text.js';
 
@@ -13,10 +16,20 @@ export const MAX_HIGHLIGHTS = 5;
 export const MAX_STEPS = 12;
 const URL_IN_TEXT = /(https?:\/\/\S+|maps\.app\.goo\.gl\/\S+|goo\.gl\/maps\/\S+|google\.[a-z.]+\/maps\S*)/i;
 
-export interface ParsedActivity { time: string | null; durationMinutes: number | null; title: string; kind: ActivityKind; ambiguousTime: boolean; line: number }
+export interface ParsedActivity { time: string | null; durationMinutes: number | null; title: string; kind: ActivityKind; ambiguousTime: boolean; line: number; tip?: string }
+/** Column roles recognised in a copied table header (Jam | Kegiatan | Durasi | Keterangan). */
+type TableRole = 'time' | 'title' | 'duration' | 'tip' | 'place';
+const TABLE_ROLES: Record<string, TableRole> = { jam: 'time', waktu: 'time', time: 'time', kegiatan: 'title', aktivitas: 'title', activity: 'title', durasi: 'duration', duration: 'duration', lama: 'duration', keterangan: 'tip', catatan: 'tip', note: 'tip', notes: 'tip', tempat: 'place', lokasi: 'place', location: 'place' };
+/** Labels that name the trip explicitly. A value after one of them is the title whatever its position. */
+const TITLE_LABELS = new Set(['judul', 'nama tur', 'nama trip', 'nama paket', 'title', 'trip', 'paket']);
+const ANNOTATION = /\s*\((?:revisi?|revision|draft|final)\b[^)]*\)|\s+v\d+\b/gi;
+const COMMON_ABBREVIATIONS = new Set(['dr', 'prof', 'st', 'jl', 'jln', 'no', 'etc', 'dst', 'dkk', 'pt', 'cv', 'tbk', 'mr', 'mrs', 'ms', 'vs', 'vol']);
 export interface ParsedDay { dayNumber: number; title: string | null; activities: ParsedActivity[]; line: number }
 export interface UnconsumedLine { index: number; text: string; section: string | null }
 export interface ParseDiagnostic { code: 'PARSER_NOTE' | 'UNCONSUMED_TEXT'; line?: number; message: string }
+/** A "Label: value" line whose label the dictionary does not know. Kept for the AI step; the guide chooses its field in review. */
+export type UnknownValueType = 'phone' | 'email' | 'url' | 'date' | 'time' | 'text';
+export interface UnknownLabel { label: string; value: string; line: number; valueType: UnknownValueType }
 export interface ParseConflict { path: string; values: string[]; line: number; message: string; occurrences: Array<{ value: string; line: number }> }
 /** What the activity mode reads from the text (web-2.2.0). Empty for every other mode. */
 export interface ParsedActivityMode {
@@ -35,6 +48,10 @@ export interface ParseResult {
     emergencyContacts: Array<{ label: string; value: string }>;
     days: ParsedDay[];
     activity: ParsedActivityMode;
+    /** Destination guide only: place names read from bullets or short lines. */
+    places: string[];
+    /** Policy lines ("Refund: …", "DP 50%…") in document order. */
+    policies: string[];
   };
   unconsumed: UnconsumedLine[];
   totalLines: number;
@@ -42,7 +59,18 @@ export interface ParseResult {
   notes: string[];
   diagnostics: ParseDiagnostic[];
   conflicts: ParseConflict[];
+  unknownLabels: UnknownLabel[];
   coverage: { totalLines: number; consumedLines: number; unconsumedLines: number; ratio: number };
+}
+
+/** The kind of value, read from its shape only. It decides which fields a guide may send an unknown label to. */
+function valueTypeOf(value: string): UnknownValueType {
+  if (phonesIn(value).length) return 'phone';
+  if (/@/.test(value) && /\.[a-z]{2,}/i.test(value)) return 'email';
+  if (URL_IN_TEXT.test(value)) return 'url';
+  if (dateFromText(value).date || /\b\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}\b/.test(value)) return 'date';
+  if (readTimeLine(value)?.time) return 'time';
+  return 'text';
 }
 
 /** Deterministic parse of the document. Copies text that exists; never invents values. Unknown text stays in `unconsumed`. */
@@ -51,14 +79,15 @@ export function parseDocument(text: string, mode: ItineraryMode, excludedLines: 
   const lines = classifyLines(normalized, mode).filter((line) => line.kind !== 'blank');
   const result: ParseResult = {
     mode,
-    fields: { trip: { mode }, guide: {}, meeting: {}, lists: {}, emergencyContacts: [], days: [], activity: { sessionTimes: [], guideLanguages: [], highlights: [], steps: [] } },
-    unconsumed: [], totalLines: lines.length, consumedLines: 0, notes: [], diagnostics: [], conflicts: [],
+    fields: { trip: { mode }, guide: {}, meeting: {}, lists: {}, emergencyContacts: [], days: [], activity: { sessionTimes: [], guideLanguages: [], highlights: [], steps: [] }, places: [], policies: [] },
+    unconsumed: [], totalLines: lines.length, consumedLines: 0, notes: [], diagnostics: [], conflicts: [], unknownLabels: [],
     coverage: { totalLines: lines.length, consumedLines: 0, unconsumedLines: 0, ratio: 0 }
   };
   const dayMode = mode === 'half_day' || mode === 'full_day' || mode === 'multi_day';
   const singleDay = mode === 'half_day' || mode === 'full_day';
   let section: HeadingTarget | null = null;
-  let titleDone = false;
+  let tableHeader: TableRole[] | null = null;
+  let timePartNoted = false;
   let lastDay = 0;
   let ignoreDays = false;
   let capNoted = false;
@@ -67,32 +96,95 @@ export function parseDocument(text: string, mode: ItineraryMode, excludedLines: 
   const scalarConflicts = new Set<string>();
   const scalarOccurrences = new Map<string, Array<{ value: string; line: number }>>();
 
-  const keep = (line: SourceLine) => result.unconsumed.push({ index: line.index, text: line.text, section });
+  const keep = (line: SourceLine) => {
+    result.unconsumed.push({ index: line.index, text: line.text, section });
+    // Any "Label: value" line the parser did not use is reported, including a known label that does not apply to this mode.
+    if (line.kind === 'key-value' && line.label && line.value && /\p{L}/u.test(line.label) && line.label.length <= 40) {
+      result.unknownLabels.push({ label: line.label, value: line.value, line: line.index, valueType: valueTypeOf(line.value) });
+    }
+    // Prices are never written to the engine (SPEC: no price fields); the line is named in the report.
+    if (/\b(rp|idr|usd)\.?\s*\d|\$\s*\d|\d+\s*(rb|ribu|jt|juta)\b/i.test(line.text)) result.notes.push(`Baris ${line.index + 1}: harga tidak didukung engine; tidak diisi.`);
+  };
   const consume = () => { result.consumedLines += 1; };
   let highlightsCapped = false;
   let stepsCapped = false;
 
-  for (const line of lines) {
+  for (let at = 0; at < lines.length; at += 1) {
+    const line = lines[at];
     if (excludedLines.has(line.index)) {
       result.unconsumed.push({ index: line.index, text: line.text, section: 'layout-ambiguous' });
       section = null; dayIndex = null;
       continue;
     }
+    if (line.kind === 'noise') {
+      consume();
+      result.notes.push(`Baris ${line.index + 1}: diabaikan (${line.reason}); tidak dibaca sebagai data.`);
+      continue;
+    }
     if (line.kind === 'heading') {
       section = line.heading ?? null;
+      tableHeader = null;
       if (line.inlineValue && section && (LIST_SECTIONS as readonly string[]).includes(section)) {
         const list = section as ListSection;
-        (result.fields.lists[list] ??= []).push(line.inlineValue);
+        (result.fields.lists[list] ??= []).push(...splitInlineList(line.inlineValue));
       } else if (line.inlineValue) {
         keep({ ...line, text: line.inlineValue, kind: 'text' });
       }
       consume(); continue;
     }
 
+    if (line.cells && dayMode && (!ignoreDays || tableHeader)) {
+      const roles = line.cells.map((cell) => TABLE_ROLES[fold(cell)]);
+      const recognised = roles.filter(Boolean);
+      if (recognised.length >= 2 && (roles.includes('time') || roles.includes('title'))) {
+        tableHeader = roles.map((role) => role ?? null) as TableRole[];
+        consume(); continue;
+      }
+      const roleList: Array<TableRole | null> = tableHeader ?? (readTimeLine(line.cells[0]) ? ['time', 'title', 'duration', 'tip'] : []);
+      if (roleList.length && roleList.includes('time') && roleList.includes('title') && line.cells.length >= 2) {
+        if (singleDay && result.fields.days.length === 0) {
+          result.fields.days.push({ dayNumber: 1, title: null, activities: [], line: line.index });
+          dayIndex = 0; lastDay = Math.max(lastDay, 1);
+        }
+        if (dayIndex !== null) {
+          const cell = (role: TableRole) => { const position = roleList.indexOf(role); return position >= 0 ? line.cells![position] : undefined; };
+          const timeCell = cell('time') ?? '';
+          const reading = readTimeLine(timeCell);
+          const titleText = cell('title') ?? '';
+          const durationText = cell('duration');
+          const duration = durationText ? durationIn(durationText) : null;
+          // Text left in the duration cell after the duration itself is a remark, not lost.
+          const durationRemark = duration && !duration.unclear && durationText ? durationText.replace(duration.span, ' ').replace(/\s+/g, ' ').trim() : '';
+          if (!reading?.time) result.notes.push(`Baris ${line.index + 1}: jam tabel tidak jelas; jam dikosongkan.`);
+          result.fields.days[dayIndex].activities.push({
+            time: reading?.time ?? null, durationMinutes: duration && !duration.unclear ? duration.minutes : null,
+            title: titleText, kind: kindFromText(titleText), ambiguousTime: !reading?.time, line: line.index, tip: cell('tip') || durationRemark || undefined
+          });
+          consume(); continue;
+        }
+      }
+    }
+
+    if (section === 'timePart' && dayMode && !ignoreDays && (line.kind === 'bullet' || line.kind === 'text') && !dayMarkerFor(line.text)) {
+      const text = line.kind === 'bullet' ? line.bullet ?? line.text : line.text;
+      if (singleDay && result.fields.days.length === 0) {
+        result.fields.days.push({ dayNumber: 1, title: null, activities: [], line: line.index });
+        dayIndex = 0; lastDay = Math.max(lastDay, 1);
+      }
+      if (dayIndex !== null) {
+        const reading = readTimeLine(text);
+        const title = reading ? reading.rest || text : text;
+        if (!reading && !timePartNoted) { timePartNoted = true; result.notes.push(`Baris ${line.index + 1}: aktivitas di bagian waktu tanpa jam pasti; jam dikosongkan.`); }
+        result.fields.days[dayIndex].activities.push({ time: reading?.time ?? null, durationMinutes: reading?.durationMinutes ?? null, title, kind: kindFromText(title), ambiguousTime: false, line: line.index });
+        consume(); continue;
+      }
+    }
+
     if (dayMode && line.kind !== 'url') {
       const marker = dayMarkerFor(line.text);
       if (marker) {
         section = null;
+        tableHeader = null;
         if (singleDay && result.fields.days.length >= 1) {
           consume();
           ignoreDays = true; dayIndex = null;
@@ -124,13 +216,19 @@ export function parseDocument(text: string, mode: ItineraryMode, excludedLines: 
       }
     }
 
-    if (!titleDone && section === null && !result.fields.trip.title && line.kind === 'text' && line.text.length <= 120 && result.fields.days.length === 0 && !readTimeLine(line.text)) {
-      result.fields.trip.title = line.text; titleDone = true; consume(); continue;
+    if (!result.fields.trip.title && section === null && line.kind === 'text' && !line.chat && result.fields.days.length === 0 && at < 3 && isTitleCandidate(lines, at)) {
+      setTitle(result, line.text, line.index);
+      consume(); continue;
+    }
+
+    if (line.kind === 'key-value' && line.label && line.value && TITLE_LABELS.has(fold(line.label)) && !result.fields.trip.title) {
+      setTitle(result, line.value, line.index);
+      consume(); continue;
     }
 
     if (line.kind === 'key-value' && line.label && line.value) {
       const key = keyFor(line.label);
-      if (key && handleKeyValue(result, key, line.value, line.index, scalarConflicts, scalarOccurrences)) { consume(); continue; }
+      if (key && handleKeyValue(result, key, line.value, line.index, scalarConflicts, scalarOccurrences, line.label)) { consume(); continue; }
     }
 
     if (section === 'emergencyContacts' && line.kind === 'key-value' && line.label && line.value) {
@@ -164,22 +262,79 @@ export function parseDocument(text: string, mode: ItineraryMode, excludedLines: 
     }
 
     if (dayMode && !ignoreDays) {
-      const reading = readTimeLine(line.text);
+      // A numbered or bulleted line ("1. 08.30 Kebun raya", "- 08:00 – Jemput") is read from its content, not its marker.
+      const reading = readTimeLine(line.kind === 'bullet' ? line.bullet ?? line.text : line.text);
       if (reading) {
         if (dayIndex === null && singleDay) {
           result.fields.days.push({ dayNumber: 1, title: null, activities: [], line: line.index });
           dayIndex = 0; lastDay = Math.max(lastDay, 1);
         }
         if (dayIndex !== null) {
-          const title = reading.rest || line.text;
+          const remainder = reading.rest || line.text;
+          const split = splitActivitySentence(remainder);
+          const title = split?.title || remainder;
           if (reading.ambiguous) result.notes.push(`Baris ${line.index + 1}: jam tidak jelas; judul diisi, jam dikosongkan.`);
+          if (reading.durationUnclear) result.notes.push(`Baris ${line.index + 1}: durasi tidak dibaca utuh; dikosongkan.`);
           result.fields.days[dayIndex].activities.push({ time: reading.time, durationMinutes: reading.durationMinutes, title, kind: kindFromText(title), ambiguousTime: reading.ambiguous, line: line.index });
-          consume(); section = null; continue;
+          const unresolvedDetail = split?.detail ?? (possibleInlineProse(remainder) ? remainder : null);
+          if (unresolvedDetail) {
+            // Keep the exact detail sentence as unresolved evidence. CP031 owns target binding/AI assignment;
+            // a parser-only pass must not silently add it to the activity or a global field.
+            result.unconsumed.push({ index: line.index, text: unresolvedDetail, section });
+            result.notes.push(split
+              ? `Baris ${line.index + 1}: detail setelah judul aktivitas dipisahkan untuk pemeriksaan lanjutan.`
+              : `Baris ${line.index + 1}: kemungkinan detail aktivitas tidak memiliki batas yang jelas; teks disimpan untuk pemeriksaan lanjutan.`);
+          } else consume();
+          section = null; continue;
         }
       }
     }
+    // A bullet or a short line without a full stop is a place name; a sentence ("A quiet gallery ….") is left for the description step.
+    if (mode === 'destination_guide' && (line.kind === 'bullet' || (line.kind === 'text' && line.text.length <= 60 && !/[.!?]$/.test(line.text)))) {
+      const raw = line.kind === 'bullet' ? line.bullet ?? line.text : line.text;
+      const reading = readTimeLine(raw);
+      const name = (reading ? reading.rest : raw).trim();
+      if (reading?.time) result.notes.push(`Baris ${line.index + 1}: jam pada daftar tempat dibuang; destinasi tidak memakai jadwal.`);
+      // The line stays unconsumed: the AI step needs it as quote context for area and description. The AI's places win when present.
+      if (name) { result.fields.places.push(name); consume(); }
+    }
+
+    if (dayMode && line.kind === 'text' && line.text.length > 160) {
+      const clauses = paragraphClauses(line.text);
+      const readable = clauses.filter((item) => item.reading).length;
+      if (readable > 0) {
+        if (singleDay && result.fields.days.length === 0) {
+          result.fields.days.push({ dayNumber: 1, title: null, activities: [], line: line.index });
+          dayIndex = 0; lastDay = Math.max(lastDay, 1);
+        }
+        const guideName = /guide\s*:\s*([^\d(+]+?)\s*\(?\s*\+?\d/i.exec(line.text)?.[1]?.trim();
+        if (guideName && !result.fields.guide.name) result.fields.guide.name = guideName;
+        if (dayIndex !== null) {
+          for (const item of clauses) {
+            if (item.reading) {
+              result.fields.days[dayIndex].activities.push({ time: item.reading.time, durationMinutes: null, title: item.reading.rest || item.clause, kind: kindFromText(item.reading.rest || item.clause), ambiguousTime: false, line: line.index });
+            } else {
+              result.unconsumed.push({ index: line.index, text: item.clause, section });
+            }
+          }
+          result.notes.push(`Baris ${line.index + 1}: paragraf dipecah per klausa; klausa tanpa jam pasti tetap dicek manual.`);
+          consume(); continue;
+        }
+      }
+    }
+
     keep(line);
   }
+  // A phone number in free text is used only when it is the single one in the document (never guessed among several).
+  if (!result.fields.guide.phone) {
+    const found = new Map<string, string>();
+    for (const item of result.unconsumed) for (const phone of phonesIn(item.text)) found.set(phone.replace(/\D/g, ''), phone);
+    if (found.size === 1) {
+      result.fields.guide.phone = [...found.values()][0];
+      result.notes.push('Nomor HP diambil dari teks bebas karena hanya ada satu; periksa.');
+    }
+  }
+  if (!result.fields.trip.title && lines.length) result.notes.push('Judul tidak terbaca dengan pasti; isi manual.');
   result.diagnostics = [
     ...result.notes.map((message) => ({ code: 'PARSER_NOTE' as const, message })),
     ...result.unconsumed.map((line) => ({ code: 'UNCONSUMED_TEXT' as const, line: line.index + 1, message: `Baris ${line.index + 1} belum dipetakan ke field.` }))
@@ -193,7 +348,46 @@ export function parseDocument(text: string, mode: ItineraryMode, excludedLines: 
   return result;
 }
 
-function handleKeyValue(result: ParseResult, key: keyof typeof dict.keyValue, value: string, index: number, conflicts: Set<string>, occurrences: Map<string, Array<{ value: string; line: number }>>): boolean {
+/** Split only at an explicit sentence boundary; uncertain punctuation remains part of the source title. */
+function splitActivitySentence(value: string): { title: string; detail: string } | null {
+  const boundary = /[.!?。！？][”’"')\]]*\s+(?=\p{Lu})/gu;
+  let match: RegExpExecArray | null;
+  while ((match = boundary.exec(value)) !== null) {
+    const punctuationEnd = match.index + match[0].trimEnd().length;
+    const prefix = value.slice(0, punctuationEnd).trim();
+    const detail = value.slice(boundary.lastIndex).trim();
+    const lastWord = /([\p{L}]+)\.$/u.exec(prefix)?.[1]?.toLocaleLowerCase();
+    const initial = /(?:^|\s)\p{Lu}\.$/u.test(prefix);
+    if (initial || (lastWord && COMMON_ABBREVIATIONS.has(lastWord)) || prefix.length < 4 || detail.length < 4) continue;
+    return { title: prefix, detail };
+  }
+  return null;
+}
+
+/** A lowercase sentence boundary or a long prose-like tail is retained for review, never split by a guess. */
+function possibleInlineProse(value: string): boolean {
+  return /[.!?。！？][”’"')\]]*\s+\p{Ll}/u.test(value) || (value.length >= 100 && value.trim().split(/\s+/).length >= 12);
+}
+
+/**
+ * A plain first line becomes the title only when it is short, text-like and followed by real structure (a label, a day
+ * marker, a timed line or a heading) within five lines. Greetings, URLs, sentences and chat lines never qualify.
+ */
+function isTitleCandidate(lines: SourceLine[], at: number): boolean {
+  const text = lines[at].text;
+  if (text.length < 3 || text.length > 80 || !/\p{L}.*\p{L}/u.test(text) || /[!?]$/.test(text)) return false;
+  if (/^\d/.test(text) || readTimeLine(text) || URL_IN_TEXT.test(text) || dayMarkerFor(text) || timePartOf(text)) return false;
+  return lines.slice(at + 1, at + 6).some((line) => line.kind === 'heading' || line.kind === 'key-value' || line.kind === 'text' && Boolean(dayMarkerFor(line.text)) || Boolean(readTimeLine(line.bullet ?? line.text)));
+}
+
+function setTitle(result: ParseResult, raw: string, index: number): void {
+  const cleaned = raw.replace(ANNOTATION, '').replace(/\s+/g, ' ').trim();
+  if (!cleaned) return;
+  if (cleaned !== raw.trim()) result.notes.push(`Baris ${index + 1}: anotasi revisi atau draft dibuang dari judul.`);
+  result.fields.trip.title = cleaned;
+}
+
+function handleKeyValue(result: ParseResult, key: keyof typeof dict.keyValue, value: string, index: number, conflicts: Set<string>, occurrences: Map<string, Array<{ value: string; line: number }>>, label: string): boolean {
   const setScalar = (path: string, current: string | undefined, next: string, assign: () => void, clear: () => void, label: string) => {
     const prior = occurrences.get(path) ?? [];
     prior.push({ value: next, line: index + 1 });
@@ -221,11 +415,27 @@ function handleKeyValue(result: ParseResult, key: keyof typeof dict.keyValue, va
       if (note) result.notes.push(`Baris ${index + 1}: ${note}`);
       return true;
     }
-    case 'guide': setScalar('guide', result.fields.guide.name, value, () => { result.fields.guide.name = value; }, () => { delete result.fields.guide.name; }, 'Guide'); return true;
+    case 'guide': {
+      // "mas Dimas (wa 0857 1234 5678)": the number is the phone, the rest is the name.
+      const phone = phonesIn(value)[0];
+      const name = phone ? value.replace(phone, '').replace(/\(\s*(wa)?\s*\)|\bwa\b\s*:?/gi, ' ').replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim() : value;
+      if (phone && !result.fields.guide.phone) result.fields.guide.phone = phone;
+      if (name) setScalar('guide', result.fields.guide.name, name, () => { result.fields.guide.name = name; }, () => { delete result.fields.guide.name; }, 'Guide');
+      return true;
+    }
+    case 'emergency': {
+      for (const part of value.split(/\s*[/|;]\s*/).map((item) => item.trim()).filter(Boolean)) result.fields.emergencyContacts.push({ label, value: part });
+      return true;
+    }
+    case 'policy': result.fields.policies.push(`${label}: ${value}`); return true;
     case 'phone': setScalar('phone', result.fields.guide.phone, value, () => { result.fields.guide.phone = value; }, () => { delete result.fields.guide.phone; }, 'Nomor guide'); return true;
     case 'meetingPlace': {
       const url = URL_IN_TEXT.exec(value)?.[0];
-      const place = url ? value.replace(url, '').trim().replace(/[|,;\-–—]+$/, '').trim() : value;
+      // "stasiun bgr pintu utara jm 8": a clock phrase glued to the place is not a place; its time is unclear.
+      const clock = /\s+(?:jam|jm|pukul)\s*\d{1,2}(?:[.:]\d{2})?(?:\s*(?:am|pm|pagi|siang|sore|malam|wib|wita))?\s*$/i.exec(value);
+      const withoutClock = clock ? value.slice(0, clock.index).trim() : value;
+      if (clock) result.notes.push(`Baris ${index + 1}: jam di titik kumpul tidak jelas; isi jam kumpul manual.`);
+      const place = url ? withoutClock.replace(url, '').trim().replace(/[|,;\-–—]+$/, '').trim() : withoutClock;
       if (place) setScalar('meeting.place', result.fields.meeting.place, place, () => { result.fields.meeting.place = place; }, () => { delete result.fields.meeting.place; }, 'Titik kumpul');
       if (url) setScalar('meeting.mapsUrl', result.fields.meeting.mapsUrl, url.startsWith('http') ? url : `https://${url}`, () => { result.fields.meeting.mapsUrl = url.startsWith('http') ? url : `https://${url}`; }, () => { delete result.fields.meeting.mapsUrl; }, 'Link peta');
       return true;

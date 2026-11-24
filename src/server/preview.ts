@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { dayClock } from '../contracts/validator.js';
 import sharp from 'sharp';
 import { validateDraft, validateForPublish } from '../contracts/validator.js';
 import type { ContractDiagnostic, WebItineraryContent } from '../contracts/types.js';
@@ -88,9 +89,10 @@ function overlapDiagnostics(content: WebItineraryContent): ContractDiagnostic[] 
   const errors: ContractDiagnostic[] = [];
   content.days.forEach((day, dayIndex) => {
     let latestEnd: number | null = null;
+    const clock = dayClock(day.activities);
     day.activities.forEach((activity, activityIndex) => {
-      if (!activity.time || !activity.durationMinutes) return;
-      const start = minutesOf(activity.time);
+      const start = clock[activityIndex];
+      if (start === null || !activity.durationMinutes) return;
       if (latestEnd !== null && start < latestEnd) {
         errors.push(err('SCHEDULE_OVERLAP', `days[${dayIndex}].activities[${activityIndex}].time`, 'Aktivitas ini dimulai sebelum aktivitas sebelumnya selesai.'));
       }

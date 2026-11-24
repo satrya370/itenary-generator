@@ -80,7 +80,7 @@ export function mergeContent(saved: WebItineraryContent, input: MergeInput): Mer
       content.days = parse.fields.days.map((day) => {
         const previous = saved.days.find((item) => item.dayNumber === day.dayNumber);
         const base: Day = blankDay(mode, day.dayNumber);
-        const activities = day.activities.map((activity): Activity => ({ id: randomUUID(), time: activity.time, durationMinutes: activity.durationMinutes, kind: activity.kind, title: activity.title, place: null, description: '', tip: null }));
+        const activities = day.activities.map((activity): Activity => ({ id: randomUUID(), time: activity.time, durationMinutes: activity.durationMinutes, kind: activity.kind, title: activity.title, place: null, description: '', tip: activity.tip ?? null }));
         day.activities.forEach((activity, index) => activityTargets.set(`activity-${day.dayNumber}-${activity.line + 1}`, activities[index]));
         return {
           ...base,
@@ -118,6 +118,10 @@ export function mergeContent(saved: WebItineraryContent, input: MergeInput): Mer
 
   if (completion.summary) set('summary', () => { content.summary = completion.summary!.value; });
   if (completion.closingNote) set('closingNote', () => { content.closingNote = completion.closingNote!.value; });
+  if (parse.fields.policies.length && !completion.policies) set('policies', () => { content.policies = parse.fields.policies.join('\n'); });
+  if (mode === 'destination_guide' && parse.fields.places.length && !completion.places?.length && !retain('places', parse.fields.places.length > 60)) {
+    set('places', () => { content.places = parse.fields.places.map((name) => freshPlace({ name: { value: name, quote: name }, area: null, description: null } as NonNullable<Completion['places']>[number])); });
+  }
   if (completion.policies) set('policies', () => { content.policies = completion.policies!.value; });
   if (completion.places?.length && !retain('places', completion.places.length > 60 || completion.places.some((place) => place.name.value.length > 200 || (place.area?.value.length ?? 0) > 160 || (place.description?.value.length ?? 0) > 6000))) set('places', () => { content.places = completion.places!.map(freshPlace); });
 

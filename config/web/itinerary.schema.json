@@ -723,15 +723,7 @@
             "string",
             "null"
           ],
-          "enum": [
-            "adventure",
-            "water",
-            "culture",
-            "wellness",
-            "nature",
-            "family",
-            null
-          ]
+          "maxLength": 120
         },
         "durationMinutes": {
           "type": [

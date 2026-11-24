@@ -32,6 +32,16 @@ test('import report displays unknown AI usage honestly and supports legacy repor
   assert.match(reviewHtml, /belum diverifikasi/);
   assert.match(reviewHtml, /&lt;unsafe&gt;/);
   assert.doesNotMatch(reviewHtml, /<unsafe>/);
+  operation.report!.sourceExpired = true;
+  operation.report!.review = { version: 1, unsupported: 1, sourceExpired: true, candidates: [], unknownLabels: [{ id: 'label-1', line: 4, targets: [], status: 'pending' }] };
+  const expiredHtml = renderToStaticMarkup(React.createElement(ImportReport, { operation, record, dirty: false, busy: false, labelFor: (value: string) => value, onJump: noop, onUndo: noop, onClose: noop, onResolved: noop }));
+  assert.match(expiredHtml, /Teks sumber sudah dihapus sesuai kebijakan penyimpanan/);
+  assert.doesNotMatch(expiredHtml, /undefined|SECRET_LABEL_VALUE/);
+  operation.report = { filled: [], missingRequired: [], skipped: [], notes: [], sourceCount: { days: 0, activities: 0, unconsumed: 0 } };
+  const latestFailure: ImportOperationDto = { ...operation, operationId: 'failed-newer', status: 'failed', errorCode: 'IMPORT_SOURCE_TEXT_REMOVED', report: null };
+  const historyHtml = renderToStaticMarkup(React.createElement(ImportReport, { operation, latestAttempt: latestFailure, record, dirty: false, busy: false, labelFor: (value: string) => value, onJump: noop, onUndo: noop, onClose: noop, onResolved: noop }));
+  assert.match(historyHtml, /Percobaan import terbaru gagal/);
+  assert.match(historyHtml, /Laporan berhasil sebelumnya tetap tersedia/);
 });
 const isRendered = (field: (typeof registry.fields)[number]) => field.control !== 'hidden' && field.control !== 'derived';
 
@@ -227,7 +237,7 @@ test('5c. the language field is a dropdown of the six content languages plus aut
   const badProps = { ...editorProps('full_day', unsupported), localeInput: 'inggris' };
   const bad = renderToStaticMarkup(React.createElement(EditorForm, badProps));
   assert.ok(bad.includes('Bahasa tidak didukung: inggris'), 'an unsupported stored tag is shown, not hidden');
-  assert.ok(!bad.includes('list="'), 'no datalist text input');
+  assert.ok(!/<input[^>]*data-field-path="trip\.language"[^>]*list=/.test(bad), 'language remains a controlled field, not a datalist text input');
 });
 
 test('5d. the guide picker lists profile guides; a photo field offers upload', () => {

@@ -91,6 +91,14 @@ const texts: Record<string, string> = {
     '03.30 jemput hotel di Probolinggo (30 menit)',
     '04.30 - 06.00 Melihat sunrise di Penanjakan',
     'jam 8 makan malam di Probolinggo'
+  ].join('\n'),
+  'id-inline-activity-detail.txt': [
+    'Tur Kota Yogyakarta',
+    'Hari 1',
+    '09.00–10.30 — Tur Keraton. Peserta mengenal sejarah dan budaya bersama pemandu. Pemandu menjelaskan sejarah kota.',
+    '11:00 Kunjungan Dr. Soetomo Museum. Peserta melihat koleksi utama.',
+    '12:00 Makan siang.',
+    '- 13:00 Kunjungan taman. Bawa topi.'
   ].join('\n')
 };
 
@@ -124,6 +132,7 @@ async function main() {
     await pdfFrom(browser, pre(await textForPdf('en-half-day-messy.txt')), 'en-half-day-messy.pdf');
     await pdfFrom(browser, pre(await readFile(path.join(OUT, 'id-destination-guide.txt'), 'utf8')), 'id-destination-guide.pdf');
     await pdfFrom(browser, pre(await readFile(path.join(OUT, 'id-activity-rafting.txt'), 'utf8')), 'id-activity-rafting.pdf');
+    await pdfFrom(browser, pre(await textForPdf('id-inline-activity-detail.txt')), 'id-inline-activity-detail.pdf');
 
     const layoutHtml = `<html><head><style>
       @page { size: A4; margin: 18mm; } body { font: 12px Arial; }

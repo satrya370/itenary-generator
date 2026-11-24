@@ -70,7 +70,10 @@ export function languagesFrom(value: string): string[] {
 
 /** "Briefing keselamatan (15 menit)" gives a title and 15 minutes. Without a clear "(N menit)" the whole line is the title. */
 export function stepFrom(text: string): { title: string; minutes: number | null } {
-  const match = /^(.*?)\s*[(\[]\s*(\d{1,3})\s*(?:menit|min|minutes?|mnt)\s*[)\]]\s*$/i.exec(text.trim());
-  if (match && match[1].trim()) return { title: match[1].trim(), minutes: Number(match[2]) };
+  // A trailing duration in brackets, or after a dash, or as a bare "90'" / "10 mnt" suffix. Unreadable durations stay in the title.
+  const match = /^(.*?)\s*(?:[(\[]([^()\[\]]+)[)\]]|[-–—]\s*([^-–—]+)|\s+([\d.,]+\s*\S+|setengah jam))\s*$/i.exec(text.trim());
+  const durationText = match ? (match[2] ?? match[3] ?? match[4]) : undefined;
+  const reading = durationText ? durationIn(durationText) : null;
+  if (match && match[1].trim() && reading && !reading.unclear && reading.minutes >= 1) return { title: match[1].trim(), minutes: reading.minutes };
   return { title: text.trim(), minutes: null };
 }

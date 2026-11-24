@@ -43,7 +43,7 @@ test('full day tidy (id): header fields, times in 24h, durations, lists, and onl
 
 test('half day messy (en): 12-hour clock, ranges, meeting time, phone, and the emoji title are read without guessing', () => {
   const r = parseFixture('en-half-day-messy.txt', 'half_day');
-  assert.equal(r.fields.trip.title, 'Half day Kyoto walk 🌸');
+  assert.equal(r.fields.trip.title, 'Half day Kyoto walk'); // emoji edges are removed from values
   assert.equal(r.fields.trip.country, 'Japan');
   assert.equal(r.fields.guide.name, 'Hiro');
   assert.equal(r.fields.guide.phone, '+81 90-1234-5678');
@@ -77,7 +77,8 @@ test('destination guide: places stay for the AI step, emergency contacts are rea
 test('injected instruction inside the document never becomes a value; an unclear hour keeps its text and drops the time', () => {
   const r = parseFixture('id-whatsapp-injection.txt', 'half_day');
   assert.equal(JSON.stringify(r.fields).includes('Raja Ampat'), false, 'injected place must not reach any field');
-  assert.ok(r.unconsumed.some((u) => /abaikan instruksi/.test(u.text)), 'the injected line is kept as plain text');
+  assert.equal(r.unconsumed.some((u) => /abaikan instruksi/.test(u.text)), false, 'the injected line is never handed to the assistant');
+  assert.ok(r.notes.some((n) => n.includes('berisi instruksi')), 'the injected line is reported with its reason');
   const acts = r.fields.days[0].activities;
   const unclear = acts.find((a) => a.title.includes('makan malam'));
   assert.ok(unclear, 'the unclear activity keeps its text');
@@ -228,6 +229,73 @@ test('the activity labels do nothing in the other modes: the line stays for the 
   assert.deepEqual(r.unconsumed.map((line) => line.text), ['Operator: Ayung Adventure', 'Kategori: Air', 'Durasi: 3 jam']);
 });
 
+test('timed line with a clear inline sentence keeps the title and exposes exact detail for follow-up', () => {
+  const source = 'Judul: Review\r\nHari 1\r\n09.00–10.30 — Tur Keraton. Peserta mengenal sejarah dan budaya bersama pemandu.';
+  const r = parseDocument(source, 'full_day');
+  const activity = r.fields.days[0].activities[0];
+  assert.equal(activity.time, '09:00');
+  assert.equal(activity.durationMinutes, 90);
+  assert.equal(activity.title, 'Tur Keraton.');
+  assert.equal(activity.kind, 'sightseeing');
+  assert.deepEqual(r.unconsumed, [{ index: 2, text: 'Peserta mengenal sejarah dan budaya bersama pemandu.', section: null }]);
+  assert.equal(r.consumedLines, 2, 'the partially mapped schedule line must not count as fully consumed');
+  assert.ok(r.notes.some((note) => note.includes('detail setelah judul aktivitas')));
+});
+
+test('inline activity sentence split skips common abbreviations and initials', () => {
+  const r = parseDocument([
+    'Judul: Review', 'Hari 1',
+    '09:00 Kunjungi Dr. Soetomo Museum. Peserta mengenal sejarah kota.',
+    '10:00 Tur A. B. Center. Peserta melihat koleksi utama.'
+  ].join('\n'), 'full_day');
+  assert.deepEqual(r.fields.days[0].activities.map((activity) => activity.title), [
+    'Kunjungi Dr. Soetomo Museum.', 'Tur A. B. Center.'
+  ]);
+  assert.deepEqual(r.unconsumed.map((line) => line.text), [
+    'Peserta mengenal sejarah kota.', 'Peserta melihat koleksi utama.'
+  ]);
+  assert.deepEqual(r.unconsumed.map((line) => line.index), [2, 3]);
+});
+
+test('ambiguous periodless or lowercase continuation is not guessed into an activity detail', () => {
+  const longTail = 'Tur Keraton membawa peserta mengenal sejarah kota dan tradisi setempat bersama pemandu lokal sepanjang perjalanan ini';
+  const periodless = parseDocument(`Judul: Review\nHari 1\n09:00 ${longTail}`, 'full_day');
+  assert.equal(periodless.fields.days[0].activities[0].title, longTail);
+  assert.deepEqual(periodless.unconsumed.map((line) => line.text), [longTail], 'long prose without a safe boundary is left for review');
+  const lowercase = parseDocument('Judul: Review\nHari 1\n09:00 Tur Keraton. peserta mengenal budaya lokal', 'full_day');
+  assert.equal(lowercase.fields.days[0].activities[0].title, 'Tur Keraton. peserta mengenal budaya lokal');
+  assert.deepEqual(lowercase.unconsumed.map((line) => line.text), ['Tur Keraton. peserta mengenal budaya lokal']);
+});
+
+test('inline activity details have the same parser output from text and an equivalent text-layer PDF', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const { readPdfLayout, buildPdfSource, layoutExcludedLines } = await import('../../src/server/import/intake.js');
+  const source = load('id-inline-activity-detail.txt');
+  const fromText = parseDocument(source, 'full_day');
+  const layout = await readPdfLayout(new Uint8Array(await readFile('tests/fixtures/web/import/id-inline-activity-detail.pdf')));
+  const pdfText = buildPdfSource(layout);
+  const fromPdf = parseDocument(pdfText, 'full_day', layoutExcludedLines(layout, pdfText));
+  const semantic = (result: ReturnType<typeof parseDocument>) => ({
+    trip: result.fields.trip,
+    days: result.fields.days,
+    unconsumed: result.unconsumed,
+    consumedLines: result.consumedLines,
+    totalLines: result.totalLines
+  });
+  assert.deepEqual(fromText.fields.days[0].activities.map((activity) => [activity.time, activity.durationMinutes, activity.title]), [
+    ['09:00', 90, 'Tur Keraton.'],
+    ['11:00', null, 'Kunjungan Dr. Soetomo Museum.'],
+    ['12:00', null, 'Makan siang.'],
+    ['13:00', null, 'Kunjungan taman.']
+  ]);
+  assert.deepEqual(fromText.unconsumed.map((line) => line.text), [
+    'Peserta mengenal sejarah dan budaya bersama pemandu. Pemandu menjelaskan sejarah kota.',
+    'Peserta melihat koleksi utama.',
+    'Bawa topi.'
+  ]);
+  assert.deepEqual(semantic(fromPdf), semantic(fromText));
+});
+
 test('normalizes direct parser input and never assigns skipped or repeated day markers to the previous day', () => {
   const text = 'Tur\r\nHari 1: Ubud\r\n09:00 Museum\r\nHari 3: Pantai\r\n10:00 Pantai\r\nHari 3: Duplikat\r\n11:00 Aktivitas ambigu';
   const result = parseDocument(text, 'multi_day');
@@ -260,7 +328,7 @@ test('keeps inline and unbulleted practical lists, and extracts meeting place be
     'Tur Bandung', 'Termasuk: Transportasi, air mineral', 'Tidak termasuk', 'Tiket masuk', 'Tip guide',
     'Titik kumpul: Hotel Melati https://maps.app.goo.gl/abc', 'Hari 1', '09:00 Museum'
   ].join('\n'), 'full_day');
-  assert.deepEqual(result.fields.lists.included, ['Transportasi, air mineral']);
+  assert.deepEqual(result.fields.lists.included, ['Transportasi', 'air mineral']); // inline lists split on commas when no negation is present
   assert.deepEqual(result.fields.lists.notIncluded, ['Tiket masuk', 'Tip guide']);
   assert.equal(result.fields.meeting.place, 'Hotel Melati');
   assert.equal(result.fields.meeting.mapsUrl, 'https://maps.app.goo.gl/abc');

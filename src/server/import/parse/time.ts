@@ -1,3 +1,5 @@
+import { editDistance } from './labels.js';
+
 export interface TimeReading {
   /** "HH:MM" when the text states the time unambiguously; null otherwise. */
   time: string | null;
@@ -6,6 +8,8 @@ export interface TimeReading {
   rest: string;
   /** True when a time-like prefix was found but could not be read safely (for example "jam 8" with no period). */
   ambiguous: boolean;
+  /** True when a duration was written but could not be read as a whole; the duration is left empty. */
+  durationUnclear?: boolean;
 }
 
 const PERIOD_WORDS: Record<string, 'am' | 'pm' | 'day'> = { am: 'am', pagi: 'am', siang: 'day', sore: 'pm', malam: 'pm', pm: 'pm' };
@@ -21,24 +25,42 @@ export function toTime24(hour: number, minute: number, period: 'am' | 'pm' | 'da
   return `${String(h).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 }
 
-/** "1,5 jam" -> 90, "90 menit" -> 90, "2 hours" -> 120, "45 min" -> 45. Null when absent or outside 1-1440. */
-export function durationIn(text: string): { minutes: number; span: string } | null {
-  const pattern = /(\d+(?:[.,]\d+)?)\s*(jam|hours?|hrs?|h|menit|minutes?|mins?|min|m)\b/gi;
+const UNIT_WORDS = new Set(['jam', 'jm', 'j', 'h', 'hr', 'hrs', 'hour', 'hours', 'menit', 'mnt', 'mn', 'mins', 'min', 'minute', 'minutes', 'm']);
+/** A word that is a unit or one typo away from a unit (so "30mtn" is seen as a broken duration, not as nothing). */
+function looksLikeUnit(word: string): boolean {
+  if (UNIT_WORDS.has(word)) return true;
+  return word.length >= 3 && [...UNIT_WORDS].some((unit) => unit.length >= 3 && word[0] === unit[0] && editDistance(word, unit) <= 1);
+}
+
+/**
+ * "1,5 jam" -> 90, "1jam 30mnt" -> 90, "90'" -> 90, "setengah jam" -> 30, "±10 mnt" -> 10 (approximate).
+ * Null when absent or outside 1-1440. When a duration-like token is present but cannot be read as a whole
+ * (for example "30mtn"), the result is null with `unclear: true`; a partial sum is never returned.
+ */
+export function durationIn(text: string): { minutes: number; span: string; approximate: boolean; unclear?: boolean } | null {
+  const normalized = text.replace(/setengah\s+jam/gi, '30 menit').replace(/seperempat\s+jam/gi, '15 menit');
+  const approximate = /(±|\+-|sekitar|kurang lebih)/i.test(normalized);
+  const working = normalized.replace(/±|\+-/g, ' ');
+  const pattern = /(\d+(?:[.,]\d+)?)\s*(jam|jm|j|hours?|hrs?|hr|h|menit|mnt|mn|minutes?|mins?|min|m|')(?![a-z])/gi;
   let match: RegExpExecArray | null;
   let minutes = 0;
   let end = 0;
   let count = 0;
-  while ((match = pattern.exec(text)) !== null) {
-    if (count > 0 && text.slice(end, match.index).trim() !== '') break;
+  let first = -1;
+  while ((match = pattern.exec(working)) !== null) {
+    if (count > 0 && working.slice(end, match.index).trim() !== '') break;
     const value = Number(match[1].replace(',', '.'));
     const unit = match[2].toLowerCase();
     minutes += Math.round(unit.startsWith('j') || unit.startsWith('h') ? value * 60 : value);
+    if (first < 0) first = match.index;
     end = pattern.lastIndex;
     count += 1;
   }
+  const unitTokens = [...working.matchAll(/(\d+(?:[.,]\d+)?)\s*([a-z]+)\b/gi)].filter((token) => looksLikeUnit(token[2].toLowerCase())).length;
+  if (count && unitTokens > count) return { minutes: 0, span: '', approximate, unclear: true };
   if (!count || minutes < 1 || minutes > 1440) return null;
-  const start = text.slice(0, end).search(/\d/);
-  return { minutes, span: text.slice(start, end) };
+  const span = working.slice(first, end);
+  return { minutes, span, approximate };
 }
 
 /**
@@ -62,7 +84,8 @@ export function readTimeLine(input: string): TimeReading | null {
   if (!hasMinutes && !period) {
     // "jam 8" / "pukul 8" with no minutes and no period is ambiguous: keep the text, leave the time empty.
     // A bare number such as "2 jam" or "12 orang" is not a time at all.
-    return hasPrefix ? { time: null, durationMinutes: null, rest: line, ambiguous: true } : null;
+    // The clock words ("jam 8") are dropped from the title; the activity text itself is kept.
+    return hasPrefix ? { time: null, durationMinutes: null, rest: line.slice(start[0].length).trim() || line, ambiguous: true } : null;
   }
   const minute = hasMinutes ? Number(start[3]) : 0;
   const time = toTime24(hour, minute, period);
@@ -91,6 +114,7 @@ export function readTimeLine(input: string): TimeReading | null {
   const remaining = line.slice(consumed);
   const duration = durationIn(remaining);
   const durationIndex = duration ? remaining.indexOf(duration.span) : -1;
-  const title = (duration && durationIndex >= 0 ? `${remaining.slice(0, durationIndex)} ${remaining.slice(durationIndex + duration.span.length)}` : remaining).replace(/\(\s*\)|\[\s*\]/g, ' ').replace(/^[\s:\-–—]+|[\s:\-–—]+$/g, '').replace(/\s+/g, ' ').trim();
-  return { time, durationMinutes: endMinutes ?? duration?.minutes ?? null, rest: title, ambiguous: false };
+  const title = (duration && durationIndex >= 0 ? `${remaining.slice(0, durationIndex)} ${remaining.slice(durationIndex + duration.span.length)}` : remaining).replace(/\(\s*[+±\-\s]*\s*\)|\[\s*[+±\-\s]*\s*\]/g, ' ').replace(/^[\s:\-–—]+|[\s:\-–—]+$/g, '').replace(/\s+/g, ' ').trim();
+  const durationMinutes = endMinutes ?? (duration && !duration.unclear ? duration.minutes : null);
+  return { time, durationMinutes, rest: title, ambiguous: false, ...(duration?.unclear ? { durationUnclear: true } : {}) };
 }

@@ -16,7 +16,16 @@ test('retention: old source text is removed, recent text and the source row stay
   const insert = store.db.prepare("INSERT INTO import_sources(id,workspace_id,kind,sha256,byte_size,page_count,char_count,language_json,created_at) VALUES(?,?,'text','x',1,1,1,'{}',?)");
   insert.run('11111111-aaaa-4aaa-8aaa-111111111111', store.workspaceId, old);
   insert.run('22222222-bbbb-4bbb-8bbb-222222222222', store.workspaceId, recent);
-  const legacyReport = { review: { rejectedProposals: [{ value: 'private legacy quote', quote: 'private legacy quote', lineIndexes: [1] }] }, evidence: { accepted: [{ path: 'summary', quote: 'private legacy quote', lineIndexes: [1] }] }, _replay: { report: { evidence: { accepted: [{ path: 'summary', quote: 'private legacy quote', lineIndexes: [1] }] } } } };
+  const legacyReport = {
+    review: {
+      unknownLabels: [{ id: 'label-1', label: 'Private label marker', value: 'SECRET_LABEL_VALUE', line: 1, status: 'pending' }],
+      rejectedProposals: [{ value: 'private legacy quote', quote: 'private legacy quote', lineIndexes: [1] }]
+    },
+    evidence: { accepted: [{ path: 'summary', quote: 'private legacy quote', lineIndexes: [1] }], rejected: [{ path: 'activities[SECRET_ACTIVITY_TITLE].description', reasonCode: 'IMPORT_QUOTE_NOT_FOUND' }] },
+    skipped: [{ path: 'activities[SECRET_ACTIVITY_TITLE].description', label: 'Aktivitas SECRET_ACTIVITY_TITLE', message: 'perlu review' }],
+    notes: ['Parser tidak mengenali nilai SECRET_LABEL_VALUE.', 'Teks margin berulang terdeteksi pada halaman 1, 2; dipertahankan dan perlu dibedakan dari isi itinerary: "SECRET_MARGIN_TEXT".'],
+    _replay: { report: { review: { unknownLabels: [{ id: 'label-1', label: 'Private label marker', value: 'SECRET_LABEL_VALUE', status: 'pending' }] }, evidence: { accepted: [{ path: 'summary', quote: 'private legacy quote', lineIndexes: [1] }] }, skipped: [{ path: 'activities[SECRET_ACTIVITY_TITLE].description', label: 'SECRET_ACTIVITY_TITLE' }], notes: ['SECRET_LABEL_VALUE'] } }
+  };
   store.db.prepare("INSERT INTO import_operations(operation_id,workspace_id,source_id,target,mode,status,ai_used,report_json,created_at,updated_at) VALUES(?,?,?,'new','full_day','completed',0,?,?,?)")
     .run('operation-old', store.workspaceId, '11111111-aaaa-4aaa-8aaa-111111111111', JSON.stringify(legacyReport), old, old);
   await mkdir(path.join(dataDir, 'imports'), { recursive: true });
@@ -34,6 +43,14 @@ test('retention: old source text is removed, recent text and the source row stay
   const retained = (store.db.prepare('SELECT report_json FROM import_operations WHERE operation_id=?').get('operation-old') as { report_json: string }).report_json;
   assert.doesNotMatch(retained, /private legacy quote/);
   assert.match(retained, /lineIndexes/);
+  for (const raw of ['SECRET_LABEL_VALUE', 'Private label marker', 'SECRET_ACTIVITY_TITLE', 'SECRET_MARGIN_TEXT']) assert.doesNotMatch(retained, new RegExp(raw));
+  const report = JSON.parse(retained);
+  assert.equal(report.review.sourceExpired, true);
+  assert.equal(report.review.unknownLabels[0].id, 'label-1');
+  assert.equal('value' in report.review.unknownLabels[0], false);
+  assert.deepEqual(report.notes, [], 'unstructured prose diagnostics are removed because they may quote source text');
+  assert.equal(report._replay.report.review.sourceExpired, true);
+  assert.deepEqual(report._replay.report.notes, []);
 });
 
 test('retention setting: default 30, invalid values fall back to 30, 0 is allowed', () => {

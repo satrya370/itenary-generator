@@ -277,3 +277,16 @@ test('long copy and multi-line policies keep their line breaks; closing order is
   content.policies = '   ';
   assert.doesNotMatch(render(content).html, /data-section="policies"/);
 });
+
+test('an activity after midnight on the same day shows "+1" beside its time; one before midnight does not', () => {
+  const content = createContentV2('full_day', 'en');
+  content.days[0].activities = [
+    activityV2(1, { time: '23:30', title: 'Depart from Malang' }),
+    activityV2(2, { time: '01:00', title: 'Jeep to Penanjakan' }),
+    activityV2(3, { time: '03:30', title: 'Sunrise' })
+  ];
+  const html = render(content).html;
+  assert.equal(html.match(/class="next-day"/g)?.length ?? 0, 2, 'the 01:00 and 03:30 activities are on the next calendar day');
+  assert.match(html, />23:30<\/div>/);
+  assert.match(html, />01:00 <span class="next-day"/);
+});

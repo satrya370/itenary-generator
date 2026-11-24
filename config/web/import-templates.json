@@ -1,0 +1,686 @@
+{
+  "version": 1,
+  "note": "Contoh format yang didukung import (revisi real-world-text-coverage, tahap 4). Setiap contoh harus lolos tests/web/import-templates.test.ts.",
+  "locales": {
+    "id": {
+      "half_day": {
+        "F1": {
+          "name": "Tur berlabel + jam",
+          "lines": [
+            "Tur Kota Tua Jakarta",
+            "Destinasi: Jakarta",
+            "Negara: Indonesia",
+            "Tanggal: 12 Desember 2026",
+            "Guide: Made Surya",
+            "No HP: 0812-3456-7890",
+            "Titik kumpul: Stasiun Kota",
+            "Jam kumpul: 08.00",
+            "",
+            "08:00 Museum Fatahillah (1 jam)",
+            "Pemandu menjelaskan sejarah Kota Tua Jakarta.",
+            "10:00 Pelabuhan Sunda Kelapa (1,5 jam)",
+            "11:30 Kopi di Kafe Batavia",
+            "",
+            "Termasuk",
+            "- Pemandu lokal",
+            "",
+            "Tidak termasuk",
+            "- Tip untuk pemandu",
+            "",
+            "Ringkasan",
+            "Jelajahi kawasan Kota Tua bersama pemandu lokal."
+          ]
+        },
+        "F3": {
+          "name": "Tabel kegiatan",
+          "lines": [
+            "Judul: Tur Kota Tua Jakarta",
+            "Destinasi: Jakarta",
+            "Jam\tKegiatan\tDurasi\tKeterangan",
+            "08:00\tMuseum Fatahillah\t1 jam\tMasuk dengan tiket",
+            "Pemandu menjelaskan sejarah museum.",
+            "10:00\tPelabuhan Sunda Kelapa\t1,5 jam\tBawa topi",
+            "11:30\tKopi di Kafe Batavia\t45 menit",
+            "",
+            "Ringkasan",
+            "Nikmati sejarah dan suasana pelabuhan lama Jakarta."
+          ]
+        },
+        "F4": {
+          "name": "Bagian waktu + daftar",
+          "lines": [
+            "Judul: Tur Kota Tua Jakarta",
+            "Destinasi: Jakarta",
+            "",
+            "PAGI",
+            "- Museum Fatahillah",
+            "- Pelabuhan Sunda Kelapa",
+            "",
+            "SIANG",
+            "- Kopi di Kafe Batavia",
+            "",
+            "Ringkasan",
+            "Susuri kawasan bersejarah Jakarta dalam setengah hari."
+          ]
+        }
+      },
+      "full_day": {
+        "F1": {
+          "name": "Tur berlabel + jam",
+          "lines": [
+            "Tur Ubud dan Tegallalang",
+            "Destinasi: Ubud",
+            "Negara: Indonesia",
+            "Tanggal: 12 Desember 2026",
+            "Guide: Made Surya",
+            "No HP: 0812-3456-7890",
+            "Titik kumpul: Hotel Puri Ayu, Ubud",
+            "Jam kumpul: 07.30",
+            "",
+            "07:30 Jemput di hotel (1 jam)",
+            "Pemandu menjelaskan perjalanan menuju sawah terasering.",
+            "08:30 Sawah terasering Tegallalang (2 jam)",
+            "11:00 Pasar seni Ubud (1,5 jam)",
+            "12:30 Makan siang di warung lokal",
+            "14:00 Kunjungan Pura Tirta Empul",
+            "",
+            "Termasuk",
+            "- Pemandu wisata lokal",
+            "- Makan siang",
+            "",
+            "Tidak termasuk",
+            "- Tip untuk pemandu",
+            "",
+            "Ringkasan",
+            "Jelajahi Ubud dan Tegallalang bersama pemandu lokal."
+          ]
+        },
+        "F3": {
+          "name": "Tabel kegiatan",
+          "lines": [
+            "Judul: Tur Ubud dan Tegallalang",
+            "Destinasi: Ubud",
+            "Jam\tKegiatan\tDurasi\tKeterangan",
+            "07:30\tJemput di hotel\t1 jam\tHotel Puri Ayu",
+            "Pemandu menjelaskan rute menuju sawah.",
+            "08:30\tSawah terasering Tegallalang\t2 jam",
+            "12:30\tMakan siang di warung lokal\t1 jam\tMenu lokal",
+            "14:00\tKunjungan Pura Tirta Empul\t1,5 jam",
+            "",
+            "Ringkasan",
+            "Luangkan waktu sehari untuk budaya dan alam Bali."
+          ]
+        },
+        "F4": {
+          "name": "Bagian waktu + daftar",
+          "lines": [
+            "Judul: Tur Ubud dan Tegallalang",
+            "Destinasi: Ubud",
+            "",
+            "PAGI",
+            "- Sawah terasering Tegallalang",
+            "- Pasar seni Ubud",
+            "",
+            "SIANG",
+            "- Makan siang di warung lokal",
+            "",
+            "SORE",
+            "- Pura Tirta Empul",
+            "",
+            "Ringkasan",
+            "Rasakan suasana Ubud dan Tegallalang selama sehari."
+          ]
+        }
+      },
+      "multi_day": {
+        "F2": {
+          "name": "Jadwal per hari",
+          "lines": [
+            "Judul: Jelajah Jawa Barat 2 Hari",
+            "Destinasi: Bandung",
+            "Negara: Indonesia",
+            "Tanggal: 12 Desember 2026",
+            "",
+            "Hari 1",
+            "08:00 Jemput di bandara Husein (30 menit)",
+            "10:00 Kawah Putih (2 jam)",
+            "Pemandu menjelaskan kawasan Kawah Putih.",
+            "12:30 Makan siang di Ciwidey",
+            "Hari 2",
+            "08:30 Jalan-jalan di Dago (2 jam)",
+            "11:00 Belanja oleh-oleh di Cihampelas",
+            "13:00 Antar ke stasiun",
+            "",
+            "Ringkasan",
+            "Nikmati dua hari wisata alam dan kota di Jawa Barat."
+          ]
+        },
+        "F3": {
+          "name": "Tabel per hari",
+          "lines": [
+            "Judul: Jelajah Jawa Barat 2 Hari",
+            "Destinasi: Bandung",
+            "",
+            "Hari 1",
+            "Jam\tKegiatan\tDurasi\tKeterangan",
+            "08:00\tJemput di bandara Husein\t30 menit",
+            "10:00\tKawah Putih\t2 jam\tBawa jaket",
+            "Pemandu menjelaskan kawasan Kawah Putih.",
+            "12:30\tMakan siang di Ciwidey\t1 jam",
+            "Hari 2",
+            "Jam\tKegiatan\tDurasi\tKeterangan",
+            "08:30\tJalan-jalan di Dago\t2 jam",
+            "11:00\tBelanja oleh-oleh di Cihampelas\t1 jam",
+            "Ringkasan",
+            "Jelajahi Bandung dan kawasan sekitarnya selama dua hari."
+          ]
+        },
+        "F4": {
+          "name": "Bagian waktu per hari",
+          "lines": [
+            "Judul: Jelajah Jawa Barat 2 Hari",
+            "Destinasi: Bandung",
+            "",
+            "Hari 1",
+            "PAGI",
+            "- Jemput di bandara Husein",
+            "- Kawah Putih",
+            "SIANG",
+            "- Makan siang di Ciwidey",
+            "",
+            "Hari 2",
+            "PAGI",
+            "- Jalan-jalan di Dago",
+            "SORE",
+            "- Belanja oleh-oleh di Cihampelas",
+            "",
+            "Ringkasan",
+            "Nikmati alam, kuliner, dan suasana kota Bandung."
+          ]
+        }
+      },
+      "destination_guide": {
+        "F1": {
+          "name": "Daftar tempat berpoin",
+          "lines": [
+            "Judul: Panduan Ubud",
+            "Destinasi: Ubud",
+            "Negara: Indonesia",
+            "Guide: Made Surya",
+            "No HP: 0812-3456-7890",
+            "",
+            "Tempat",
+            "- Tegallalang",
+            "Terasering ini menawarkan pemandangan sawah hijau.",
+            "- Pura Tirta Empul",
+            "Air suci mengalir di area pemandian pura ini.",
+            "- Monkey Forest",
+            "Hutan ini menjadi habitat kera ekor panjang.",
+            "",
+            "Termasuk",
+            "- Pemandu lokal",
+            "",
+            "Ringkasan",
+            "Panduan singkat untuk tempat menarik di Ubud."
+          ]
+        },
+        "F2": {
+          "name": "Daftar tempat bernomor",
+          "lines": [
+            "Judul: Panduan Kota Tua Jakarta",
+            "Destinasi: Jakarta",
+            "Negara: Indonesia",
+            "",
+            "Tempat",
+            "1. Museum Fatahillah",
+            "Museum ini menceritakan sejarah Jakarta.",
+            "2. Pelabuhan Sunda Kelapa",
+            "Pelabuhan ini masih digunakan kapal tradisional.",
+            "3. Kafe Batavia",
+            "Kafe ini menempati bangunan kolonial bersejarah.",
+            "",
+            "Ringkasan",
+            "Jelajahi bangunan bersejarah dan suasana pelabuhan lama."
+          ]
+        },
+        "F3": {
+          "name": "Kartu tempat + keterangan",
+          "lines": [
+            "Panduan Bandung",
+            "Destinasi: Bandung",
+            "",
+            "Places",
+            "• Kawah Putih (Ciwidey)",
+            "Danau kawah berada di kawasan pegunungan.",
+            "• Tebing Keraton (Dago)",
+            "Tempat ini menghadap lembah dan hutan.",
+            "• Jalan Braga (Pusat kota)",
+            "Jalan ini dikenal dengan bangunan dan kafe lamanya.",
+            "",
+            "Overview",
+            "Kenali alam dan kawasan kota Bandung."
+          ]
+        }
+      },
+      "activity": {
+        "F1": {
+          "name": "Detail dengan label",
+          "lines": [
+            "Judul: Arung Jeram Sungai Ayung",
+            "Kategori: Air",
+            "Durasi: 3 jam",
+            "Jam sesi: 08:00, 13:00",
+            "Tingkat kesulitan: Sedang",
+            "Usia minimal: 8 tahun",
+            "Bahasa pemandu: Indonesia, Inggris",
+            "Operator mitra: Ayung Adventure",
+            "Waktu terbaik: Musim hujan (Nov-Mar)",
+            "",
+            "Highlights",
+            "- Jeram grade II-III",
+            "- Pemandangan tebing hijau",
+            "",
+            "Jalannya kegiatan",
+            "- Briefing keselamatan (15 menit)",
+            "- Arung jeram (120 menit)",
+            "- Mandi dan makan siang (45 menit)",
+            "",
+            "Ringkasan",
+            "Arung jeram menyusuri Sungai Ayung bersama pemandu lokal."
+          ]
+        },
+        "F2": {
+          "name": "Informasi + daftar kegiatan",
+          "lines": [
+            "Kelas memasak Ubud",
+            "Jenis kegiatan: Budaya",
+            "Durasi: 2 jam",
+            "Jam sesi: 09:00, 13:00",
+            "Tingkat kesulitan: Mudah",
+            "Usia minimal: 12 tahun",
+            "Operator: Dapur Bali",
+            "",
+            "Sorotan",
+            "- Belajar membuat bumbu dasar Bali",
+            "- Mencicipi hidangan yang dimasak",
+            "",
+            "Agenda",
+            "- Persiapan bahan (20 menit)",
+            "- Memasak bersama (70 menit)",
+            "- Makan bersama (30 menit)",
+            "",
+            "Ringkasan",
+            "Peserta belajar memasak hidangan khas Bali."
+          ]
+        },
+        "F3": {
+          "name": "Ringkasan fakta aktivitas",
+          "lines": [
+            "Snorkeling Blue Lagoon",
+            "Category: Water",
+            "Duration: 1 hour 30 minutes",
+            "Minimum age: 10 years",
+            "Maximum weight: 120 kg",
+            "Difficulty: Easy",
+            "Session times: 08:00 and 13:00",
+            "Guide languages: English, Indonesian",
+            "Operator: Blue Lagoon Trips",
+            "Best time: Morning",
+            "",
+            "Highlights",
+            "- Clear water and colorful fish",
+            "- Shallow coral reef",
+            "",
+            "How it works",
+            "- Safety briefing (10 minutes)",
+            "- Boat ride (15 minutes)",
+            "- Guided snorkeling (60 minutes)",
+            "",
+            "Overview",
+            "Explore Blue Lagoon waters with a guide."
+          ]
+        }
+      }
+    },
+    "en": {
+      "half_day": {
+        "F1": {
+          "name": "Labeled schedule",
+          "lines": [
+            "Old Town Jakarta Walk",
+            "Destination: Jakarta",
+            "Country: Indonesia",
+            "Date: 12 December 2026",
+            "Guide: Made Surya",
+            "Phone: 0812-3456-7890",
+            "Meeting point: Kota Station",
+            "Meeting time: 8am",
+            "",
+            "8:00 - 9:00 Fatahillah Museum (1 hour)",
+            "The guide explains the history of Jakarta's old town.",
+            "10 am Sunda Kelapa Harbour (1.5 hours)",
+            "11:30 Coffee at Batavia Cafe",
+            "",
+            "Included",
+            "- Local guide",
+            "",
+            "Not included",
+            "- Tip for the guide",
+            "",
+            "Overview",
+            "Explore Jakarta's old town and harbor with a local guide."
+          ]
+        },
+        "F3": {
+          "name": "Activity table",
+          "lines": [
+            "Title: Old Town Jakarta Walk",
+            "Destination: Jakarta",
+            "Time\tActivity\tDuration\tNotes",
+            "08:00\tFatahillah Museum\t1 hour\tEntry by ticket",
+            "The guide explains the museum's history.",
+            "10:00\tSunda Kelapa Harbour\t1.5 hours\tBring a hat",
+            "11:30\tCoffee at Batavia Cafe\t45 minutes",
+            "",
+            "Overview",
+            "Enjoy Jakarta's historic district during a half-day walk."
+          ]
+        },
+        "F4": {
+          "name": "Time-of-day groups",
+          "lines": [
+            "Title: Old Town Jakarta Walk",
+            "Destination: Jakarta",
+            "",
+            "Morning",
+            "- Fatahillah Museum",
+            "- Sunda Kelapa Harbour",
+            "",
+            "Afternoon",
+            "- Coffee at Batavia Cafe",
+            "",
+            "Overview",
+            "Discover old-town landmarks and local harbor life."
+          ]
+        }
+      },
+      "full_day": {
+        "F1": {
+          "name": "Labeled schedule",
+          "lines": [
+            "Ubud and Tegallalang Tour",
+            "Destination: Ubud",
+            "Country: Indonesia",
+            "Date: 12 December 2026",
+            "Guide: Made Surya",
+            "Phone: 0812-3456-7890",
+            "Meeting point: Puri Ayu Hotel, Ubud",
+            "Meeting time: 7:30 am",
+            "",
+            "7:30 am Pickup at hotel (1 hour)",
+            "The guide describes the route to the rice terraces.",
+            "8:30 am Tegallalang rice terraces (2 hours)",
+            "11:00 Ubud art market (1.5 hours)",
+            "12:30 Lunch at a local warung",
+            "2 pm Visit Tirta Empul temple",
+            "",
+            "Included",
+            "- Local guide",
+            "- Lunch",
+            "",
+            "Not included",
+            "- Tip for the guide",
+            "",
+            "Overview",
+            "Spend a full day exploring Ubud's culture and countryside."
+          ]
+        },
+        "F3": {
+          "name": "Activity table",
+          "lines": [
+            "Title: Ubud and Tegallalang Tour",
+            "Destination: Ubud",
+            "Time\tActivity\tDuration\tNotes",
+            "7:30 am\tPickup at hotel\t1 hour\tPuri Ayu Hotel",
+            "The guide describes the route to the rice terraces.",
+            "8:30 am\tTegallalang rice terraces\t2 hours",
+            "12:30\tLunch at a local warung\t1 hour\tLocal menu",
+            "2 pm\tVisit Tirta Empul temple\t1.5 hours",
+            "",
+            "Overview",
+            "Spend a full day exploring Ubud's culture and countryside."
+          ]
+        },
+        "F4": {
+          "name": "Time-of-day groups",
+          "lines": [
+            "Title: Ubud and Tegallalang Tour",
+            "Destination: Ubud",
+            "",
+            "Morning",
+            "- Tegallalang rice terraces",
+            "- Ubud art market",
+            "",
+            "Afternoon",
+            "- Lunch at a local warung",
+            "",
+            "Evening",
+            "- Tirta Empul temple",
+            "",
+            "Overview",
+            "Enjoy a full day of nature, temples, and local food."
+          ]
+        }
+      },
+      "multi_day": {
+        "F2": {
+          "name": "Day-by-day schedule",
+          "lines": [
+            "Title: West Java 2 Days",
+            "Destination: Bandung",
+            "Country: Indonesia",
+            "Date: 12 December 2026",
+            "",
+            "Day 1",
+            "8:00 Pickup at Husein airport (30 minutes)",
+            "10:00 Kawah Putih (2 hours)",
+            "The guide explains the volcanic lake area.",
+            "12:30 Lunch in Ciwidey",
+            "Day 2",
+            "8:30 Walk around Dago (2 hours)",
+            "11:00 Souvenir shopping at Cihampelas",
+            "1 pm Drop off at the station",
+            "",
+            "Overview",
+            "Explore West Java's nature and city sights over two days."
+          ]
+        },
+        "F3": {
+          "name": "Tables by day",
+          "lines": [
+            "Title: West Java 2 Days",
+            "Destination: Bandung",
+            "",
+            "Day 1",
+            "Time\tActivity\tDuration\tNotes",
+            "8:00\tPickup at Husein airport\t30 minutes",
+            "10:00\tKawah Putih\t2 hours\tBring a jacket",
+            "The guide explains the volcanic lake area.",
+            "12:30\tLunch in Ciwidey\t1 hour",
+            "Day 2",
+            "Time\tActivity\tDuration\tNotes",
+            "8:30\tWalk around Dago\t2 hours",
+            "11:00\tSouvenir shopping at Cihampelas\t1 hour",
+            "Overview",
+            "Explore West Java's nature and city sights over two days."
+          ]
+        },
+        "F4": {
+          "name": "Time-of-day groups by day",
+          "lines": [
+            "Title: West Java 2 Days",
+            "Destination: Bandung",
+            "",
+            "Day 1",
+            "Morning",
+            "- Pickup at Husein airport",
+            "- Kawah Putih",
+            "Afternoon",
+            "- Lunch in Ciwidey",
+            "",
+            "Day 2",
+            "Morning",
+            "- Walk around Dago",
+            "Evening",
+            "- Souvenir shopping at Cihampelas",
+            "",
+            "Overview",
+            "Enjoy local food, nature, and Bandung city life."
+          ]
+        }
+      },
+      "destination_guide": {
+        "F1": {
+          "name": "Bulleted place list",
+          "lines": [
+            "Title: Ubud Guide",
+            "Destination: Ubud",
+            "Country: Indonesia",
+            "Guide: Made Surya",
+            "Phone: 0812-3456-7890",
+            "",
+            "Places",
+            "- Tegallalang",
+            "The terraces look out over green rice fields.",
+            "- Tirta Empul temple",
+            "Sacred spring water flows through this temple bathing area.",
+            "- Monkey Forest",
+            "The forest is home to long-tailed macaques.",
+            "",
+            "Included",
+            "- Local guide",
+            "",
+            "Overview",
+            "A short guide to Ubud's best-known places."
+          ]
+        },
+        "F2": {
+          "name": "Numbered places",
+          "lines": [
+            "Title: Jakarta Old Town Guide",
+            "Destination: Jakarta",
+            "Country: Indonesia",
+            "",
+            "Places",
+            "1. Fatahillah Museum",
+            "The museum tells the story of Jakarta.",
+            "2. Sunda Kelapa Harbour",
+            "Traditional sailing ships still use the harbor.",
+            "3. Batavia Cafe",
+            "The cafe occupies a historic colonial building.",
+            "",
+            "Overview",
+            "Explore historic buildings and the old harbor district."
+          ]
+        },
+        "F3": {
+          "name": "Place cards with notes",
+          "lines": [
+            "Bandung Guide",
+            "Destination: Bandung",
+            "",
+            "Places",
+            "• Kawah Putih (Ciwidey)",
+            "The crater lake sits in a mountain area.",
+            "• Tebing Keraton (Dago)",
+            "This lookout faces a valley and forest.",
+            "• Braga Street (City center)",
+            "The street is known for old buildings and cafes.",
+            "",
+            "Overview",
+            "Discover Bandung's landscapes and historic streets."
+          ]
+        }
+      },
+      "activity": {
+        "F1": {
+          "name": "Labeled activity details",
+          "lines": [
+            "Title: Ayung River Rafting",
+            "Category: Water",
+            "Duration: 3 hours",
+            "Session times: 08:00, 13:00",
+            "Difficulty: Medium",
+            "Minimum age: 8 years",
+            "Guide languages: Indonesian, English",
+            "Operator: Ayung Adventure",
+            "Best time: Rainy season (Nov-Mar)",
+            "",
+            "Highlights",
+            "- Grade II-III rapids",
+            "- Green cliff views",
+            "",
+            "Steps",
+            "- Safety briefing (15 minutes)",
+            "- Rafting (120 minutes)",
+            "- Bath and lunch (45 minutes)",
+            "",
+            "Overview",
+            "Raft down the Ayung River with a local guide."
+          ]
+        },
+        "F2": {
+          "name": "Activity facts and steps",
+          "lines": [
+            "Ubud Cooking Class",
+            "Activity type: Culture",
+            "Duration: 2 hours",
+            "Session times: 09:00, 13:00",
+            "Difficulty: Easy",
+            "Minimum age: 12 years",
+            "Operator: Bali Kitchen",
+            "",
+            "Highlights",
+            "- Learn to make Balinese spice paste",
+            "- Taste the dishes prepared in class",
+            "",
+            "How it works",
+            "- Prepare ingredients (20 minutes)",
+            "- Cook together (70 minutes)",
+            "- Share the meal (30 minutes)",
+            "",
+            "Overview",
+            "Learn to prepare a local Balinese dish."
+          ]
+        },
+        "F3": {
+          "name": "Compact activity profile",
+          "lines": [
+            "Blue Lagoon Snorkeling",
+            "Category: Water",
+            "Duration: 1 hour 30 minutes",
+            "Minimum age: 10 years",
+            "Maximum weight: 120 kg",
+            "Difficulty: Easy",
+            "Session times: 08:00 and 13:00",
+            "Guide languages: English, Indonesian",
+            "Operator: Blue Lagoon Trips",
+            "Best time: Morning",
+            "",
+            "Highlights",
+            "- Clear water and colorful fish",
+            "- Shallow coral reef",
+            "",
+            "Steps",
+            "- Safety briefing (10 minutes)",
+            "- Boat ride (15 minutes)",
+            "- Guided snorkeling (60 minutes)",
+            "",
+            "Overview",
+            "Explore Blue Lagoon's water with a guide."
+          ]
+        }
+      }
+    }
+  }
+}

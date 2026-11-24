@@ -54,3 +54,32 @@ test('import limits in capabilities are the same constants the intake enforces',
   );
   assert.equal(caps.import.retentionDays, 30);
 });
+
+test('import preflight reports the import model independently from writing-AI preflight', async (t) => {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), 'itinerary-import-preflight-'));
+  let checked = false;
+  const extractor: ImportExtractor = {
+    credentialState: 'configured',
+    modelId: 'anthropic/claude-haiku-5.5',
+    async extract() { throw new Error('not called in this test'); },
+    async preflightImport() {
+      checked = true;
+      return { credentialState: 'configured', authenticated: true, modelState: 'listed', modelId: 'anthropic/claude-haiku-5.5', pricing: { prompt: 0.01, completion: 0.02, webSearch: 0 }, contextLength: 1000, maxCompletionTokens: 500, supportedParameters: ['max_tokens'] };
+    }
+  };
+  const app = await createApp({ dataDir, publicOrigin: origin, allowedOrigins: [origin], aiProvider: writingProvider('configured'), importExtractor: extractor });
+  try {
+    const capabilities = (await app.inject({ url: '/api/v1/itinerary-engine/context' })).json().capabilities;
+    assert.equal(capabilities.ai.modelId, 'openai/gpt-6-luna');
+    assert.equal(capabilities.import.modelId, 'anthropic/claude-haiku-5.5');
+    const response = await app.inject({ url: '/api/v1/itinerary-engine/import/preflight' });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().modelId, 'anthropic/claude-haiku-5.5');
+    assert.equal(response.json().authenticated, true);
+    assert.equal(checked, true);
+    assert.equal(JSON.stringify(response.json()).includes('test-only'), false);
+  } finally {
+    await app.close();
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});

@@ -99,7 +99,9 @@ export function TextList({ id, meta, values, onChange, hideLegend = false }: {
   useEffect(() => {
     if (focusIndex.current !== null) {
       const items = root.current?.querySelectorAll('[data-field-path]');
-      (items?.[focusIndex.current] as HTMLElement | undefined)?.focus() ?? (root.current?.querySelector('button:last-child') as HTMLElement | null)?.focus();
+      const target = items?.[focusIndex.current] as HTMLElement | undefined;
+      if (target) target.focus();
+      else (root.current?.querySelector('button:last-child') as HTMLElement | null)?.focus();
     }
     focusIndex.current = null;
   }, [values.length]);

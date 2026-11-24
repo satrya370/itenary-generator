@@ -76,3 +76,40 @@ test('a completed import keeps its report after the source text is removed, and 
   const replay = await apply(app, sourceId, operationId);
   assert.equal(replay.statusCode, 200, 'a replay of a completed run still returns the stored result');
 });
+
+test('latest import exposes the last successful report separately when a newer overwrite fails', async (t) => {
+  const { app, dataDir } = await setup(t);
+  const successfulSource = await sourceFrom(app, 'Trip sukses\nHari 1\n09:00 Museum');
+  const successfulOperationId = randomUUID();
+  const done = await apply(app, successfulSource, successfulOperationId);
+  assert.equal(done.statusCode, 201, done.body);
+  const itineraryId = done.json().itinerary.id;
+
+  const failedSource = await sourceFrom(app, 'Trip percobaan overwrite gagal');
+  await rm(path.join(dataDir, 'imports', `${failedSource}.txt`));
+  const failedOperationId = randomUUID();
+  const failed = await app.inject({ method: 'POST', url: `/api/v1/imports/sources/${failedSource}/apply`, headers, payload: { operationId: failedOperationId, target: 'overwrite', itineraryId, expectedRevision: done.json().itinerary.revision, outputLanguage: 'id' } });
+  assert.equal(failed.statusCode, 404);
+
+  const latest = (await app.inject({ url: `/api/v1/imports/operations?itineraryId=${itineraryId}` })).json();
+  assert.equal(latest.operation.status, 'failed');
+  assert.equal(latest.operation.errorCode, CODE);
+  assert.equal(latest.operation.report, null);
+  assert.equal(latest.lastSuccessfulOperation.operationId, successfulOperationId);
+  assert.equal(latest.lastSuccessfulOperation.report.filled.length >= 0, true);
+});
+
+test('a completed but undone import is not returned as the last actionable successful report', async (t) => {
+  const { app } = await setup(t);
+  const blank = (await app.inject({ method: 'POST', url: '/api/v1/itineraries', headers, payload: { mode: 'full_day' } })).json();
+  const sourceId = await sourceFrom(app, 'Trip untuk dibatalkan\nHari 1\n09:00 Museum');
+  const operationId = randomUUID();
+  const applied = await app.inject({ method: 'POST', url: `/api/v1/imports/sources/${sourceId}/apply`, headers, payload: { operationId, target: 'overwrite', itineraryId: blank.id, expectedRevision: blank.revision, outputLanguage: 'id' } });
+  assert.equal(applied.statusCode, 200, applied.body);
+  const undone = await app.inject({ method: 'POST', url: `/api/v1/imports/operations/${operationId}/undo`, headers, payload: { expectedRevision: applied.json().itinerary.revision } });
+  assert.equal(undone.statusCode, 200, undone.body);
+  const latest = (await app.inject({ url: `/api/v1/imports/operations?itineraryId=${blank.id}` })).json();
+  assert.equal(latest.operation.undone, true);
+  assert.equal(latest.operation.report, null, 'undone report is not offered as an actionable review');
+  assert.equal(latest.lastSuccessfulOperation, null);
+});

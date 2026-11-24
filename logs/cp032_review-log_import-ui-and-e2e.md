@@ -58,3 +58,19 @@ Verdict: ACCEPT for CP032's active revision plan. Not an acceptance of Linux, li
 - Five safety mutations were run and killed through `verify:web-import-mutations`.
 - Linux remains unavailable (`wsl --status`: not installed); no live provider call was made.
 - CP032 revision verdict remains ACCEPT; no universal accuracy/cross-platform claim.
+
+## Reopen notice: owner-authorized review findings (2026-11-20)
+- Isolated browser reproduction confirms F05: delayed import report A attaches to draft B when B's null result resolves first and A's result arrives later.
+- Isolated browser reproduction confirms F06: a blank practical row normalized out by autosave is compared against raw local state, causing a false “Draft berubah di server” notice after successful review.
+- CP031 now exposes `lastSuccessfulOperation` separately, but current CP032 `open()` still consumes only `operation`; F07 failed-latest/previous-success UI is not implemented.
+- CP032 completion is therefore reopened and status is `in_progress` pending phase 5. Phase 3/4 changes did not fix or claim these CP032 findings.
+- Phase 3 API now carries the last successful report separately, but this review confirms the FE still does not consume it; phase 5 remains necessary to show the prior success alongside the latest failure.
+
+## Final re-review: phases 5–6 (2026-11-20)
+- F05 PASS: delayed response from A cannot install its report after B becomes active; publication callback is generation-bound.
+- F06 PASS: blank transient rows compare semantically after normalization and remain in the editor after resolve; actual concurrent title, language and writing brief edits survive both review completion and stale save rejection.
+- F07 PASS: last successful report remains visible with a newer failed attempt status; undone report is not reopened as actionable.
+- F03 expiry PASS: source values are removed from current/replay reports and the UI displays expiry without offering source selection.
+- `verify:web-import-review-races`: PASS, 0 external requests. Import/review and stable-input browsers, all Windows regression/type/build/release gates pass. Visual 390px/1280px report/category/list screenshots inspected.
+
+**Final verdict: ACCEPT for this grouped revision's seven findings.** Linux remains unavailable; no paid provider or deployment. CP032 may return to completed for this revision; CP035's separate original follow-ups remain open.
